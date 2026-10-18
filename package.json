@@ -13,7 +13,7 @@
     "build:cloud": "node scripts/cloud.mjs build",
     "db:cloud:check": "node scripts/cloud.mjs check",
     "db:cloud:transaction:check": "node scripts/cloud.mjs check:transaction",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "next typegen && tsc --noEmit",
     "db:migrate": "node --env-file=.env --import tsx scripts/migrate.ts",
     "db:seed": "node --env-file=.env --import tsx scripts/seed.ts",
     "db:test:setup": "node --env-file=.env --import tsx scripts/setup-test-db.ts",

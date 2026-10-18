@@ -7,6 +7,7 @@
 .secrets
 .next*
 node_modules
+next-env.d.ts
 artifacts
 test-results*
 playwright-report

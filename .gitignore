@@ -13,6 +13,7 @@ Thumbs.db
 .secrets/
 test-results-cloud/
 node_modules/
+next-env.d.ts
 .next/
 .next-*/
 out/
