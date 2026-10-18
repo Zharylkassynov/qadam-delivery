@@ -1,0 +1,47 @@
+{
+  "name": "qadam-delivery",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "next dev --hostname 127.0.0.1",
+    "build": "next build",
+    "check:build": "node scripts/check-build-traces.mjs",
+    "start": "next start --hostname 127.0.0.1",
+    "dev:cloud": "node scripts/cloud.mjs dev",
+    "start:cloud": "node scripts/cloud.mjs start",
+    "build:cloud": "node scripts/cloud.mjs build",
+    "db:cloud:check": "node scripts/cloud.mjs check",
+    "db:cloud:transaction:check": "node scripts/cloud.mjs check:transaction",
+    "typecheck": "tsc --noEmit",
+    "db:migrate": "node --env-file=.env --import tsx scripts/migrate.ts",
+    "db:seed": "node --env-file=.env --import tsx scripts/seed.ts",
+    "db:test:setup": "node --env-file=.env --import tsx scripts/setup-test-db.ts",
+    "test": "node --env-file=.env --import tsx --test --test-concurrency=1 tests/db-config.test.ts tests/deployment-config.test.ts tests/integration.test.ts",
+    "test:e2e": "playwright test",
+    "test:cloud:e2e": "node scripts/cloud.mjs test",
+    "test:cloud:transaction": "node scripts/cloud.mjs test:transaction"
+  },
+  "dependencies": {
+    "@vercel/functions": "3.10.1",
+    "next": "16.4.2",
+    "pg": "^8.16.3",
+    "react": "19.3.1",
+    "react-dom": "19.3.1",
+    "zod": "^4.1.12"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.56.1",
+    "@tailwindcss/postcss": "^4.1.14",
+    "@types/node": "^22.18.0",
+    "@types/pg": "^8.15.5",
+    "@types/react": "^19.2.0",
+    "@types/react-dom": "^19.2.0",
+    "tailwindcss": "^4.1.14",
+    "tsx": "^4.20.6",
+    "typescript": "^5.9.3"
+  },
+  "engines": {
+    "node": "22.x"
+  }
+}

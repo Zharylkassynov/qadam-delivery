@@ -1,0 +1,16 @@
+.env*
+.git
+.github
+.agents
+.codex
+.idea
+.secrets
+.next*
+node_modules
+artifacts
+test-results*
+playwright-report
+coverage
+*.log
+*.tsbuildinfo
+skills-lock.json

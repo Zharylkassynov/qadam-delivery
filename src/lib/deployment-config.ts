@@ -1,0 +1,50 @@
+type Environment = Record<string, string | undefined>;
+
+export function appOrigin(env: Environment = process.env) {
+  let value = env.APP_ORIGIN;
+  // Vercel supplies the exact deployment hostname; never accept wildcard origins.
+  if (!value && env.VERCEL === '1' && env.VERCEL_ENV === 'preview' &&
+      /^[a-z0-9-]+\.vercel\.app$/.test(env.VERCEL_URL ?? '')) {
+    value = `https://${env.VERCEL_URL}`;
+  }
+  let url: URL;
+  try { url = new URL(value ?? ''); } catch { throw new Error('APP_ORIGIN must be an absolute URL'); }
+  const local = ['localhost', '127.0.0.1'].includes(url.hostname);
+  if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password ||
+      url.pathname !== '/' || url.search || url.hash || (!local && url.protocol !== 'https:') ||
+      (env.VERCEL === '1' && (local || url.protocol !== 'https:' || url.port))) {
+    throw new Error('APP_ORIGIN must be a single HTTPS origin (HTTP is allowed only locally)');
+  }
+  return url.origin;
+}
+
+export function validateDeployment(env: Environment = process.env) {
+  if (env.VERCEL !== '1') return;
+  appOrigin(env);
+  if (env.QADAM_NEXT_DIST_DIR && env.QADAM_NEXT_DIST_DIR !== '.next') {
+    throw new Error('Vercel must use the standard .next output directory');
+  }
+  if (env.VERCEL_ENV === 'preview') {
+    if (env.DEMO_AUTH_ENABLED === 'true' || env.DATABASE_URL) {
+      throw new Error('Preview must have demo login disabled and no DATABASE_URL; scope database credentials to Production');
+    }
+    return;
+  }
+  if (env.VERCEL_ENV !== 'production') throw new Error('Expected a Production or Preview Vercel build');
+  if (!['true', 'false'].includes(env.DEMO_AUTH_ENABLED ?? '')) throw new Error('Set DEMO_AUTH_ENABLED explicitly');
+  const ref = env.SUPABASE_PROJECT_REF;
+  if (!ref || !/^[a-z]{20}$/.test(ref)) throw new Error('SUPABASE_PROJECT_REF is required');
+  let database: URL;
+  try { database = new URL(env.DATABASE_URL ?? ''); } catch { throw new Error('DATABASE_URL is required'); }
+  if (!['postgres:', 'postgresql:'].includes(database.protocol) ||
+      !/^[a-z0-9-]+\.pooler\.supabase\.com$/.test(database.hostname) || database.port !== '6543' ||
+      decodeURIComponent(database.username) !== `qadam_app.${ref}` || database.pathname !== '/postgres' ||
+      !database.password || /replace_|YOUR-PASSWORD/.test(database.password)) {
+    throw new Error('Use the Supabase transaction pooler on port 6543 with the restricted qadam_app role');
+  }
+  if ([...database.searchParams].some(([key, value]) => key !== 'sslmode' || !['require', 'verify-full'].includes(value)) ||
+      env.NODE_TLS_REJECT_UNAUTHORIZED === '0') throw new Error('Verified database TLS is required');
+  if (env.DATABASE_SSL_CA_FILE !== 'config/certs/supabase-root.crt') throw new Error('Use the bundled Supabase root CA file');
+  const max = Number(env.DATABASE_POOL_MAX ?? '3');
+  if (!Number.isInteger(max) || max < 2 || max > 10) throw new Error('DATABASE_POOL_MAX must be between 2 and 10 on Vercel');
+}
