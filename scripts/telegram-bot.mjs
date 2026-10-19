@@ -29,7 +29,8 @@ try {
   }
   const button = await call('getChatMenuButton');
   console.log(JSON.stringify({ menuType: button.type, menuUrl: button.web_app?.url ?? null }));
-  if (mode === 'connect' && (button.type !== 'web_app' || button.web_app?.url !== origin)) throw new Error('Menu button verification failed');
+  // Telegram normalizes an origin to a URL with a trailing slash.
+  if (mode === 'connect' && (button.type !== 'web_app' || new URL(button.web_app?.url ?? 'https://invalid.local').href !== url.href)) throw new Error('Menu button verification failed');
 } catch (error) {
   // No raw network error objects: they can include the token in the request URL.
   console.error(error instanceof Error ? error.message.replaceAll(token, '[redacted]') : 'Telegram setup failed');
