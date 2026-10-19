@@ -25,7 +25,7 @@ export function validateDeployment(env: Environment = process.env) {
     throw new Error('Vercel must use the standard .next output directory');
   }
   if (env.VERCEL_ENV === 'preview') {
-    if (env.DEMO_AUTH_ENABLED === 'true' || env.DATABASE_URL || env.TELEGRAM_AUTH_ENABLED === 'true' || env.TELEGRAM_BOT_TOKEN) {
+    if (env.DEMO_AUTH_ENABLED === 'true' || env.DATABASE_URL || env.TELEGRAM_AUTH_ENABLED === 'true' || env.TELEGRAM_BOT_TOKEN || env.GEOAPIFY_API_KEY) {
       throw new Error('Preview must have login disabled and no database or bot credentials; scope credentials to Production');
     }
     return;

@@ -57,10 +57,10 @@ export function OrderForm({ draft, onChange, onReview, onPoint, busy }: { draft:
       <div className="screen-heading"><h1>Откуда и куда</h1><p>Шаг 1 из 2 · заполните данные доставки</p></div>
       <p className="form-required-note">Адреса, имя и телефон обязательны.</p>
       <Field label="Адрес отправления" name="pickupAddress" autoComplete="off" placeholder="Город, улица, дом" required minLength={5} maxLength={300} value={draft.pickupAddress} error={errors.pickupAddress} onChange={(e) => change('pickupAddress', e.target.value)}/>
-      <Button variant="secondary" onClick={() => onPoint('pickup')} disabled={draft.pickupAddress.trim().length < 5}>{draft.pickupPoint ? 'Изменить точку отправления' : 'Указать точку отправления'}</Button>
+      <Button variant="secondary" onClick={() => onPoint('pickup')} disabled={draft.pickupAddress.trim().length < 5}>{draft.pickupPoint ? 'Изменить точку отправления' : 'Найти отправление на карте'}</Button>
       {draft.pickupPoint && <small className="field-hint">А · точка отправления выбрана</small>}
       <Field label="Адрес доставки" name="destinationAddress" autoComplete="off" placeholder="Город, улица, дом, квартира" required minLength={5} maxLength={300} value={draft.destinationAddress} error={errors.destinationAddress} onChange={(e) => change('destinationAddress', e.target.value)} hint="Укажите подъезд или ориентир в комментарии."/>
-      <Button variant="secondary" onClick={() => onPoint('destination')} disabled={draft.destinationAddress.trim().length < 5}>{draft.destinationPoint ? 'Изменить точку доставки' : 'Указать точку доставки'}</Button>
+      <Button variant="secondary" onClick={() => onPoint('destination')} disabled={draft.destinationAddress.trim().length < 5}>{draft.destinationPoint ? 'Изменить точку доставки' : 'Найти доставку на карте'}</Button>
       <small className="field-hint">{draft.destinationPoint ? 'Б · точка доставки выбрана' : 'Отметьте обе точки, чтобы клиент и курьер видели адреса на карте. Без точек сохранятся только текстовые адреса.'}</small>
       <h2>Получатель</h2>
       <Field label="Имя получателя" name="recipientName" autoComplete="name" placeholder="Кому передать посылку" required minLength={2} maxLength={100} value={draft.recipientName} error={errors.recipientName} onChange={(e) => change('recipientName', e.target.value)}/>

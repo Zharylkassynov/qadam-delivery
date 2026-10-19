@@ -23,7 +23,8 @@ test('map pins and simulated GPS persist through delivery, stop on hide and show
     await login(customer, 'customer1@qadam.demo'); await login(courier, 'courier1@qadam.demo');
     await customer.getByRole('button', { name: 'Заказать доставку', exact: true }).click();
     await customer.getByLabel('Адрес отправления', { exact: true }).fill(pickup);
-    await customer.getByRole('button', { name: 'Указать точку отправления', exact: true }).click();
+    await customer.getByRole('button', { name: 'Найти отправление на карте', exact: true }).click();
+    await customer.getByRole('button', { name: 'Указать вручную на карте', exact: true }).click();
     await expect(customer.getByRole('button', { name: 'Выбрать этот адрес', exact: true })).toBeDisabled();
     await customer.getByRole('button', { name: 'Выбрать точку в центре', exact: true }).click();
     await customer.screenshot({ path: testInfo.outputPath('point-picker-mobile.png') });
@@ -31,12 +32,14 @@ test('map pins and simulated GPS persist through delivery, stop on hide and show
     await expect(customer.getByText('А · точка отправления выбрана', { exact: true })).toBeVisible();
     // Editing an address invalidates its previous pin.
     await customer.getByLabel('Адрес отправления', { exact: true }).fill(`${pickup}, вход 2`);
-    await expect(customer.getByRole('button', { name: 'Указать точку отправления', exact: true })).toBeVisible();
-    await customer.getByRole('button', { name: 'Указать точку отправления', exact: true }).click();
+    await expect(customer.getByRole('button', { name: 'Найти отправление на карте', exact: true })).toBeVisible();
+    await customer.getByRole('button', { name: 'Найти отправление на карте', exact: true }).click();
+    await customer.getByRole('button', { name: 'Указать вручную на карте', exact: true }).click();
     await customer.getByRole('button', { name: 'Выбрать точку в центре', exact: true }).click();
     await customer.getByRole('button', { name: 'Выбрать этот адрес', exact: true }).click();
     await customer.getByLabel('Адрес доставки', { exact: true }).fill('Алматы, улица Ауэзова, 20');
-    await customer.getByRole('button', { name: 'Указать точку доставки', exact: true }).click();
+    await customer.getByRole('button', { name: 'Найти доставку на карте', exact: true }).click();
+    await customer.getByRole('button', { name: 'Указать вручную на карте', exact: true }).click();
     await expect(customer.getByRole('button', { name: 'Увеличить карту', exact: true })).toBeEnabled();
     await customer.locator('.delivery-map').click({ position: { x: 80, y: 160 } });
     await customer.getByRole('button', { name: 'Выбрать этот адрес', exact: true }).click();
@@ -83,7 +86,7 @@ test('denied geolocation and tile outage preserve order actions', async ({ brows
   const context = await browser.newContext({ viewport: { width: 360, height: 800 } });
   const page = await context.newPage();
   const pickup = `E2E отказ GPS ${randomUUID().slice(0, 8)}, Алматы, Абая 10`;
-  await context.route('https://tile.openstreetmap.org/**', (route) => route.abort());
+  await context.route(/(?:https:\/\/tile\.openstreetmap\.org\/|\/api\/map-tiles\/)/, (route) => route.abort());
   await page.addInitScript(() => { navigator.geolocation.getCurrentPosition = (_success, failure) => failure?.({ code: 1, message: 'Test permission denied' } as GeolocationPositionError); });
   try {
     await login(page, 'customer2@qadam.demo');

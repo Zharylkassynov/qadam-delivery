@@ -20,7 +20,7 @@ export function OrderTracking({ order, user }: { order: Order; user: User }) {
   return <section className="order-tracking" aria-label="Отслеживание доставки">
     <h2>Доставка на карте</h2>
     {markers.length > 0 ? <DeliveryMap markers={markers} focusCourier/> : <Feedback title="Точки ещё не указаны">В этом заказе сохранены только текстовые адреса. В новом заказе можно отметить отправление и доставку на карте.</Feedback>}
-    <p className="map-legend">А — отправление · Б — доставка · К — курьер</p>
+    <p className="map-legend">А — отправление · Б — доставка</p>
     <a href={navigation} target="_blank" rel="noopener noreferrer">Открыть навигацию</a>
     {(!order.pickupPoint || !order.destinationPoint) && markers.length > 0 && <p className="muted">{!order.pickupPoint ? 'Точка отправления не указана. ' : ''}{!order.destinationPoint ? 'Точка доставки не указана.' : ''}</p>}
     {location ? <Feedback tone={stale || finished(order) ? 'warning' : 'info'} title={finished(order) ? 'Доставка завершена · последняя точка' : stale ? 'Позиция курьера устарела' : 'Последняя позиция курьера'}>

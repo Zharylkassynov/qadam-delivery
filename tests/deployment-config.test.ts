@@ -42,6 +42,7 @@ test('Preview uses its exact platform URL and cannot use the production database
   assert.equal(appOrigin(preview), 'https://qadam-abc-user.vercel.app');
   assert.throws(() => validateDeployment({ ...preview, DATABASE_URL: production.DATABASE_URL }));
   assert.throws(() => validateDeployment({ ...preview, DEMO_AUTH_ENABLED: 'true' }));
+  assert.throws(() => validateDeployment({ ...preview, GEOAPIFY_API_KEY: 'server-only-test-key' }));
   assert.throws(() => appOrigin({ ...preview, VERCEL_URL: 'qadam.vercel.app.evil.example' }));
 });
 

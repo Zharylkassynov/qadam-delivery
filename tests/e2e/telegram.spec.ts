@@ -88,6 +88,39 @@ test('Mini App rejects forged proof and a client role, and permits only Telegram
   expect(headers['x-frame-options']).toBeUndefined();
 });
 
+test('Mini App address search and modern map tiles use bearer authentication with cookies absent', async ({ browser }) => {
+  const context = await browser.newContext({ viewport: { width: 390, height: 844 } });
+  const page = await context.newPage();
+  try {
+    const proof = signedTelegramData({ id: 2000000000000 + Math.floor(Math.random() * 1000000000), first_name: 'Map bearer autotest' });
+    await miniApp(page, proof);
+    await expect(page.getByRole('heading', { name: /Доставка\s*по Алматы/ })).toBeVisible();
+    await context.clearCookies();
+    await page.route('**/api/map-config', async (route) => {
+      const headers = await route.request().allHeaders();
+      expect(headers.authorization).toMatch(/^Bearer [a-f0-9]{64}$/); expect(headers.cookie).toBeUndefined();
+      const actual = await route.fetch({ headers }); expect(actual.status()).toBe(200);
+      await route.fulfill({ json: { provider: 'geoapify', tileUrl: '/api/map-tiles/{z}/{x}/{y}', maxZoom: 19 } });
+    });
+    let tiles = 0;
+    await page.route('**/api/map-tiles/**', async (route) => {
+      const headers = await route.request().allHeaders();
+      expect(headers.authorization).toMatch(/^Bearer [a-f0-9]{64}$/); expect(headers.cookie).toBeUndefined(); tiles++;
+      await route.fulfill({ contentType: 'image/svg+xml', body: '<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256"><rect width="256" height="256" fill="#eef1f3"/></svg>' });
+    });
+    await page.route('**/api/geocoding', async (route) => {
+      const headers = await route.request().allHeaders(); expect(headers.authorization).toMatch(/^Bearer [a-f0-9]{64}$/); expect(headers.cookie).toBeUndefined();
+      await route.fulfill({ json: { results: [{ id: 'test-house', address: 'проспект Абая, 10', detail: 'Алматы', precision: 'building', latitude: 43.24189, longitude: 76.94684 }] } });
+    });
+    await page.getByRole('button', { name: 'Заказать доставку', exact: true }).click();
+    await page.getByLabel('Адрес отправления', { exact: true }).fill('Алматы, Абая 10');
+    await page.getByRole('button', { name: 'Найти отправление на карте', exact: true }).click();
+    await expect(page.getByText('Дом найден автоматически', { exact: true })).toBeVisible();
+    await expect.poll(async () => page.locator('.leaflet-tile-loaded').count()).toBeGreaterThan(0);
+    expect(tiles).toBeGreaterThan(0); expect(await context.cookies()).toHaveLength(0);
+  } finally { await context.close(); }
+});
+
 test('Telegram applicant is rejected, reapplies, gets admin approval and completes a courier delivery', async ({ browser, request }, testInfo) => {
   test.setTimeout(120000);
   const suffix = randomUUID().slice(0, 8), applicantName = `Курьер E2E ${suffix}`;

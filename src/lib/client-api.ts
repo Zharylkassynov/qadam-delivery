@@ -3,13 +3,14 @@
 // Mini App credentials stay only in memory, never in persistent browser storage.
 let telegramSessionToken: string | undefined;
 export const setTelegramSessionToken = (token: string | undefined) => { telegramSessionToken = token; };
+export const sessionHeaders = (): Record<string, string> => telegramSessionToken ? { Authorization: `Bearer ${telegramSessionToken}` } : {};
 export class ApiError extends Error { constructor(message: string, public status: number) { super(message); } }
 export async function api<T>(path: string, body?: unknown, signal?: AbortSignal): Promise<T> {
   let response: Response;
   try {
     response = await fetch(path, { method: body === undefined ? 'GET' : 'POST',
       headers: { ...(body === undefined ? {} : { 'Content-Type': 'application/json' }),
-        ...(telegramSessionToken ? { Authorization: `Bearer ${telegramSessionToken}` } : {}) },
+        ...sessionHeaders() },
       body: body === undefined ? undefined : JSON.stringify(body), cache: 'no-store', signal });
   } catch (error) {
     if (error instanceof Error && error.name === 'AbortError') throw error;

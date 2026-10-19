@@ -72,6 +72,9 @@ test('customer and courier complete a delivery; polling, reopening and history r
 
 test('HTTP API requires authentication, same-origin mutations and server-owned roles', async ({ request }) => {
   expect((await request.get('/api/orders')).status()).toBe(401);
+  expect((await request.get('/api/map-config')).status()).toBe(401);
+  expect((await request.get('/api/map-tiles/1/0/0')).status()).toBe(401);
+  expect((await request.post('/api/geocoding', { headers: { Origin: origin }, data: { query: 'Алматы, Абая 10' } })).status()).toBe(401);
   for (const blockedOrigin of [undefined, 'null', 'http://localhost:9999', 'https://localhost:3100', 'http://localhost.evil.invalid:3100']) {
     expect((await request.post('/api/auth/login', { headers: blockedOrigin ? { Origin: blockedOrigin } : {}, data: {} })).status()).toBe(403);
   }
@@ -86,6 +89,8 @@ test('HTTP API requires authentication, same-origin mutations and server-owned r
   expect(loggedIn.headers()['set-cookie']).toContain('SameSite=lax');
   if (new URL(origin).protocol === 'https:') expect(loggedIn.headers()['set-cookie']).toContain('Secure');
   expect((await loggedIn.json()).user.role).toBe('COURIER');
+  expect((await request.post('/api/geocoding', { headers: { Origin: origin }, data: { query: 'Алматы, Абая 10' } })).status()).toBe(403);
+  expect((await request.get('/api/map-tiles/20/0/0')).status()).toBe(400);
   const list = await request.get('/api/orders');
   expect(list.headers()['cache-control']).toContain('no-store');
   const attempt = await request.post('/api/orders', { headers: { Origin: origin }, data: { requestKey: randomUUID(), pickupAddress: 'Улица Абая, 10', destinationAddress: 'Улица Ауэзова, 20', recipientName: 'Тест', recipientPhone: '+77001234567', notes: '' } });
