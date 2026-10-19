@@ -20,7 +20,8 @@
     "test": "node --env-file=.env --import tsx --test --test-concurrency=1 tests/db-config.test.ts tests/deployment-config.test.ts tests/integration.test.ts",
     "test:e2e": "playwright test",
     "test:cloud:e2e": "node scripts/cloud.mjs test",
-    "test:cloud:transaction": "node scripts/cloud.mjs test:transaction"
+    "test:cloud:transaction": "node scripts/cloud.mjs test:transaction",
+    "test:deployed": "node --env-file=.env.supabase node_modules/@playwright/test/cli.js test --config playwright.deployed.config.ts"
   },
   "dependencies": {
     "@vercel/functions": "3.10.1",

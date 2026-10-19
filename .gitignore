@@ -12,6 +12,7 @@ skills-lock.json
 Thumbs.db
 .secrets/
 test-results-cloud/
+test-results-deployed/
 node_modules/
 next-env.d.ts
 .next/

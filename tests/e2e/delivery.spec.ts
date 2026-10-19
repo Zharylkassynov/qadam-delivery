@@ -84,6 +84,7 @@ test('HTTP API requires authentication, same-origin mutations and server-owned r
   expect(loggedIn.status()).toBe(200);
   expect(loggedIn.headers()['set-cookie']).toContain('HttpOnly');
   expect(loggedIn.headers()['set-cookie']).toContain('SameSite=lax');
+  if (new URL(origin).protocol === 'https:') expect(loggedIn.headers()['set-cookie']).toContain('Secure');
   expect((await loggedIn.json()).user.role).toBe('COURIER');
   const list = await request.get('/api/orders');
   expect(list.headers()['cache-control']).toContain('no-store');
@@ -92,6 +93,7 @@ test('HTTP API requires authentication, same-origin mutations and server-owned r
 });
 
 test('localhost alias supports browser login, session reload and logout', async ({ page }) => {
+  test.skip(!['localhost', '127.0.0.1'].includes(new URL(origin).hostname), 'Loopback alias is checked only on local servers');
   const alias = new URL(origin);
   alias.hostname = 'localhost';
   await page.goto(alias.origin);

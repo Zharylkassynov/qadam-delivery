@@ -78,6 +78,19 @@ GitHub Actions используют отдельную временную Postgr
 история. Также проверить cookie Secure/HttpOnly и отказ постороннему Origin.
 Локальная сборка и подключение к pooler не заменяют эту проверку хостинга.
 
+Для повторяемой проверки опубликованного демо:
+
+```powershell
+$env:E2E_ORIGIN = 'https://your-project.vercel.app'
+npm run test:deployed
+Remove-Item Env:E2E_ORIGIN
+```
+
+Локальный сервер при этом не запускается. Команда использует существующие
+демоаккаунты, создаёт помеченные `E2E` доставки и сохраняет снимки в
+`test-results-deployed`. Проверка локального алиаса пропускается для HTTPS;
+для публичной версии дополнительно проверяется Secure у cookie сессии.
+
 ## Документация платформ
 
 - [Supabase: подключение и режимы pooler](https://supabase.com/docs/guides/database/connecting-to-postgres)
