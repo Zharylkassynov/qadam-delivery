@@ -20,9 +20,12 @@ export const actionLabels: Partial<Record<Status, string>> = {
   ACCEPTED: 'Посылка у меня', PICKED_UP: 'Начать доставку', IN_TRANSIT: 'Завершить доставку',
 };
 export type OrderEvent = { id: number; status: Status; at: string; actor: string };
+export type MapPoint = { latitude: number; longitude: number };
+export type CourierLocation = MapPoint & { accuracy: number | null; capturedAt: string; receivedAt: string };
 export type Order = {
   id: string; number: string; customerId: string; customerName: string;
   courierId: string | null; courierName: string | null;
   pickupAddress: string; destinationAddress: string; recipientName: string; recipientPhone: string;
   notes: string; status: Status; createdAt: string; updatedAt: string; events: OrderEvent[];
+  pickupPoint: MapPoint | null; destinationPoint: MapPoint | null; courierLocation: CourierLocation | null;
 };

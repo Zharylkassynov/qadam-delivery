@@ -1,6 +1,17 @@
 'use client';
 
-type TelegramWebApp = { initData: string; ready(): void; expand(): void };
+type TelegramWebApp = {
+  initData: string; ready(): void; expand(): void;
+  isVersionAtLeast?(version: string): boolean; isActive?: boolean;
+  onEvent?(event: string, callback: () => void): void;
+  offEvent?(event: string, callback: () => void): void;
+  LocationManager?: {
+    isInited: boolean; isLocationAvailable: boolean; isAccessGranted: boolean; isAccessRequested: boolean;
+    init(callback: () => void): void;
+    getLocation(callback: (data: { latitude: number; longitude: number; horizontal_accuracy: number | null } | null) => void): void;
+    openSettings(): void;
+  };
+};
 declare global { interface Window { Telegram?: { WebApp?: TelegramWebApp } } }
 
 export async function telegramApp() {

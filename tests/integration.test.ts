@@ -9,6 +9,7 @@ import { applicationSchema, decisionSchema, listApplications, ownApplication, re
 import { acceptOrder, createOrder, createOrderSchema, listOrders, transitionOrder, type CreateOrder } from '../src/lib/orders';
 import { AppError } from '../src/lib/errors';
 import type { User } from '../src/lib/types';
+import { locationSchema, reportLocation } from '../src/lib/locations';
 
 const url = process.env.TEST_DATABASE_URL;
 if (!url || !new URL(url).pathname.endsWith('_test')) throw new Error('TEST_DATABASE_URL must point to a separate database ending in _test');
@@ -51,6 +52,55 @@ async function telegramAccount(name: string) {
   const account = await loginTelegram(proof); users.push(account.user); return { ...account, proof };
 }
 const applicationInput = () => ({ phone: '+7 700 000 00 00', transport: 'FOOT' as const, notes: 'Автотест заявки — не реальный курьер' });
+
+const pointA = { latitude: 43.2389, longitude: 76.8897 };
+const pointB = { latitude: 43.245, longitude: 76.91 };
+const fix = () => ({ ...pointA, accuracy: 12, capturedAt: new Date().toISOString() });
+
+test('map points persist with idempotent order creation; old text-only orders and invalid coordinates are handled', async () => {
+  const data = { ...input(), pickupPoint: pointA, destinationPoint: pointB };
+  const first = await createOrder(customer, data), retry = await createOrder(customer, data);
+  assert.equal(first.id, retry.id); assert.deepEqual(first.pickupPoint, pointA); assert.deepEqual(first.destinationPoint, pointB);
+  await rejectsStatus(createOrder(customer, { ...data, pickupPoint: pointB }), 409);
+  const old = await createOrder(customer, input()); assert.equal(old.pickupPoint, null); assert.equal(old.courierLocation, null);
+  for (const point of [{ latitude: 91, longitude: 0 }, { latitude: 0, longitude: -181 }, { latitude: NaN, longitude: 1 }, { latitude: Infinity, longitude: 1 }, { ...pointA, courierId: courier.id }]) {
+    assert.equal(createOrderSchema.safeParse({ ...input(), pickupPoint: point }).success, false);
+  }
+});
+
+test('only the assigned courier can send a location; customers and other couriers cannot read another delivery location', async () => {
+  const order = await createOrder(customer, { ...input(), pickupPoint: pointA, destinationPoint: pointB });
+  await rejectsStatus(reportLocation(customer, order.id, fix()), 403);
+  await rejectsStatus(reportLocation(courier, order.id, fix()), 403);
+  await acceptOrder(courier, order.id);
+  await rejectsStatus(reportLocation(otherCourier, order.id, fix()), 403);
+  const sent = await reportLocation(courier, order.id, fix()); assert.equal(sent.latitude, pointA.latitude);
+  const visible = (await listOrders(customer)).find((value) => value.id === order.id)!;
+  assert.equal(visible.courierLocation?.longitude, pointA.longitude); assert.ok(visible.courierLocation?.receivedAt);
+  assert.equal((await listOrders(otherCustomer)).some((value) => value.id === order.id), false);
+  assert.equal((await listOrders(otherCourier)).some((value) => value.id === order.id), false);
+  for (const invalid of [{ ...fix(), accuracy: -1 }, { ...fix(), latitude: 100 }, { ...fix(), courierId: otherCourier.id }, { ...fix(), capturedAt: 'yesterday' }]) assert.equal(locationSchema.safeParse(invalid).success, false);
+  await rejectsStatus(reportLocation(courier, order.id, { ...fix(), capturedAt: new Date(Date.now() - 121000).toISOString() }), 400);
+  await rejectsStatus(reportLocation(courier, order.id, { ...fix(), capturedAt: new Date(Date.now() + 31000).toISOString() }), 400);
+});
+
+test('delayed GPS fixes cannot overwrite newer locations; throttling, completion and reopening preserve the last point', async () => {
+  const order = await createOrder(customer, input()); await acceptOrder(courier, order.id);
+  const first = { ...fix(), capturedAt: new Date(Date.now() - 3000).toISOString() };
+  await reportLocation(courier, order.id, first);
+  await reportLocation(courier, order.id, { ...first, latitude: 1, capturedAt: new Date(Date.now() - 5000).toISOString() });
+  assert.equal((await listOrders(customer)).find((o) => o.id === order.id)!.courierLocation?.latitude, pointA.latitude);
+  await rejectsStatus(reportLocation(courier, order.id, fix()), 429);
+  await database().query("UPDATE qadam.courier_locations SET received_at=now()-interval '6 seconds' WHERE order_id=$1", [order.id]);
+  await reportLocation(courier, order.id, { ...fix(), ...pointB, accuracy: null });
+  await transitionOrder(courier, order.id, 'PICKED_UP'); await transitionOrder(courier, order.id, 'IN_TRANSIT');
+  await transitionOrder(courier, order.id, 'DELIVERED');
+  await rejectsStatus(reportLocation(courier, order.id, fix()), 409);
+  await closeDatabase();
+  const reopened = (await listOrders(customer)).find((o) => o.id === order.id)!;
+  assert.equal(reopened.status, 'DELIVERED'); assert.equal(reopened.courierLocation?.latitude, pointB.latitude);
+  assert.equal(reopened.courierLocation?.accuracy, null); assert.equal(reopened.events.length, 6);
+});
 
 test('Telegram application submission is private and concurrent retries create one pending request', async () => {
   const a = await telegramAccount('Заявитель'), b = await telegramAccount('Другой заявитель');

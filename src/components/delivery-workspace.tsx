@@ -1,13 +1,15 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { actionLabels, nextStatus, type Order, type User } from '../lib/types';
-import { AddressRow, Badge, Brand, Button, EmptyState, Feedback, Icon, MapUnavailable, OrderCard, PriceNote, RouteCard, Skeletons, Timeline, finished, formatTime, initials, orderNumber } from './delivery-ui';
+import { actionLabels, nextStatus, type MapPoint, type Order, type User } from '../lib/types';
+import { AddressRow, Badge, Brand, Button, EmptyState, Feedback, Icon, OrderCard, PriceNote, RouteCard, Skeletons, Timeline, finished, formatTime, initials, orderNumber } from './delivery-ui';
 import { emptyDraft, OrderForm, OrderReview, ParcelChoice, orderPayload, type OrderDraft } from './order-form';
 import { serviceCity, serviceTimezone } from '../lib/service-area';
 import { CourierOnboarding, CourierApplicationAdmin } from './courier-onboarding';
+import { PointPicker } from './delivery-map';
+import { OrderTracking } from './order-tracking';
 
-type View = 'home' | 'orders' | 'profile' | 'create' | 'review' | 'detail' | 'courierApplication' | 'adminApplications';
+type View = 'home' | 'orders' | 'profile' | 'create' | 'review' | 'detail' | 'point' | 'courierApplication' | 'adminApplications';
 type Filter = 'all' | 'active' | 'history';
 type Props = {
   user: User; orders: Order[]; loading: boolean; busy: boolean; error: string; notice: string;
@@ -22,6 +24,8 @@ export function DeliveryWorkspace(props: Props) {
   const [view, setView] = useState<View>('home');
   const [filter, setFilter] = useState<Filter>(user.role === 'CUSTOMER' ? 'all' : 'active');
   const [draft, setDraft] = useState<OrderDraft>({ ...emptyDraft });
+  const [pointKind, setPointKind] = useState<'pickup' | 'destination'>('pickup');
+  const [point, setPoint] = useState<MapPoint | null>(null);
   const bodyRef = useRef<HTMLElement>(null);
   const customer = user.role === 'CUSTOMER';
   const ownOrders = customer ? orders : orders.filter((order) => order.courierId === user.id);
@@ -60,9 +64,9 @@ export function DeliveryWorkspace(props: Props) {
   }
   const actionable = view === 'detail' && detail && !customer && (detail.status === 'SEARCHING_FOR_COURIER' || (detail.courierId === user.id && nextStatus[detail.status]));
   const completedDetail = view === 'detail' && detail && finished(detail);
-  const hasFooter = view === 'create' || view === 'review' || !!actionable || !!completedDetail;
+  const hasFooter = view === 'create' || view === 'review' || view === 'point' || !!actionable || !!completedDetail;
   const showNav = view === 'home' || view === 'orders' || view === 'profile';
-  const title = view === 'home' ? customer ? serviceCity : 'Заказы рядом' : view === 'orders' ? 'Мои заказы' : view === 'profile' ? 'Профиль' : view === 'create' ? 'Новая доставка' : view === 'review' ? 'Проверка заказа' : detail ? `Заказ ${orderNumber(detail)}` : 'Заказ недоступен';
+  const title = view === 'point' ? 'Точка на карте' : view === 'home' ? customer ? serviceCity : 'Заказы рядом' : view === 'orders' ? 'Мои заказы' : view === 'profile' ? 'Профиль' : view === 'create' ? 'Новая доставка' : view === 'review' ? 'Проверка заказа' : detail ? `Заказ ${orderNumber(detail)}` : 'Заказ недоступен';
   const navItems: { view: View; label: string; icon: 'box' | 'clock' | 'person' }[] = [
     { view: 'home', label: customer ? 'Доставка' : 'Доступные', icon: 'box' },
     { view: 'orders', label: customer ? 'Заказы' : 'Мои заказы', icon: 'clock' },
@@ -82,7 +86,7 @@ export function DeliveryWorkspace(props: Props) {
     </aside>
     <div className={`workspace ${hasFooter ? 'with-action' : ''} ${showNav ? 'with-nav' : ''}`}>
       <header className="product-header"><span className="product-header-mark"><Icon type="box"/></span><span>Qadam Delivery</span><button type="button" className="icon-button" aria-label="Выйти" title="Выйти" onClick={() => void props.onSignOut()} disabled={busy}><Icon type="logout"/></button></header>
-      <div className="app-bar">{view === 'home' ? <span className="app-bar-city"><Icon type="pin"/></span> : <button type="button" className="icon-button" aria-label="Назад" disabled={busy} onClick={() => navigate(view === 'review' ? 'create' : 'home')}><Icon type="back"/></button>}<p>{title}</p><span className="app-bar-balance"/></div>
+      <div className="app-bar">{view === 'home' ? <span className="app-bar-city"><Icon type="pin"/></span> : <button type="button" className="icon-button" aria-label="Назад" disabled={busy} onClick={() => navigate(view === 'review' || view === 'point' ? 'create' : 'home')}><Icon type="back"/></button>}<p>{title}</p><span className="app-bar-balance"/></div>
       <main className={`screen-body screen-${view}`} ref={bodyRef} id="main-content">
         <div className="screen-content">
           {error && <Feedback tone="error" title={error} role="alert" action={<button type="button" className="feedback-dismiss" aria-label="Закрыть сообщение" onClick={props.onClearMessages}>×</button>}/>}
@@ -104,7 +108,8 @@ export function DeliveryWorkspace(props: Props) {
           {view === 'orders' && <><h1 className="sr-only" tabIndex={-1}>Мои заказы</h1>{!customer && <h2 className="list-title">Ваши доставки</h2>}<div className="choice-row order-filters" role="group" aria-label="Фильтр заказов">{(customer ? ['all', 'active', 'history'] as const : ['active', 'history'] as const).map((value) => <button type="button" className={`choice ${filter === value ? 'selected' : ''}`} aria-pressed={filter === value} key={value} onClick={() => setFilter(value)} disabled={busy}>{{ all: 'Все', active: 'Активные', history: 'Завершённые' }[value]}</button>)}</div>
             {loading ? <Skeletons/> : visible.length ? <div className="order-list">{visible.map(card)}</div> : <EmptyState title={filter === 'history' ? 'История пока пуста' : 'Заказов пока нет'} action={customer ? <Button variant="secondary" onClick={() => navigate('create')}>Заказать доставку</Button> : refresh}>{filter === 'history' ? 'Завершённые и отменённые доставки сохранятся здесь.' : customer ? 'Создайте первую доставку, чтобы передать посылку.' : 'Ваши принятые доставки появятся здесь.'}</EmptyState>}<SyncTime value={syncedAt} offline={!!syncError}/></>}
 
-          {view === 'create' && customer && <OrderForm draft={draft} onChange={setDraft} onReview={() => navigate('review')} busy={busy}/>}
+          {view === 'create' && customer && <OrderForm draft={draft} onChange={setDraft} onReview={() => navigate('review')} onPoint={(kind) => { setPointKind(kind); setPoint(draft[`${kind}Point`]); navigate('point'); }} busy={busy}/>}
+          {view === 'point' && customer && <PointPicker key={pointKind} kind={pointKind} address={draft[`${pointKind}Address`]} point={point} onChange={setPoint}/>}
           {view === 'review' && customer && <OrderReview draft={draft} onEdit={() => navigate('create')} busy={busy}/>}
           {view === 'detail' && (detail ? <OrderDetail order={detail} user={user} onCancel={async () => { if (window.confirm('Отменить этот заказ?')) await props.onMutate(`/api/orders/${detail.id}/status`, { status: 'CANCELLED' }, 'Заказ отменён и сохранён в истории.'); }} busy={busy}/> : <EmptyState title="Заказ больше недоступен" action={<Button variant="secondary" onClick={() => navigate('home')}>К списку заказов</Button>}>Возможно, его уже принял другой курьер. Обновите список и выберите другую доставку.</EmptyState>)}
           {view === 'profile' && <><h1 className="sr-only" tabIndex={-1}>Профиль</h1><div className="profile-card"><span className="avatar large">{initials(user.name)}</span><h2>{user.name}</h2><p className="muted">{customer ? 'Клиент' : 'Курьер'} · {user.telegramId ? 'Telegram' : 'демонстрационный аккаунт'}</p><p>{user.telegramId ? `Telegram ID: ${user.telegramId}` : user.email}</p></div><div className="profile-stats"><div><strong>{activeOrders.length}</strong><span>Активные</span></div><div><strong>{completed.length}</strong><span>Доставлены</span></div></div>
@@ -113,7 +118,7 @@ export function DeliveryWorkspace(props: Props) {
             <Feedback title="Учебная демонстрация">Используйте тестовые контакты и посылки. Заказы и статусы сохраняются в базе.</Feedback><Button variant="secondary" onClick={() => void props.onSignOut()} disabled={busy}>Выйти из аккаунта</Button></>}
         </div>
       </main>
-      {hasFooter && <footer className="sticky-action">{view === 'create' ? <Button form="delivery-form" type="submit" className="wide" disabled={busy}>Проверить заказ</Button> : view === 'review' ? <Button className="wide" onClick={() => void confirmOrder()} disabled={busy}>{busy ? 'Сохраняем…' : 'Подтвердить заказ'}</Button> : completedDetail ? <Button className="wide" onClick={history} disabled={busy}>В историю заказов</Button> : actionable && detail ? <Button className="wide" disabled={busy} onClick={() => void (detail.status === 'SEARCHING_FOR_COURIER' ? accept(detail) : advance(detail))}>{busy ? 'Сохраняем…' : detail.status === 'SEARCHING_FOR_COURIER' ? 'Принять заказ' : actionLabels[detail.status]}</Button> : null}</footer>}
+      {hasFooter && <footer className="sticky-action">{view === 'point' ? <Button className="wide" disabled={!point} onClick={() => { setDraft((current) => ({ ...current, [`${pointKind}Point`]: point })); navigate('create'); }}>Выбрать этот адрес</Button> : view === 'create' ? <Button form="delivery-form" type="submit" className="wide" disabled={busy}>Проверить заказ</Button> : view === 'review' ? <Button className="wide" onClick={() => void confirmOrder()} disabled={busy}>{busy ? 'Сохраняем…' : 'Подтвердить заказ'}</Button> : completedDetail ? <Button className="wide" onClick={history} disabled={busy}>В историю заказов</Button> : actionable && detail ? <Button className="wide" disabled={busy} onClick={() => void (detail.status === 'SEARCHING_FOR_COURIER' ? accept(detail) : advance(detail))}>{busy ? 'Сохраняем…' : detail.status === 'SEARCHING_FOR_COURIER' ? 'Принять заказ' : actionLabels[detail.status]}</Button> : null}</footer>}
       {showNav && <nav className="mobile-nav" aria-label="Мобильная навигация">{navItems.map((item) => <button type="button" key={item.view} className={view === item.view ? 'current' : ''} aria-current={view === item.view ? 'page' : undefined} disabled={busy} onClick={() => navigate(item.view)}><Icon type={item.icon}/><span>{item.label}</span></button>)}</nav>}
     </div>
   </div>;
@@ -134,7 +139,7 @@ function OrderDetail({ order, user, busy, onCancel }: { order: Order; user: User
   return <section className="order-detail" aria-label="Детали заказа">
     {complete ? <div className="success-symbol"><Icon type="check"/></div> : <Badge status={order.status}/>}
     <div className="screen-heading"><h1 tabIndex={-1}>{heading}</h1><p>{complete ? `${orderNumber(order)} · ${formatTime(order.updatedAt)}` : order.status === 'SEARCHING_FOR_COURIER' ? customer ? 'Заказ создан. Курьер увидит адреса и сможет принять доставку.' : 'Проверьте адреса и условия перед принятием заказа.' : `Создан ${formatTime(order.createdAt)}`}</p></div>
-    {!finished(order) && order.courierId && <MapUnavailable order={order}/>}
+    <OrderTracking order={order} user={user}/>
     {customer && order.courierName && <div className="courier-contact"><span className="avatar">{initials(order.courierName)}</span><div><strong>{order.courierName}</strong><small>Ваш курьер · тестовый профиль</small></div></div>}
     <RouteCard pickup={order.pickupAddress} destination={order.destinationAddress}/>
     {!complete && <Recipient order={order}/>}

@@ -4,6 +4,7 @@ import { database, transaction } from './db';
 import { AppError } from './errors';
 import { nextStatus, statuses, type Order, type Status, type User } from './types';
 
+export const pointSchema = z.object({ latitude: z.number().min(-90).max(90), longitude: z.number().min(-180).max(180) }).strict();
 export const createOrderSchema = z.object({
   requestKey: z.uuid(),
   pickupAddress: z.string().trim().min(5).max(300),
@@ -11,6 +12,8 @@ export const createOrderSchema = z.object({
   recipientName: z.string().trim().min(2).max(100),
   recipientPhone: z.string().trim().min(7).max(30).regex(/^[+\d\s()\-]+$/).refine((value) => value.replace(/\D/g, '').length >= 7),
   notes: z.string().trim().max(1000).default(''),
+  pickupPoint: pointSchema.nullable().optional(),
+  destinationPoint: pointSchema.nullable().optional(),
 }).strict();
 export const statusSchema = z.object({ status: z.enum(statuses) }).strict();
 export type CreateOrder = z.infer<typeof createOrderSchema>;
@@ -19,6 +22,10 @@ const selectOrder = `SELECT o.id,o.number::text,o.customer_id AS "customerId",c.
   o.courier_id AS "courierId",r.name AS "courierName",o.pickup_address AS "pickupAddress",
   o.destination_address AS "destinationAddress",o.recipient_name AS "recipientName",
   o.recipient_phone AS "recipientPhone",o.notes,o.status,o.created_at AS "createdAt",o.updated_at AS "updatedAt",
+  CASE WHEN o.pickup_latitude IS NOT NULL THEN jsonb_build_object('latitude',o.pickup_latitude,'longitude',o.pickup_longitude) END AS "pickupPoint",
+  CASE WHEN o.destination_latitude IS NOT NULL THEN jsonb_build_object('latitude',o.destination_latitude,'longitude',o.destination_longitude) END AS "destinationPoint",
+  (SELECT jsonb_build_object('latitude',l.latitude,'longitude',l.longitude,'accuracy',l.accuracy,'capturedAt',l.captured_at,'receivedAt',l.received_at)
+    FROM qadam.courier_locations l WHERE l.order_id=o.id AND l.courier_id=o.courier_id) AS "courierLocation",
   COALESCE((SELECT jsonb_agg(jsonb_build_object('id',e.id,'status',e.status,'at',e.created_at,'actor',u.name) ORDER BY e.id)
     FROM qadam.order_events e JOIN qadam.users u ON u.id=e.actor_id WHERE e.order_id=o.id),'[]'::jsonb) AS events
   FROM qadam.orders o JOIN qadam.users c ON c.id=o.customer_id LEFT JOIN qadam.users r ON r.id=o.courier_id`;
@@ -45,14 +52,20 @@ export async function createOrder(actor: User, input: CreateOrder): Promise<Orde
   // Validate here too, so scripts and tests cannot bypass the API validation.
   const data = createOrderSchema.parse(input);
   return transaction(async (client) => {
-    const result = await client.query(`INSERT INTO qadam.orders(customer_id,request_key,pickup_address,destination_address,recipient_name,recipient_phone,notes,status)
-      VALUES($1,$2,$3,$4,$5,$6,$7,'CREATED') ON CONFLICT(customer_id,request_key) DO NOTHING RETURNING id`,
-    [actor.id, data.requestKey, data.pickupAddress, data.destinationAddress, data.recipientName, data.recipientPhone, data.notes]);
+    const result = await client.query(`INSERT INTO qadam.orders(customer_id,request_key,pickup_address,destination_address,recipient_name,recipient_phone,notes,status,
+      pickup_latitude,pickup_longitude,destination_latitude,destination_longitude)
+      VALUES($1,$2,$3,$4,$5,$6,$7,'CREATED',$8,$9,$10,$11) ON CONFLICT(customer_id,request_key) DO NOTHING RETURNING id`,
+    [actor.id, data.requestKey, data.pickupAddress, data.destinationAddress, data.recipientName, data.recipientPhone, data.notes,
+      data.pickupPoint?.latitude ?? null, data.pickupPoint?.longitude ?? null, data.destinationPoint?.latitude ?? null, data.destinationPoint?.longitude ?? null]);
     if (!result.rowCount) {
       const existing = await client.query('SELECT id FROM qadam.orders WHERE customer_id=$1 AND request_key=$2', [actor.id, data.requestKey]);
       const order = await readOrder(client, existing.rows[0].id);
       const fields = ['pickupAddress', 'destinationAddress', 'recipientName', 'recipientPhone', 'notes'] as const;
       if (fields.some((field) => order[field] !== data[field])) throw new AppError(409, 'Этот запрос уже использован для другого заказа. Обновите страницу.');
+      for (const field of ['pickupPoint', 'destinationPoint'] as const) {
+        if ((order[field]?.latitude ?? null) !== (data[field]?.latitude ?? null) || (order[field]?.longitude ?? null) !== (data[field]?.longitude ?? null))
+          throw new AppError(409, 'Этот запрос уже использован для других точек доставки. Обновите страницу.');
+      }
       return order;
     }
     const id = result.rows[0].id;

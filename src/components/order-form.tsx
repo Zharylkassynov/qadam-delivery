@@ -2,18 +2,22 @@
 
 import { useRef, useState, type FormEvent, type InputHTMLAttributes } from 'react';
 import { Button, Feedback, PriceNote, RouteCard } from './delivery-ui';
+import type { MapPoint } from '../lib/types';
+import { DeliveryMap } from './delivery-map';
 
 export const parcelTypes = ['Посылка', 'Документы', 'Товары'] as const;
 export type OrderDraft = {
   pickupAddress: string; destinationAddress: string; recipientName: string; recipientPhone: string;
   parcelType: typeof parcelTypes[number]; parcelDescription: string; notes: string;
+  pickupPoint: MapPoint | null; destinationPoint: MapPoint | null;
 };
-export const emptyDraft: OrderDraft = { pickupAddress: '', destinationAddress: '', recipientName: '', recipientPhone: '', parcelType: 'Посылка', parcelDescription: '', notes: '' };
+export const emptyDraft: OrderDraft = { pickupAddress: '', destinationAddress: '', recipientName: '', recipientPhone: '', parcelType: 'Посылка', parcelDescription: '', notes: '', pickupPoint: null, destinationPoint: null };
 
 // Keep the existing API/database contract: parcel information is persisted in notes.
 export function orderPayload(draft: OrderDraft) {
   return {
     pickupAddress: draft.pickupAddress.trim(), destinationAddress: draft.destinationAddress.trim(),
+    pickupPoint: draft.pickupPoint, destinationPoint: draft.destinationPoint,
     recipientName: draft.recipientName.trim(), recipientPhone: draft.recipientPhone.trim(),
     notes: [`Тип отправления: ${draft.parcelType}`, draft.parcelDescription.trim() && `О посылке: ${draft.parcelDescription.trim()}`, draft.notes.trim() && `Комментарий: ${draft.notes.trim()}`].filter(Boolean).join('\n'),
   };
@@ -28,11 +32,11 @@ function Field({ label, hint, error, ...props }: InputHTMLAttributes<HTMLInputEl
   return <div className="field"><label htmlFor={id}>{label}</label><input id={id} aria-invalid={!!error} aria-describedby={error || hint ? `${id}-hint` : undefined} {...props}/>{(error || hint) && <small className={error ? 'field-error' : 'field-hint'} id={`${id}-hint`}>{error || hint}</small>}</div>;
 }
 
-export function OrderForm({ draft, onChange, onReview, busy }: { draft: OrderDraft; onChange: (draft: OrderDraft) => void; onReview: () => void; busy: boolean }) {
+export function OrderForm({ draft, onChange, onReview, onPoint, busy }: { draft: OrderDraft; onChange: (draft: OrderDraft) => void; onReview: () => void; onPoint: (kind: 'pickup' | 'destination') => void; busy: boolean }) {
   const [errors, setErrors] = useState<Partial<Record<keyof OrderDraft, string>>>({});
   const formRef = useRef<HTMLFormElement>(null);
   function change(key: keyof OrderDraft, value: string) {
-    onChange({ ...draft, [key]: value });
+    onChange({ ...draft, [key]: value, ...(key === 'pickupAddress' ? { pickupPoint: null } : key === 'destinationAddress' ? { destinationPoint: null } : {}) });
     setErrors((previous) => ({ ...previous, [key]: undefined }));
   }
   function review(event: FormEvent<HTMLFormElement>) {
@@ -53,7 +57,11 @@ export function OrderForm({ draft, onChange, onReview, busy }: { draft: OrderDra
       <div className="screen-heading"><h1>Откуда и куда</h1><p>Шаг 1 из 2 · заполните данные доставки</p></div>
       <p className="form-required-note">Адреса, имя и телефон обязательны.</p>
       <Field label="Адрес отправления" name="pickupAddress" autoComplete="off" placeholder="Город, улица, дом" required minLength={5} maxLength={300} value={draft.pickupAddress} error={errors.pickupAddress} onChange={(e) => change('pickupAddress', e.target.value)}/>
+      <Button variant="secondary" onClick={() => onPoint('pickup')} disabled={draft.pickupAddress.trim().length < 5}>{draft.pickupPoint ? 'Изменить точку отправления' : 'Указать точку отправления'}</Button>
+      {draft.pickupPoint && <small className="field-hint">А · точка отправления выбрана</small>}
       <Field label="Адрес доставки" name="destinationAddress" autoComplete="off" placeholder="Город, улица, дом, квартира" required minLength={5} maxLength={300} value={draft.destinationAddress} error={errors.destinationAddress} onChange={(e) => change('destinationAddress', e.target.value)} hint="Укажите подъезд или ориентир в комментарии."/>
+      <Button variant="secondary" onClick={() => onPoint('destination')} disabled={draft.destinationAddress.trim().length < 5}>{draft.destinationPoint ? 'Изменить точку доставки' : 'Указать точку доставки'}</Button>
+      <small className="field-hint">{draft.destinationPoint ? 'Б · точка доставки выбрана' : 'Отметьте обе точки, чтобы клиент и курьер видели адреса на карте. Без точек сохранятся только текстовые адреса.'}</small>
       <h2>Получатель</h2>
       <Field label="Имя получателя" name="recipientName" autoComplete="name" placeholder="Кому передать посылку" required minLength={2} maxLength={100} value={draft.recipientName} error={errors.recipientName} onChange={(e) => change('recipientName', e.target.value)}/>
       <Field label="Телефон получателя" name="recipientPhone" type="tel" autoComplete="tel" inputMode="tel" placeholder="+7 700 123 45 67" required minLength={7} maxLength={30} value={draft.recipientPhone} error={errors.recipientPhone} onChange={(e) => change('recipientPhone', e.target.value)} hint="Курьер позвонит, чтобы передать посылку."/>
@@ -70,6 +78,10 @@ export function OrderForm({ draft, onChange, onReview, busy }: { draft: OrderDra
 export function OrderReview({ draft, onEdit, busy }: { draft: OrderDraft; onEdit: () => void; busy: boolean }) {
   return <div className="form-fields"><div className="screen-heading"><h1>Всё верно?</h1><p>Шаг 2 из 2 · проверьте перед отправкой</p></div>
     <RouteCard pickup={draft.pickupAddress} destination={draft.destinationAddress}/>
+    {(draft.pickupPoint || draft.destinationPoint) && <DeliveryMap markers={[
+      ...(draft.pickupPoint ? [{ ...draft.pickupPoint, kind: 'pickup' as const, label: `А · ${draft.pickupAddress}` }] : []),
+      ...(draft.destinationPoint ? [{ ...draft.destinationPoint, kind: 'destination' as const, label: `Б · ${draft.destinationAddress}` }] : []),
+    ]}/>}
     <section className="review-section"><h2>Получатель</h2><p>{draft.recipientName}<br/>{draft.recipientPhone}</p></section>
     <section className="review-section"><h2>{draft.parcelType}</h2>{draft.parcelDescription && <p>{draft.parcelDescription}</p>}</section>
     {draft.notes && <section className="review-section"><h2>Комментарий курьеру</h2><p className="pre-wrap">{draft.notes}</p></section>}

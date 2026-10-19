@@ -2,6 +2,7 @@ import { expect, test, type Page } from '@playwright/test';
 import { randomUUID } from 'node:crypto';
 import { signedTelegramData } from '../telegram-fixture';
 import pg from 'pg';
+import { mockMapTiles } from './map-fixture';
 
 // Local test bot key and a mocked Telegram SDK; never forge production identities.
 test.skip(Boolean(process.env.E2E_ORIGIN), 'Synthetic Telegram login runs only against the separate local test database');
@@ -9,7 +10,7 @@ const origin = 'http://127.0.0.1:3100';
 async function miniApp(page: Page, proof: string) {
   await page.route('https://telegram.org/js/telegram-web-app.js?64', (route) => route.fulfill({
     contentType: 'application/javascript',
-    body: `window.Telegram={WebApp:{initData:${JSON.stringify(proof)},ready(){},expand(){document.documentElement.style.setProperty('--tg-viewport-stable-height','700px')}}};`,
+    body: `window.Telegram={WebApp:{initData:${JSON.stringify(proof)},ready(){},expand(){document.documentElement.style.setProperty('--tg-viewport-stable-height','700px')},isVersionAtLeast(){return true},LocationManager:{isInited:true,isLocationAvailable:true,isAccessGranted:true,isAccessRequested:true,init(cb){cb()},getLocation(cb){cb({latitude:43.24,longitude:76.9,horizontal_accuracy:22})},openSettings(){}}}};`,
   }));
   // Strip every cookie to reproduce Telegram Web with third-party cookies blocked.
   await page.route('**/api/**', async (route) => {
@@ -101,6 +102,7 @@ test('Telegram applicant is rejected, reapplies, gets admin approval and complet
   try { await db.query('INSERT INTO qadam.administrators(user_id) VALUES($1)', [adminUser.id]); } finally { await db.end(); }
   const adminContext = await browser.newContext({ viewport: { width: 390, height: 844 } });
   const applicantContext = await browser.newContext({ viewport: { width: 390, height: 844 } });
+  await mockMapTiles(applicantContext);
   const admin = await adminContext.newPage(), applicant = await applicantContext.newPage();
   try {
     await miniApp(admin, adminProof); await miniApp(applicant, proof);
@@ -149,10 +151,15 @@ test('Telegram applicant is rejected, reapplies, gets admin approval and complet
     expect(orderResponse.status()).toBe(201); const { order } = await orderResponse.json();
     const card = reopened.getByRole('button', { name: /^Открыть заказ/ }).filter({ hasText: pickup });
     await card.click();
-    for (const action of ['Принять заказ', 'Посылка у меня', 'Начать доставку', 'Завершить доставку']) await reopened.getByRole('button', { name: action, exact: true }).click();
+    await reopened.getByRole('button', { name: 'Принять заказ', exact: true }).click();
+    await reopened.getByRole('button', { name: 'Передавать геопозицию', exact: true }).click();
+    await expect(reopened.getByText(/^Позиция сохранена:/)).toBeVisible();
+    for (const action of ['Посылка у меня', 'Начать доставку', 'Завершить доставку']) await reopened.getByRole('button', { name: action, exact: true }).click();
     await expect(reopened.getByRole('heading', { name: 'Доставка завершена', exact: true })).toBeVisible();
     const { orders } = await (await request.get('/api/orders')).json();
     expect(orders.find((item: { id: string }) => item.id === order.id).status).toBe('DELIVERED');
+    // Native LocationManager is simulated here; no browser GPS or real Telegram identity.
+    expect(orders.find((item: { id: string }) => item.id === order.id).courierLocation.latitude).toBe(43.24);
     await admin.getByRole('button', { name: 'Назад в профиль' }).click();
     await expect(admin.getByRole('heading', { name: /Доставка\s*по Алматы/ })).toHaveCount(0);
     // Administrator remains a customer, with their own ordinary order access.
