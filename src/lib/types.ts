@@ -1,5 +1,5 @@
 export type Role = 'CUSTOMER' | 'COURIER';
-export type User = { id: string; name: string; email: string; role: Role };
+export type User = { id: string; name: string; email: string; role: Role; telegramId?: string };
 export const statuses = ['CREATED', 'SEARCHING_FOR_COURIER', 'ACCEPTED', 'PICKED_UP', 'IN_TRANSIT', 'DELIVERED', 'CANCELLED'] as const;
 export type Status = typeof statuses[number];
 export const statusLabels: Record<Status, string> = {

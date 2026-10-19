@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import localFont from 'next/font/local';
+import Script from 'next/script';
 import './globals.css';
 
 const onest = localFont({ src: '../../public/fonts/Onest-Variable.ttf', variable: '--font-onest', weight: '100 900', display: 'swap' });
@@ -10,5 +11,6 @@ export const metadata: Metadata = {
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
-  return <html lang="ru" className={onest.variable}><body>{children}</body></html>;
+  // The official SDK sets viewport CSS variables on <html> before hydration.
+  return <html lang="ru" className={onest.variable} suppressHydrationWarning><body><Script src="https://telegram.org/js/telegram-web-app.js?64" strategy="beforeInteractive"/>{children}</body></html>;
 }

@@ -22,7 +22,7 @@ test('customer and courier complete a delivery; polling, reopening and history r
     await login(courier, 'courier1@qadam.demo');
     await customer.getByRole('button', { name: 'Заказать доставку', exact: true }).click();
     await customer.getByLabel('Адрес отправления', { exact: true }).fill(pickup);
-    await customer.getByLabel('Адрес доставки', { exact: true }).fill('Кызылорда, улица Ауэзова, 20');
+    await customer.getByLabel('Адрес доставки', { exact: true }).fill('Алматы, улица Ауэзова, 20');
     await customer.getByLabel('Имя получателя', { exact: true }).fill('Получатель автотеста');
     await customer.getByLabel('Телефон получателя', { exact: true }).fill('+7 700 123 45 67');
     await customer.getByLabel('Комментарий курьеру', { exact: true }).fill('Автоматическая проверка — не реальная доставка');
@@ -52,7 +52,7 @@ test('customer and courier complete a delivery; polling, reopening and history r
     await customer.close();
     const reopened = await customerContext.newPage();
     await reopened.goto('/');
-    await expect(reopened.getByRole('heading', { name: /Доставка\s*по Кызылорде/ })).toBeVisible();
+    await expect(reopened.getByRole('heading', { name: /Доставка\s*по Алматы/ })).toBeVisible();
     await reopened.getByRole('navigation', { name: 'Разделы', exact: true }).getByRole('button', { name: 'Мои заказы', exact: true }).click();
     await reopened.getByRole('button', { name: 'Завершённые', exact: true }).click();
     await reopened.getByRole('button', { name: orderButton, exact: true }).click();
@@ -114,7 +114,7 @@ for (const width of [390, 360]) {
     await login(page, 'customer2@qadam.demo');
     await expect(page.getByRole('navigation', { name: 'Мобильная навигация' })).toBeVisible();
     await page.evaluate(() => document.fonts.ready);
-    await expect(page.getByRole('heading', { name: /Доставка\s*по Кызылорде/ })).toBeVisible();
+    await expect(page.getByRole('heading', { name: /Доставка\s*по Алматы/ })).toBeVisible();
     await page.screenshot({ path: testInfo.outputPath(`customer-home-${width}.png`), fullPage: true });
     await page.getByRole('button', { name: 'Заказать доставку', exact: true }).click();
     await expect(page.getByLabel('Адрес отправления', { exact: true })).toBeVisible();
@@ -136,7 +136,7 @@ test('review preserves the draft and a lost create response can be retried witho
   await expect(page.getByText('Укажите имя получателя — минимум 2 символа.', { exact: true })).toBeVisible();
   const pickup = `E2E retry ${randomUUID().slice(0, 8)}, улица Абая, 27`;
   await page.getByLabel('Адрес отправления', { exact: true }).fill(pickup);
-  await page.getByLabel('Адрес доставки', { exact: true }).fill('Кызылорда, улица Ауэзова, 12');
+  await page.getByLabel('Адрес доставки', { exact: true }).fill('Алматы, улица Ауэзова, 12');
   await page.getByLabel('Имя получателя', { exact: true }).fill('Получатель проверки повтора');
   await page.getByLabel('Телефон получателя', { exact: true }).fill('+7 700 000 00 00');
   await page.getByRole('button', { name: 'Документы', exact: true }).click();

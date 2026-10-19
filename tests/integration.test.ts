@@ -3,7 +3,8 @@ import assert from 'node:assert/strict';
 import { randomUUID, createHash } from 'node:crypto';
 import { database, closeDatabase, transaction } from '../src/lib/db';
 import { migrate } from '../scripts/migrate';
-import { hashPassword, login, logout, getSession } from '../src/lib/auth';
+import { hashPassword, login, loginTelegram, logout, getSession } from '../src/lib/auth';
+import { signedTelegramData, testBotToken } from './telegram-fixture';
 import { acceptOrder, createOrder, createOrderSchema, listOrders, transitionOrder, type CreateOrder } from '../src/lib/orders';
 import { AppError } from '../src/lib/errors';
 import type { User } from '../src/lib/types';
@@ -17,7 +18,7 @@ const users: User[] = [];
 let customer: User, otherCustomer: User, courier: User, otherCourier: User;
 const password = 'Integration-test-password!';
 function input(): CreateOrder {
-  return { requestKey: randomUUID(), pickupAddress: 'Кызылорда, улица Абая, 10', destinationAddress: 'Кызылорда, улица Ауэзова, 20', recipientName: 'Тестовый получатель', recipientPhone: '+7 700 123 45 67', notes: 'Автоматический тест — не реальная доставка' };
+  return { requestKey: randomUUID(), pickupAddress: 'Алматы, улица Абая, 10', destinationAddress: 'Алматы, улица Ауэзова, 20', recipientName: 'Тестовый получатель', recipientPhone: '+7 700 123 45 67', notes: 'Автоматический тест — не реальная доставка' };
 }
 const rejectsStatus = (work: Promise<unknown>, status: number) => assert.rejects(work, (error: unknown) => error instanceof AppError && error.status === status);
 
@@ -69,6 +70,37 @@ test('demo login can be disabled explicitly', async () => {
   process.env.DEMO_AUTH_ENABLED = 'false';
   try { await rejectsStatus(login(customer.email, password), 403); }
   finally { process.env.DEMO_AUTH_ENABLED = 'true'; }
+});
+
+test('Telegram creates one customer concurrently, preserves deliveries on reopen and enforces server roles', async () => {
+  const id = 1000000000000 + Math.floor(Math.random() * 1000000000);
+  const proof = signedTelegramData({ id, first_name: 'Тест Telegram', role: 'COURIER' });
+  process.env.TELEGRAM_AUTH_ENABLED = 'true'; process.env.TELEGRAM_BOT_TOKEN = testBotToken;
+  const [a, b] = await Promise.all([loginTelegram(proof), loginTelegram(proof)]);
+  users.push(a.user);
+  assert.equal(a.user.id, b.user.id);
+  assert.equal(a.user.role, 'CUSTOMER');
+  assert.equal(a.user.telegramId, String(id));
+  assert.deepEqual(await getSession(a.token), a.user);
+  assert.equal((await database().query('SELECT count(*)::int AS count FROM qadam.telegram_identities WHERE telegram_user_id=$1', [String(id)])).rows[0].count, 1);
+  await rejectsStatus(acceptOrder(a.user, (await createOrder(customer, input())).id), 403);
+  const order = await createOrder(a.user, input());
+  await acceptOrder(courier, order.id);
+  for (const status of ['PICKED_UP', 'IN_TRANSIT', 'DELIVERED'] as const) await transitionOrder(courier, order.id, status);
+  await logout(a.token);
+  assert.equal(await getSession(a.token), null);
+  await closeDatabase();
+  const reopened = await loginTelegram(proof);
+  assert.equal(reopened.user.id, a.user.id);
+  assert.equal((await listOrders(reopened.user)).find((item) => item.id === order.id)?.status, 'DELIVERED');
+  await database().query('UPDATE qadam.users SET role=\'COURIER\' WHERE id=$1', [a.user.id]);
+  assert.equal((await loginTelegram(proof)).user.role, 'COURIER');
+  await database().query('UPDATE qadam.users SET active=false WHERE id=$1', [a.user.id]);
+  await rejectsStatus(loginTelegram(proof), 403);
+  assert.equal(await getSession(reopened.token), null);
+  process.env.TELEGRAM_AUTH_ENABLED = 'false';
+  await rejectsStatus(loginTelegram(proof), 403);
+  delete process.env.TELEGRAM_BOT_TOKEN;
 });
 
 test('login attempt limiter rejects further attempts', async () => {

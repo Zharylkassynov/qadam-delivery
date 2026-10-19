@@ -1,5 +1,6 @@
 import type { ButtonHTMLAttributes, ReactNode } from 'react';
 import { statusLabels, type Order, type Status } from '../lib/types';
+import { serviceTimezone } from '../lib/service-area';
 
 type IconName = 'box' | 'clock' | 'person' | 'locate' | 'phone' | 'check' | 'pin' | 'back' | 'arrow' | 'logout' | 'refresh';
 const assetSizes = { box: [19.8, 20.8], clock: [19.8, 19.8], person: [17.8, 18.8], locate: [18.1667, 18.1667], phone: [19.8, 19.8], check: [18.4, 14.4] } as const;
@@ -45,7 +46,7 @@ export function RouteCard({ pickup, destination }: { pickup: string; destination
 
 export const orderNumber = (order: Order) => `QD-${order.number.padStart(4, '0')}`;
 export const finished = (order: Order) => order.status === 'DELIVERED' || order.status === 'CANCELLED';
-export const formatTime = (at: string) => new Intl.DateTimeFormat('ru-KZ', { day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Qyzylorda' }).format(new Date(at));
+export const formatTime = (at: string) => new Intl.DateTimeFormat('ru-KZ', { day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit', timeZone: serviceTimezone }).format(new Date(at));
 export const initials = (name: string) => name.trim().split(/\s+/).slice(0, 2).map((word) => word[0]).join('').toUpperCase();
 
 export function OrderCard({ order, onOpen, onAccept, busy }: { order: Order; onOpen: () => void; onAccept?: () => void; busy?: boolean }) {

@@ -2,6 +2,7 @@
 !.env.example
 !.env.supabase.example
 !.env.vercel.example
+!.env.telegram.example
 .vercel/
 .agents/
 .codex/

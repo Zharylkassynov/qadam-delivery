@@ -25,13 +25,17 @@ export function validateDeployment(env: Environment = process.env) {
     throw new Error('Vercel must use the standard .next output directory');
   }
   if (env.VERCEL_ENV === 'preview') {
-    if (env.DEMO_AUTH_ENABLED === 'true' || env.DATABASE_URL) {
-      throw new Error('Preview must have demo login disabled and no DATABASE_URL; scope database credentials to Production');
+    if (env.DEMO_AUTH_ENABLED === 'true' || env.DATABASE_URL || env.TELEGRAM_AUTH_ENABLED === 'true' || env.TELEGRAM_BOT_TOKEN) {
+      throw new Error('Preview must have login disabled and no database or bot credentials; scope credentials to Production');
     }
     return;
   }
   if (env.VERCEL_ENV !== 'production') throw new Error('Expected a Production or Preview Vercel build');
   if (!['true', 'false'].includes(env.DEMO_AUTH_ENABLED ?? '')) throw new Error('Set DEMO_AUTH_ENABLED explicitly');
+  if (env.TELEGRAM_AUTH_ENABLED && !['true', 'false'].includes(env.TELEGRAM_AUTH_ENABLED)) throw new Error('TELEGRAM_AUTH_ENABLED must be true or false');
+  if (env.TELEGRAM_AUTH_ENABLED === 'true' && !/^\d+:[A-Za-z0-9_-]{30,}$/.test(env.TELEGRAM_BOT_TOKEN ?? '')) {
+    throw new Error('TELEGRAM_BOT_TOKEN is required when Telegram login is enabled');
+  }
   const ref = env.SUPABASE_PROJECT_REF;
   if (!ref || !/^[a-z]{20}$/.test(ref)) throw new Error('SUPABASE_PROJECT_REF is required');
   let database: URL;

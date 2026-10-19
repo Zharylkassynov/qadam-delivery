@@ -6,6 +6,7 @@ process.env.E2E_ORIGIN = 'http://127.0.0.1:3200';
 
 export default defineConfig({
   testDir: './tests/e2e',
+  testIgnore: '**/telegram.spec.ts',
   fullyParallel: false,
   workers: 1,
   timeout: 120000,

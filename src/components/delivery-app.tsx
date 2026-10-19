@@ -5,15 +5,20 @@ import type { Order, User } from '../lib/types';
 import { Brand, Button, Feedback, Icon } from './delivery-ui';
 import { DeliveryWorkspace } from './delivery-workspace';
 import type { orderPayload } from './order-form';
+import { telegramApp } from '../lib/telegram-client';
+import { serviceCity } from '../lib/service-area';
 
 const message = (error: unknown) => error instanceof Error ? error.message : 'Произошла ошибка. Попробуйте ещё раз.';
 
 class ApiError extends Error { constructor(message: string, public status: number) { super(message); } }
+// Kept only in memory, never in URLs, localStorage or sessionStorage.
+let telegramSessionToken: string | undefined;
 async function api<T>(path: string, body?: unknown, signal?: AbortSignal): Promise<T> {
   let response: Response;
   try {
     response = await fetch(path, { method: body === undefined ? 'GET' : 'POST',
-      headers: body === undefined ? {} : { 'Content-Type': 'application/json' },
+      headers: { ...(body === undefined ? {} : { 'Content-Type': 'application/json' }),
+        ...(telegramSessionToken ? { Authorization: `Bearer ${telegramSessionToken}` } : {}) },
       body: body === undefined ? undefined : JSON.stringify(body), cache: 'no-store', signal });
   } catch (error) {
     if (error instanceof Error && error.name === 'AbortError') throw error;
@@ -29,6 +34,7 @@ export function DeliveryApp() {
   const [booting, setBooting] = useState(true);
   const [bootError, setBootError] = useState('');
   const [demo, setDemo] = useState(false);
+  const [telegram, setTelegram] = useState(false);
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
   const [syncError, setSyncError] = useState('');
@@ -41,12 +47,28 @@ export function DeliveryApp() {
   const revision = useRef(0);
   const busyRef = useRef(false);
   const pendingCreate = useRef<{ payload: string; key: string } | null>(null);
+  const bootTask = useRef<Promise<void> | null>(null);
 
   const boot = useCallback(async () => {
-    setBootError(''); setBooting(true);
-    try { const data = await api<{ user: User | null; demo: boolean }>('/api/session'); setUser(data.user); setDemo(data.demo); }
-    catch (error) { setBootError(message(error)); }
-    finally { setBooting(false); }
+    if (bootTask.current) return bootTask.current;
+    bootTask.current = (async () => {
+      setBootError(''); setBooting(true);
+      try {
+        const app = await telegramApp();
+        setTelegram(Boolean(app));
+        if (app) {
+          const data = await api<{ user: User; sessionToken: string }>('/api/auth/telegram', { initData: app.initData });
+          telegramSessionToken = data.sessionToken;
+          setUser(data.user); setOrders([]); setLoading(true); setSelected(null); setError(''); setSyncError(''); setSyncedAt(null);
+        } else {
+          telegramSessionToken = undefined;
+          const data = await api<{ user: User | null; demo: boolean }>('/api/session');
+          setUser(data.user); setDemo(data.demo);
+        }
+      } catch (error) { setBootError(message(error)); }
+      finally { setBooting(false); bootTask.current = null; }
+    })();
+    return bootTask.current;
   }, []);
   useEffect(() => { void boot(); }, [boot]);
 
@@ -80,13 +102,14 @@ export function DeliveryApp() {
   }, [user, refresh]);
 
   async function signIn(email: string, password: string) {
+    telegramSessionToken = undefined;
     const data = await api<{ user: User }>('/api/auth/login', { email, password });
     setOrders([]); setLoading(true); setSelected(null); setError(''); setSyncedAt(null); setSyncError(''); setNotice(''); setUser(data.user);
   }
 
   async function signOut() {
     setBusy(true); busyRef.current = true; revision.current++;
-    try { await api('/api/auth/logout', {}); setUser(null); setOrders([]); setNotice(''); setError(''); }
+    try { await api('/api/auth/logout', {}); telegramSessionToken = undefined; pendingCreate.current = null; setUser(null); setOrders([]); setNotice(''); setError(''); }
     catch (error) { setError(message(error)); }
     finally { setBusy(false); busyRef.current = false; }
   }
@@ -118,6 +141,7 @@ export function DeliveryApp() {
 
   if (booting) return <main className="boot-screen"><Brand/><p className="muted" role="status">Открываем Qadam…</p></main>;
   if (bootError) return <main className="boot-screen"><Brand/><p role="alert">{bootError}</p><button className="button primary" onClick={() => void boot()}>Повторить подключение</button></main>;
+  if (!user && telegram) return <main className="boot-screen"><Brand/><p className="muted">Сессия завершена. Ваши заказы сохранены.</p><Button onClick={() => void boot()}>Войти через Telegram</Button></main>;
   if (!user) return <Login demo={demo} onLogin={signIn}/>;
 
   return <DeliveryWorkspace user={user} orders={orders} loading={loading} busy={busy} error={error} notice={notice} syncError={syncError} syncedAt={syncedAt} selected={selected}
@@ -138,7 +162,7 @@ function Login({ demo, onLogin }: { demo: boolean; onLogin: (email: string, pass
     finally { setBusy(false); }
   }
   return <main className="login-page">
-    <section className="login-story"><Brand/><div className="login-story-content"><h1>От отправителя<br/>до получателя.</h1><p>Доставка по Кызылорде.<br/>Понятный путь на каждом шаге.</p><ol className="login-steps"><li><span>1</span>Создайте заказ</li><li><span>2</span>Курьер заберёт посылку</li><li><span>3</span>Получатель получит доставку</li></ol></div><small>Qadam Delivery · Учебный MVP, 2026</small></section>
+    <section className="login-story"><Brand/><div className="login-story-content"><h1>От отправителя<br/>до получателя.</h1><p>Доставка по {serviceCity}.<br/>Понятный путь на каждом шаге.</p><ol className="login-steps"><li><span>1</span>Создайте заказ</li><li><span>2</span>Курьер заберёт посылку</li><li><span>3</span>Получатель получит доставку</li></ol></div><small>Qadam Delivery · Учебный MVP, 2026</small></section>
     <section className="login-form-section"><div className="login-card"><div className="login-mobile-brand"><Brand/></div><span className="demo-tag">Демонстрационный вход</span><h1>С возвращением</h1><p className="muted">Войдите в свой тестовый аккаунт.</p>
       {!demo && <Feedback tone="error" title="Демонстрационный вход отключён на сервере."/>}
       <form onSubmit={(event) => void submit(event)}><fieldset disabled={busy || !demo}>

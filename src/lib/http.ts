@@ -5,7 +5,7 @@ import { getSession, sessionCookie } from './auth';
 import { appOrigin } from './deployment-config';
 
 export const json = (body: unknown, status = 200) => NextResponse.json(body, {
-  status, headers: { 'Cache-Control': 'private, no-store', Vary: 'Cookie' },
+  status, headers: { 'Cache-Control': 'private, no-store', Vary: 'Cookie, Authorization' },
 });
 
 export async function handle(work: () => Promise<Response>) {
@@ -26,8 +26,16 @@ export function cookieToken(request: Request) {
     .find((part) => part.startsWith(`${sessionCookie}=`))?.slice(sessionCookie.length + 1);
 }
 
+export function requestToken(request: Request) {
+  const authorization = request.headers.get('authorization');
+  // Telegram Web can block third-party cookies. An explicit invalid header must
+  // never fall back to a different browser account's cookie.
+  if (authorization !== null) return /^Bearer ([a-f0-9]{64})$/i.exec(authorization)?.[1].toLowerCase();
+  return cookieToken(request);
+}
+
 export async function requireUser(request: Request) {
-  const user = await getSession(cookieToken(request));
+  const user = await getSession(requestToken(request));
   if (!user) throw new AppError(401, 'Войдите в аккаунт.');
   return user;
 }

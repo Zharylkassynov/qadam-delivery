@@ -53,6 +53,7 @@ fieldset { margin: 0; border: 0; padding: 0; min-width: 0; }
 .boot-screen { min-height: 100dvh; display: flex; flex-direction: column; gap: 24px; align-items: center; justify-content: center; padding: 24px; text-align: center; }
 
 .app-shell { display: flex; height: 100dvh; min-height: 0; }
+html[data-telegram="true"] .app-shell { height: var(--tg-viewport-stable-height, 100dvh); }
 .sidebar { width: 224px; flex: 0 0 224px; padding: 32px 24px 24px; background: var(--surface); border-right: 1px solid var(--line); display: flex; flex-direction: column; }
 .sidebar-role { color: var(--muted); font-size: 12px; line-height: 18px; margin: 32px 0 16px; }
 .sidebar nav { display: grid; gap: 8px; }

@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import { actionLabels, nextStatus, type Order, type User } from '../lib/types';
 import { AddressRow, Badge, Brand, Button, EmptyState, Feedback, Icon, MapUnavailable, OrderCard, PriceNote, RouteCard, Skeletons, Timeline, finished, formatTime, initials, orderNumber } from './delivery-ui';
 import { emptyDraft, OrderForm, OrderReview, ParcelChoice, orderPayload, type OrderDraft } from './order-form';
+import { serviceCity, serviceTimezone } from '../lib/service-area';
 
 type View = 'home' | 'orders' | 'profile' | 'create' | 'review' | 'detail';
 type Filter = 'all' | 'active' | 'history';
@@ -55,7 +56,7 @@ export function DeliveryWorkspace(props: Props) {
   const completedDetail = view === 'detail' && detail && finished(detail);
   const hasFooter = view === 'create' || view === 'review' || !!actionable || !!completedDetail;
   const showNav = view === 'home' || view === 'orders' || view === 'profile';
-  const title = view === 'home' ? customer ? 'Кызылорда' : 'Заказы рядом' : view === 'orders' ? 'Мои заказы' : view === 'profile' ? 'Профиль' : view === 'create' ? 'Новая доставка' : view === 'review' ? 'Проверка заказа' : detail ? `Заказ ${orderNumber(detail)}` : 'Заказ недоступен';
+  const title = view === 'home' ? customer ? serviceCity : 'Заказы рядом' : view === 'orders' ? 'Мои заказы' : view === 'profile' ? 'Профиль' : view === 'create' ? 'Новая доставка' : view === 'review' ? 'Проверка заказа' : detail ? `Заказ ${orderNumber(detail)}` : 'Заказ недоступен';
   const navItems: { view: View; label: string; icon: 'box' | 'clock' | 'person' }[] = [
     { view: 'home', label: customer ? 'Доставка' : 'Доступные', icon: 'box' },
     { view: 'orders', label: customer ? 'Заказы' : 'Мои заказы', icon: 'clock' },
@@ -65,7 +66,7 @@ export function DeliveryWorkspace(props: Props) {
   const refresh = <Button variant="secondary" onClick={props.onRefresh} disabled={busy}>Обновить список</Button>;
 
   return <div className="app-shell">
-    <aside className="sidebar"><Brand/><div className="sidebar-role">{customer ? 'Клиент' : 'Курьер'} · Кызылорда</div>
+    <aside className="sidebar"><Brand/><div className="sidebar-role">{customer ? 'Клиент' : 'Курьер'} · {serviceCity}</div>
       <nav aria-label="Разделы">{navItems.map((item) => <button type="button" key={item.view} aria-label={item.view === 'orders' ? 'Мои заказы' : item.label} className={`sidebar-link ${view === item.view ? 'current' : ''}`} aria-current={view === item.view ? 'page' : undefined} onClick={() => navigate(item.view)} disabled={busy}><Icon type={item.icon}/>{item.view === 'orders' ? 'Мои заказы' : item.label}{item.view === 'orders' && activeOrders.length > 0 && <span className="nav-count" aria-hidden="true">{activeOrders.length}</span>}</button>)}</nav>
       <div className="sidebar-account"><span className="avatar">{initials(user.name)}</span><div><strong>{user.name}</strong><small>Демонстрационный аккаунт</small></div></div>
       <p className="sidebar-caption">Учебный MVP · 2026<br/>Заказы сохраняются в базе</p>
@@ -79,14 +80,14 @@ export function DeliveryWorkspace(props: Props) {
           {notice && <Feedback tone="success" title={notice} role="status"/>}
           {syncError && <Feedback tone="error" title="Данные не обновлены" role="alert" action={<button type="button" className="text-button" onClick={props.onRefresh}>Повторить</button>}>{syncError}{syncedAt && <p>Последнее обновление: {formatTime(syncedAt)}. Статусы могут быть устаревшими.</p>}</Feedback>}
 
-          {view === 'home' && customer && <div className="home-layout"><section className="home-create"><div className="screen-heading"><h1 tabIndex={-1}>Доставка<br/>по Кызылорде</h1><p>Для посылок, документов<br/>и заказов из магазина</p></div>
+          {view === 'home' && customer && <div className="home-layout"><section className="home-create"><div className="screen-heading"><h1 tabIndex={-1}>Доставка<br/>по {serviceCity}</h1><p>Для посылок, документов<br/>и заказов из магазина</p></div>
             <div className="route-card home-route"><button type="button" onClick={() => navigate('create')} disabled={busy}><AddressRow kind="pickup" address={draft.pickupAddress || 'Откуда забрать?'}/></button><div className="divider"/><button type="button" onClick={() => navigate('create')} disabled={busy}><AddressRow kind="destination" address={draft.destinationAddress || 'Куда доставить?'}/></button></div>
             <ParcelChoice compact value={draft.parcelType} onChange={(type) => setDraft((value) => ({ ...value, parcelType: type }))} disabled={busy}/>
             <Button className="wide" onClick={() => navigate('create')} disabled={busy}>Заказать доставку</Button>
           </section><section className="home-orders" aria-label="Ваши доставки"><h2>Активные доставки</h2>{loading ? <Skeletons/> : activeOrders.length ? <div className="order-list">{activeOrders.slice(0, 3).map(card)}</div> : <EmptyState title="Пока нет доставок">Создайте заказ — он появится здесь, и курьер сможет его принять.</EmptyState>}
             <h2>Последние заказы</h2>{!loading && completed.length > 0 && card(completed[0])}<Button variant="ghost" className="wide" onClick={history} disabled={busy}>Открыть историю</Button></section></div>}
 
-          {view === 'home' && !customer && <><div className="screen-heading"><h1 tabIndex={-1}>Можно принять</h1><p>Новые заказы в Кызылорде. Условия доставки уточняются до начала заказа.</p></div><p className="city-label"><Icon type="locate"/>Кызылорда · выбранный город</p>
+          {view === 'home' && !customer && <><div className="screen-heading"><h1 tabIndex={-1}>Можно принять</h1><p>Доступные заказы. Условия доставки уточняются до начала заказа.</p></div><p className="city-label"><Icon type="locate"/>{serviceCity} · город демонстрации</p>
             {activeOrders.length > 0 && <Button variant="secondary" onClick={() => { setFilter('active'); navigate('orders'); }} disabled={busy}>Мои активные доставки · {activeOrders.length}</Button>}
             {loading ? <Skeletons/> : available.length ? <div className="order-list courier-list">{available.map((order) => <OrderCard key={order.id} order={order} onOpen={() => open(order)} onAccept={() => void accept(order)} busy={busy}/>)}</div> : <EmptyState title="Пока нет заказов" action={refresh}>Новые доставки появятся в этом списке. Можно обновить его вручную.</EmptyState>}
             <SyncTime value={syncedAt} offline={!!syncError}/></>}
@@ -97,7 +98,7 @@ export function DeliveryWorkspace(props: Props) {
           {view === 'create' && customer && <OrderForm draft={draft} onChange={setDraft} onReview={() => navigate('review')} busy={busy}/>}
           {view === 'review' && customer && <OrderReview draft={draft} onEdit={() => navigate('create')} busy={busy}/>}
           {view === 'detail' && (detail ? <OrderDetail order={detail} user={user} onCancel={async () => { if (window.confirm('Отменить этот заказ?')) await props.onMutate(`/api/orders/${detail.id}/status`, { status: 'CANCELLED' }, 'Заказ отменён и сохранён в истории.'); }} busy={busy}/> : <EmptyState title="Заказ больше недоступен" action={<Button variant="secondary" onClick={() => navigate('home')}>К списку заказов</Button>}>Возможно, его уже принял другой курьер. Обновите список и выберите другую доставку.</EmptyState>)}
-          {view === 'profile' && <><h1 className="sr-only" tabIndex={-1}>Профиль</h1><div className="profile-card"><span className="avatar large">{initials(user.name)}</span><h2>{user.name}</h2><p className="muted">{customer ? 'Клиент' : 'Курьер'} · демонстрационный аккаунт</p><p>{user.email}</p></div><div className="profile-stats"><div><strong>{activeOrders.length}</strong><span>Активные</span></div><div><strong>{completed.length}</strong><span>Доставлены</span></div></div><Feedback title="Учебная демонстрация">Используйте тестовые контакты и посылки. Заказы и статусы сохраняются в базе.</Feedback><Button variant="secondary" onClick={() => void props.onSignOut()} disabled={busy}>Выйти из аккаунта</Button></>}
+          {view === 'profile' && <><h1 className="sr-only" tabIndex={-1}>Профиль</h1><div className="profile-card"><span className="avatar large">{initials(user.name)}</span><h2>{user.name}</h2><p className="muted">{customer ? 'Клиент' : 'Курьер'} · {user.telegramId ? 'Telegram' : 'демонстрационный аккаунт'}</p><p>{user.telegramId ? `Telegram ID: ${user.telegramId}` : user.email}</p></div><div className="profile-stats"><div><strong>{activeOrders.length}</strong><span>Активные</span></div><div><strong>{completed.length}</strong><span>Доставлены</span></div></div><Feedback title="Учебная демонстрация">Используйте тестовые контакты и посылки. Заказы и статусы сохраняются в базе.</Feedback><Button variant="secondary" onClick={() => void props.onSignOut()} disabled={busy}>Выйти из аккаунта</Button></>}
         </div>
       </main>
       {hasFooter && <footer className="sticky-action">{view === 'create' ? <Button form="delivery-form" type="submit" className="wide" disabled={busy}>Проверить заказ</Button> : view === 'review' ? <Button className="wide" onClick={() => void confirmOrder()} disabled={busy}>{busy ? 'Сохраняем…' : 'Подтвердить заказ'}</Button> : completedDetail ? <Button className="wide" onClick={history} disabled={busy}>В историю заказов</Button> : actionable && detail ? <Button className="wide" disabled={busy} onClick={() => void (detail.status === 'SEARCHING_FOR_COURIER' ? accept(detail) : advance(detail))}>{busy ? 'Сохраняем…' : detail.status === 'SEARCHING_FOR_COURIER' ? 'Принять заказ' : actionLabels[detail.status]}</Button> : null}</footer>}
@@ -107,7 +108,7 @@ export function DeliveryWorkspace(props: Props) {
 }
 
 function SyncTime({ value, offline }: { value: string | null; offline: boolean }) {
-  return <p className={`sync-time ${offline ? 'offline' : ''}`}>{offline ? 'Нет обновлений · показаны последние полученные данные' : value ? `Обновлено в ${new Intl.DateTimeFormat('ru-KZ', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Qyzylorda' }).format(new Date(value))}` : 'Подключаемся…'}</p>;
+  return <p className={`sync-time ${offline ? 'offline' : ''}`}>{offline ? 'Нет обновлений · показаны последние полученные данные' : value ? `Обновлено в ${new Intl.DateTimeFormat('ru-KZ', { hour: '2-digit', minute: '2-digit', timeZone: serviceTimezone }).format(new Date(value))}` : 'Подключаемся…'}</p>;
 }
 
 function OrderDetail({ order, user, busy, onCancel }: { order: Order; user: User; busy: boolean; onCancel: () => Promise<void> }) {

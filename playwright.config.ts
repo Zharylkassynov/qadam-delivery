@@ -1,4 +1,5 @@
 import { defineConfig, devices } from '@playwright/test';
+import { testBotToken } from './tests/telegram-fixture';
 
 process.loadEnvFile('.env');
 const testUrl = process.env.TEST_DATABASE_URL;
@@ -18,6 +19,6 @@ export default defineConfig({
     url: 'http://127.0.0.1:3100/api/session',
     reuseExistingServer: false,
     timeout: 120000,
-    env: { DATABASE_URL: testUrl, DEMO_AUTH_ENABLED: 'true', APP_ORIGIN: 'http://127.0.0.1:3100', QADAM_NEXT_DIST_DIR: '.next-test', NEXT_TELEMETRY_DISABLED: '1' },
+    env: { DATABASE_URL: testUrl, DEMO_AUTH_ENABLED: 'true', TELEGRAM_AUTH_ENABLED: 'true', TELEGRAM_BOT_TOKEN: testBotToken, APP_ORIGIN: 'http://127.0.0.1:3100', QADAM_NEXT_DIST_DIR: '.next-test', NEXT_TELEMETRY_DISABLED: '1' },
   },
 });
