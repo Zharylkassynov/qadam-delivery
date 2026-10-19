@@ -29,8 +29,10 @@ test('Mini App customer completes a delivery with browser courier and restores h
   try {
     await miniApp(customer, proof);
     await expect(customer.getByRole('heading', { name: /Доставка\s*по Алматы/ })).toBeVisible();
-    expect(await customer.locator('.app-shell').evaluate((el) => el.getBoundingClientRect().height)).toBe(700);
+    const nav = customer.getByRole('navigation', { name: 'Мобильная навигация' });
+    expect(await nav.evaluate((el) => el.getBoundingClientRect().bottom)).toBeLessThanOrEqual(700);
     await customer.getByRole('button', { name: 'Заказать доставку', exact: true }).click();
+    expect(await customer.getByRole('button', { name: 'Проверить заказ', exact: true }).evaluate((el) => el.getBoundingClientRect().bottom)).toBeLessThanOrEqual(700);
     await customer.getByLabel('Адрес отправления', { exact: true }).fill(pickup);
     await customer.getByLabel('Адрес доставки', { exact: true }).fill('Алматы, улица Ауэзова, 20');
     await customer.getByLabel('Имя получателя', { exact: true }).fill('Тестовый получатель');
