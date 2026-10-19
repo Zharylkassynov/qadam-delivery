@@ -5,6 +5,7 @@ import { database, closeDatabase, transaction } from '../src/lib/db';
 import { migrate } from '../scripts/migrate';
 import { hashPassword, login, loginTelegram, logout, getSession } from '../src/lib/auth';
 import { signedTelegramData, testBotToken } from './telegram-fixture';
+import { applicationSchema, decisionSchema, listApplications, ownApplication, reviewApplication, submitApplication } from '../src/lib/courier-applications';
 import { acceptOrder, createOrder, createOrderSchema, listOrders, transitionOrder, type CreateOrder } from '../src/lib/orders';
 import { AppError } from '../src/lib/errors';
 import type { User } from '../src/lib/types';
@@ -36,11 +37,87 @@ before(async () => {
 after(async () => {
   const ids = users.map((user) => user.id);
   if (ids.length) await transaction(async (client) => {
+    await client.query('DELETE FROM qadam.courier_applications WHERE user_id=ANY($1::uuid[]) OR reviewed_by=ANY($1::uuid[])', [ids]);
     await client.query('DELETE FROM qadam.orders WHERE customer_id=ANY($1::uuid[])', [ids]);
     await client.query('DELETE FROM qadam.login_attempts WHERE email=ANY($1::text[])', [users.map((user) => user.email)]);
     await client.query('DELETE FROM qadam.users WHERE id=ANY($1::uuid[])', [ids]);
   });
   await closeDatabase();
+});
+
+async function telegramAccount(name: string) {
+  process.env.TELEGRAM_AUTH_ENABLED = 'true'; process.env.TELEGRAM_BOT_TOKEN = testBotToken;
+  const proof = signedTelegramData({ id: 3000000000000 + Math.floor(Math.random() * 1000000000), first_name: name });
+  const account = await loginTelegram(proof); users.push(account.user); return { ...account, proof };
+}
+const applicationInput = () => ({ phone: '+7 700 000 00 00', transport: 'FOOT' as const, notes: 'Автотест заявки — не реальный курьер' });
+
+test('Telegram application submission is private and concurrent retries create one pending request', async () => {
+  const a = await telegramAccount('Заявитель'), b = await telegramAccount('Другой заявитель');
+  const data = applicationInput();
+  const [first, retry] = await Promise.all([submitApplication(a.user, data), submitApplication(a.user, data)]);
+  assert.equal(first.id, retry.id); assert.equal(first.status, 'PENDING');
+  assert.equal((await ownApplication(a.user))?.id, first.id);
+  assert.equal(await ownApplication(b.user), null);
+  await rejectsStatus(submitApplication(a.user, { ...data, notes: 'Другие данные' }), 409);
+  await rejectsStatus(submitApplication(customer, data), 403);
+  await rejectsStatus(listApplications({ ...a.user, isAdmin: true }), 403);
+  await rejectsStatus(reviewApplication({ ...a.user, isAdmin: true }, first.id, { decision: 'APPROVED', reason: '' }), 403);
+  assert.equal((await getSession(a.token))?.role, 'CUSTOMER');
+});
+
+test('admin approval grants courier delivery access to existing and reopened sessions, with immutable audit', async () => {
+  const admin = await telegramAccount('Администратор'), applicant = await telegramAccount('Будущий курьер');
+  await database().query('INSERT INTO qadam.administrators(user_id) VALUES($1)', [admin.user.id]);
+  const adminSession = (await getSession(admin.token))!;
+  assert.equal(adminSession.isAdmin, true); assert.equal(adminSession.role, 'CUSTOMER');
+  const pending = await submitApplication(applicant.user, applicationInput());
+  assert.ok((await listApplications(adminSession)).some((a) => a.id === pending.id));
+  const [approved, repeated] = await Promise.all([reviewApplication(adminSession, pending.id, { decision: 'APPROVED', reason: '' }), reviewApplication(adminSession, pending.id, { decision: 'APPROVED', reason: '' })]);
+  assert.equal(approved.status, 'APPROVED'); assert.equal(approved.reviewer, admin.user.name);
+  assert.deepEqual(approved.reviewedAt, repeated.reviewedAt);
+  await rejectsStatus(reviewApplication(adminSession, pending.id, { decision: 'REJECTED', reason: 'Передумал одобрять' }), 409);
+  await rejectsStatus(submitApplication(applicant.user, applicationInput()), 409);
+  const approvedUser = (await getSession(applicant.token))!; assert.equal(approvedUser.role, 'COURIER');
+  assert.equal((await database().query('SELECT role FROM qadam.users WHERE id=$1', [applicant.user.id])).rows[0].role, 'CUSTOMER');
+  const order = await createOrder(adminSession, input()); await acceptOrder(approvedUser, order.id);
+  for (const status of ['PICKED_UP', 'IN_TRANSIT', 'DELIVERED'] as const) await transitionOrder(approvedUser, order.id, status);
+  await closeDatabase();
+  assert.equal((await loginTelegram(applicant.proof)).user.role, 'COURIER');
+  assert.equal((await listOrders((await getSession(applicant.token))!)).find((o) => o.id === order.id)?.status, 'DELIVERED');
+  assert.equal((await getSession(admin.token))?.role, 'CUSTOMER');
+});
+
+test('rejection persists, allows a new application and competing decisions cannot overwrite history', async () => {
+  const admin = await telegramAccount('Проверяющий'), applicant = await telegramAccount('Повторная заявка');
+  await database().query('INSERT INTO qadam.administrators(user_id) VALUES($1)', [admin.user.id]);
+  const first = await submitApplication(applicant.user, applicationInput());
+  const rejected = await reviewApplication(admin.user, first.id, { decision: 'REJECTED', reason: 'Уточните телефон для связи' });
+  await closeDatabase();
+  assert.equal((await ownApplication(applicant.user))?.decisionReason, rejected.decisionReason);
+  assert.equal((await getSession(applicant.token))?.role, 'CUSTOMER');
+  const second = await submitApplication(applicant.user, { ...applicationInput(), phone: '+7 701 000 00 00' });
+  assert.notEqual(second.id, first.id);
+  const decisions = await Promise.allSettled([reviewApplication(admin.user, second.id, { decision: 'APPROVED', reason: '' }), reviewApplication(admin.user, second.id, { decision: 'REJECTED', reason: 'Нужны дополнительные данные' })]);
+  assert.equal(decisions.filter((d) => d.status === 'fulfilled').length, 1);
+  const conflict = decisions.find((d) => d.status === 'rejected');
+  assert.ok(conflict?.status === 'rejected' && conflict.reason instanceof AppError && conflict.reason.status === 409);
+  assert.equal((await database().query('SELECT status,decision_reason FROM qadam.courier_applications WHERE id=$1', [first.id])).rows[0].decision_reason, rejected.decisionReason);
+});
+
+test('revoked administrators and disabled applicants cannot be approved; body roles and reviewer IDs are rejected', async () => {
+  const admin = await telegramAccount('Отозванный доступ'), applicant = await telegramAccount('Отключённый заявитель');
+  await database().query('INSERT INTO qadam.administrators(user_id) VALUES($1)', [admin.user.id]);
+  const pending = await submitApplication(applicant.user, applicationInput());
+  await database().query('UPDATE qadam.users SET active=false WHERE id=$1', [applicant.user.id]);
+  await rejectsStatus(reviewApplication(admin.user, pending.id, { decision: 'APPROVED', reason: '' }), 409);
+  await database().query('DELETE FROM qadam.administrators WHERE user_id=$1', [admin.user.id]);
+  await rejectsStatus(listApplications({ ...admin.user, isAdmin: true }), 403);
+  assert.equal((await getSession(admin.token))?.isAdmin, undefined);
+  assert.equal(applicationSchema.safeParse({ ...applicationInput(), role: 'COURIER' }).success, false);
+  assert.equal(applicationSchema.safeParse({ ...applicationInput(), userId: admin.user.id }).success, false);
+  assert.equal(decisionSchema.safeParse({ decision: 'REJECTED', reason: '' }).success, false);
+  assert.equal(decisionSchema.safeParse({ decision: 'APPROVED', reviewedBy: admin.user.id }).success, false);
 });
 
 test('password login creates a persistent session with a hashed token and server role', async () => {

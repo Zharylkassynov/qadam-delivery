@@ -9,6 +9,16 @@ const scrypt = promisify(scryptCallback);
 export const sessionCookie = 'qadam_session';
 export const sessionMaxAge = 60 * 60 * 24 * 7;
 const hashToken = (token: string) => createHash('sha256').update(token).digest('hex');
+// Approved applications grant courier access without runtime UPDATE rights on users.
+const userFields = `u.id,u.email,u.name,
+  CASE WHEN u.role='COURIER' OR EXISTS(SELECT 1 FROM qadam.courier_applications ca WHERE ca.user_id=u.id AND ca.status='APPROVED')
+    THEN 'COURIER' ELSE 'CUSTOMER' END AS role,
+  t.telegram_user_id::text AS "telegramId",
+  EXISTS(SELECT 1 FROM qadam.administrators a WHERE a.user_id=u.id) AS "isAdmin"`;
+function publicUser(row: Record<string, unknown>): User {
+  return { id: row.id as string, email: row.email as string, name: row.name as string, role: row.role as User['role'],
+    ...(row.telegramId ? { telegramId: row.telegramId as string } : {}), ...(row.isAdmin ? { isAdmin: true as const } : {}) };
+}
 
 export async function hashPassword(password: string) {
   const salt = randomBytes(16).toString('hex');
@@ -33,13 +43,13 @@ export async function login(email: string, password: string) {
       window_start=CASE WHEN qadam.login_attempts.window_start < now()-interval '15 minutes' THEN now() ELSE qadam.login_attempts.window_start END
     RETURNING attempts`, [email]);
   if (attempt.rows[0].attempts > 15) throw new AppError(429, 'Слишком много попыток. Повторите через 15 минут.');
-  const result = await db.query('SELECT id,email,name,role,password_hash FROM qadam.users WHERE email=$1 AND active=true', [email]);
+  const result = await db.query(`SELECT ${userFields},u.password_hash FROM qadam.users u LEFT JOIN qadam.telegram_identities t ON t.user_id=u.id WHERE u.email=$1 AND u.active=true`, [email]);
   const row = result.rows[0];
   // Do the expensive work for unknown users too.
   const fallbackHash = 'scrypt:00000000000000000000000000000000:' + '00'.repeat(64);
   const valid = await verifyPassword(password, row?.password_hash ?? fallbackHash);
   if (!row || !valid) throw new AppError(401, 'Неверный логин или пароль.');
-  const user: User = { id: row.id, email: row.email, name: row.name, role: row.role };
+  const user = publicUser(row);
   const token = randomBytes(32).toString('hex');
   await db.query('INSERT INTO qadam.sessions(token_hash,user_id,expires_at) VALUES($1,$2,now()+$3 * interval \'1 second\')', [hashToken(token), user.id, sessionMaxAge]);
   await db.query('DELETE FROM qadam.login_attempts WHERE email=$1', [email]);
@@ -49,13 +59,12 @@ export async function login(email: string, password: string) {
 
 export async function getSession(token: string | undefined): Promise<User | null> {
   if (!token || !/^[a-f0-9]{64}$/.test(token)) return null;
-  const result = await database().query(`SELECT u.id,u.email,u.name,u.role,t.telegram_user_id::text AS "telegramId" FROM qadam.sessions s
+  const result = await database().query(`SELECT ${userFields} FROM qadam.sessions s
     JOIN qadam.users u ON u.id=s.user_id LEFT JOIN qadam.telegram_identities t ON t.user_id=u.id
     WHERE s.token_hash=$1 AND s.expires_at>now() AND u.active=true`, [hashToken(token)]);
   const row = result.rows[0];
   if (!row) return null;
-  if (!row.telegramId) delete row.telegramId;
-  return row;
+  return publicUser(row);
 }
 
 export async function loginTelegram(initData: string) {
@@ -66,7 +75,7 @@ export async function loginTelegram(initData: string) {
   return transaction(async (client) => {
     // One identity even if Telegram retries the request concurrently.
     await client.query("SELECT pg_advisory_xact_lock(hashtextextended('telegram:' || $1,0))", [identity.id]);
-    const found = await client.query(`SELECT u.id,u.email,u.name,u.role,u.active FROM qadam.telegram_identities t
+    const found = await client.query(`SELECT ${userFields},u.active FROM qadam.telegram_identities t
       JOIN qadam.users u ON u.id=t.user_id WHERE t.telegram_user_id=$1`, [identity.id]);
     let row = found.rows[0];
     if (row && !row.active) throw new AppError(403, 'Этот аккаунт отключён. Обратитесь к администратору.');
@@ -78,7 +87,7 @@ export async function loginTelegram(initData: string) {
       row = created.rows[0];
       await client.query('INSERT INTO qadam.telegram_identities(telegram_user_id,user_id) VALUES($1,$2)', [identity.id, row.id]);
     }
-    const user: User = { id: row.id, email: row.email, name: row.name, role: row.role, telegramId: identity.id };
+    const user = publicUser({ ...row, telegramId: identity.id });
     const token = randomBytes(32).toString('hex');
     await client.query("INSERT INTO qadam.sessions(token_hash,user_id,expires_at) VALUES($1,$2,now()+$3 * interval '1 second')", [hashToken(token), user.id, sessionMaxAge]);
     await client.query('DELETE FROM qadam.sessions WHERE expires_at < now()');

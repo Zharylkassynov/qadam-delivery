@@ -1,6 +1,7 @@
 import { expect, test, type Page } from '@playwright/test';
 import { randomUUID } from 'node:crypto';
 import { signedTelegramData } from '../telegram-fixture';
+import pg from 'pg';
 
 // Local test bot key and a mocked Telegram SDK; never forge production identities.
 test.skip(Boolean(process.env.E2E_ORIGIN), 'Synthetic Telegram login runs only against the separate local test database');
@@ -84,4 +85,78 @@ test('Mini App rejects forged proof and a client role, and permits only Telegram
   const headers = (await request.get('/')).headers();
   expect(headers['content-security-policy']).toBe("frame-ancestors 'self' https://web.telegram.org");
   expect(headers['x-frame-options']).toBeUndefined();
+});
+
+test('Telegram applicant is rejected, reapplies, gets admin approval and completes a courier delivery', async ({ browser, request }, testInfo) => {
+  test.setTimeout(120000);
+  const suffix = randomUUID().slice(0, 8), applicantName = `Курьер E2E ${suffix}`;
+  const proof = signedTelegramData({ id: 3300000000000 + Math.floor(Math.random() * 1000000000), first_name: applicantName });
+  const adminProof = signedTelegramData({ id: 3400000000000 + Math.floor(Math.random() * 1000000000), first_name: `Админ E2E ${suffix}` });
+  const bootstrap = await request.post('/api/auth/telegram', { headers: { Origin: origin }, data: { initData: adminProof } });
+  expect(bootstrap.status()).toBe(200);
+  const { user: adminUser } = await bootstrap.json();
+  const url = process.env.TEST_DATABASE_URL;
+  if (!url || !new URL(url).pathname.endsWith('_test')) throw new Error('Admin bootstrap is allowed only in the separate local test database');
+  const db = new pg.Client({ connectionString: url }); await db.connect();
+  try { await db.query('INSERT INTO qadam.administrators(user_id) VALUES($1)', [adminUser.id]); } finally { await db.end(); }
+  const adminContext = await browser.newContext({ viewport: { width: 390, height: 844 } });
+  const applicantContext = await browser.newContext({ viewport: { width: 390, height: 844 } });
+  const admin = await adminContext.newPage(), applicant = await applicantContext.newPage();
+  try {
+    await miniApp(admin, adminProof); await miniApp(applicant, proof);
+    const mobileProfile = (page: Page) => page.getByRole('navigation', { name: 'Мобильная навигация' }).getByRole('button', { name: 'Профиль', exact: true });
+    await mobileProfile(admin).click(); await admin.getByRole('button', { name: 'Заявки курьеров', exact: true }).click();
+    await mobileProfile(applicant).click(); await expect(applicant.getByRole('button', { name: 'Заявки курьеров', exact: true })).toHaveCount(0);
+    await applicant.getByRole('button', { name: 'Стать курьером', exact: true }).click();
+    await applicant.getByLabel('Телефон для связи').fill('+++++++');
+    await applicant.getByRole('button', { name: 'Отправить заявку', exact: true }).click();
+    await expect(applicant.getByRole('main').getByRole('alert')).toContainText('Проверьте телефон');
+    await expect(applicant.getByLabel('Телефон для связи')).toHaveValue('+++++++');
+    await applicant.getByLabel('Телефон для связи').fill('+7 700 000 00 00');
+    await applicant.getByLabel('Способ доставки').selectOption('BICYCLE');
+    await applicant.getByLabel('Комментарий', { exact: true }).fill('Автотест заявки, не реальный курьер');
+    expect(await applicant.getByRole('button', { name: 'Отправить заявку', exact: true }).evaluate((n) => n.getBoundingClientRect().bottom)).toBeLessThanOrEqual(700);
+    await applicant.screenshot({ path: testInfo.outputPath('courier-application-form.png'), fullPage: true });
+    await applicant.getByRole('button', { name: 'Отправить заявку', exact: true }).click();
+    await expect(applicant.getByRole('heading', { name: 'Заявка отправлена', exact: true })).toBeVisible();
+    const candidate = admin.locator('.application-card').filter({ hasText: applicantName });
+    await candidate.getByRole('button', { name: 'Рассмотреть заявку', exact: true }).click();
+    await admin.getByRole('button', { name: 'Отклонить заявку', exact: true }).click();
+    await expect(admin.getByRole('main').getByRole('alert')).toContainText('минимум 5 символов');
+    await admin.getByLabel('Причина отклонения', { exact: true }).fill('Уточните контактный телефон');
+    await expect(admin.getByRole('main').getByRole('alert')).toHaveCount(0);
+    await admin.screenshot({ path: testInfo.outputPath('admin-application-review.png'), fullPage: true });
+    await admin.getByRole('button', { name: 'Отклонить заявку', exact: true }).click();
+    await expect(applicant.getByText('Причина: Уточните контактный телефон', { exact: true })).toBeVisible();
+    await applicant.close();
+    const reopened = await applicantContext.newPage(); await miniApp(reopened, proof);
+    await mobileProfile(reopened).click(); await reopened.getByRole('button', { name: 'Стать курьером', exact: true }).click();
+    await expect(reopened.getByText('Причина: Уточните контактный телефон', { exact: true })).toBeVisible();
+    await reopened.getByRole('button', { name: 'Подать повторно', exact: true }).click();
+    await expect(reopened.getByLabel('Телефон для связи')).toHaveValue('+7 700 000 00 00');
+    await reopened.getByLabel('Телефон для связи').fill('+7 701 000 00 00');
+    await reopened.getByRole('button', { name: 'Отправить заявку', exact: true }).click();
+    await admin.getByRole('button', { name: 'К списку заявок', exact: true }).click();
+    await candidate.getByRole('button', { name: 'Рассмотреть заявку', exact: true }).click();
+    await admin.getByRole('button', { name: 'Одобрить заявку', exact: true }).click();
+    await expect(reopened.getByRole('heading', { name: 'Можно начинать', exact: true })).toBeVisible();
+    await reopened.screenshot({ path: testInfo.outputPath('courier-application-approved.png'), fullPage: true });
+    await reopened.getByRole('button', { name: 'К доступным заказам', exact: true }).click();
+    await expect(reopened.getByRole('heading', { name: 'Можно принять', exact: true })).toBeVisible();
+    const pickup = `E2E approved ${suffix}, Алматы, Абая 14`;
+    expect((await request.post('/api/auth/login', { headers: { Origin: origin }, data: { email: 'customer1@qadam.demo', password: process.env.DEMO_PASSWORD } })).status()).toBe(200);
+    const orderResponse = await request.post('/api/orders', { headers: { Origin: origin }, data: { requestKey: randomUUID(), pickupAddress: pickup, destinationAddress: 'Алматы, Ауэзова 20', recipientName: 'Тестовый получатель', recipientPhone: '+7 700 000 00 00', notes: 'E2E проверка одобренного курьера' } });
+    expect(orderResponse.status()).toBe(201); const { order } = await orderResponse.json();
+    const card = reopened.getByRole('button', { name: /^Открыть заказ/ }).filter({ hasText: pickup });
+    await card.click();
+    for (const action of ['Принять заказ', 'Посылка у меня', 'Начать доставку', 'Завершить доставку']) await reopened.getByRole('button', { name: action, exact: true }).click();
+    await expect(reopened.getByRole('heading', { name: 'Доставка завершена', exact: true })).toBeVisible();
+    const { orders } = await (await request.get('/api/orders')).json();
+    expect(orders.find((item: { id: string }) => item.id === order.id).status).toBe('DELIVERED');
+    await admin.getByRole('button', { name: 'Назад в профиль' }).click();
+    await expect(admin.getByRole('heading', { name: /Доставка\s*по Алматы/ })).toHaveCount(0);
+    // Administrator remains a customer, with their own ordinary order access.
+    await admin.getByRole('button', { name: 'Назад в профиль' }).click();
+    await expect(admin.locator('.profile-card')).toContainText('Клиент');
+  } finally { await adminContext.close(); await applicantContext.close(); }
 });

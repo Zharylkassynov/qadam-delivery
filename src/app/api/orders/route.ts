@@ -4,7 +4,7 @@ import { checkMutation, handle, json, readJson, requireUser } from '../../../lib
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 export async function GET(request: Request) {
-  return handle(async () => json({ orders: await listOrders(await requireUser(request)) }));
+  return handle(async () => { const user = await requireUser(request); return json({ orders: await listOrders(user), user }); });
 }
 export async function POST(request: Request) {
   return handle(async () => {

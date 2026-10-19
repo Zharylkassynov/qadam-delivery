@@ -7,27 +7,9 @@ import { DeliveryWorkspace } from './delivery-workspace';
 import type { orderPayload } from './order-form';
 import { telegramApp } from '../lib/telegram-client';
 import { serviceCity } from '../lib/service-area';
+import { api, ApiError, setTelegramSessionToken } from '../lib/client-api';
 
 const message = (error: unknown) => error instanceof Error ? error.message : 'Произошла ошибка. Попробуйте ещё раз.';
-
-class ApiError extends Error { constructor(message: string, public status: number) { super(message); } }
-// Kept only in memory, never in URLs, localStorage or sessionStorage.
-let telegramSessionToken: string | undefined;
-async function api<T>(path: string, body?: unknown, signal?: AbortSignal): Promise<T> {
-  let response: Response;
-  try {
-    response = await fetch(path, { method: body === undefined ? 'GET' : 'POST',
-      headers: { ...(body === undefined ? {} : { 'Content-Type': 'application/json' }),
-        ...(telegramSessionToken ? { Authorization: `Bearer ${telegramSessionToken}` } : {}) },
-      body: body === undefined ? undefined : JSON.stringify(body), cache: 'no-store', signal });
-  } catch (error) {
-    if (error instanceof Error && error.name === 'AbortError') throw error;
-    throw new ApiError('Нет связи с сервером. Проверьте подключение и повторите.', 0);
-  }
-  const result = await response.json().catch(() => ({}));
-  if (!response.ok) throw new ApiError(result.error ?? 'Не удалось выполнить запрос.', response.status);
-  return result as T;
-}
 
 export function DeliveryApp() {
   const [user, setUser] = useState<User | null>(null);
@@ -58,10 +40,10 @@ export function DeliveryApp() {
         setTelegram(Boolean(app));
         if (app) {
           const data = await api<{ user: User; sessionToken: string }>('/api/auth/telegram', { initData: app.initData });
-          telegramSessionToken = data.sessionToken;
+          setTelegramSessionToken(data.sessionToken);
           setUser(data.user); setOrders([]); setLoading(true); setSelected(null); setError(''); setSyncError(''); setSyncedAt(null);
         } else {
-          telegramSessionToken = undefined;
+          setTelegramSessionToken(undefined);
           const data = await api<{ user: User | null; demo: boolean }>('/api/session');
           setUser(data.user); setDemo(data.demo);
         }
@@ -82,9 +64,12 @@ export function DeliveryApp() {
       fetching = true;
       const current = revision.current;
       try {
-        const data = await api<{ orders: Order[] }>('/api/orders', undefined, controller.signal);
+        const data = await api<{ orders: Order[]; user?: User }>('/api/orders', undefined, controller.signal);
         if (alive && current === revision.current) {
           setOrders(data.orders); setSyncError(''); setSyncedAt(new Date().toISOString());
+          if (data.user && (data.user.role !== user!.role || data.user.isAdmin !== user!.isAdmin)) {
+            setSelected(null); setUser(data.user);
+          }
         }
       } catch (error) {
         if (alive && current === revision.current) {
@@ -102,14 +87,14 @@ export function DeliveryApp() {
   }, [user, refresh]);
 
   async function signIn(email: string, password: string) {
-    telegramSessionToken = undefined;
+    setTelegramSessionToken(undefined);
     const data = await api<{ user: User }>('/api/auth/login', { email, password });
     setOrders([]); setLoading(true); setSelected(null); setError(''); setSyncedAt(null); setSyncError(''); setNotice(''); setUser(data.user);
   }
 
   async function signOut() {
     setBusy(true); busyRef.current = true; revision.current++;
-    try { await api('/api/auth/logout', {}); telegramSessionToken = undefined; pendingCreate.current = null; setUser(null); setOrders([]); setNotice(''); setError(''); }
+    try { await api('/api/auth/logout', {}); setTelegramSessionToken(undefined); pendingCreate.current = null; setUser(null); setOrders([]); setNotice(''); setError(''); }
     catch (error) { setError(message(error)); }
     finally { setBusy(false); busyRef.current = false; }
   }

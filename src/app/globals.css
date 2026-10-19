@@ -53,6 +53,12 @@ fieldset { margin: 0; border: 0; padding: 0; min-width: 0; }
 .boot-screen { min-height: 100dvh; display: flex; flex-direction: column; gap: 24px; align-items: center; justify-content: center; padding: 24px; text-align: center; }
 
 .app-shell { display: flex; height: 100dvh; min-height: 0; }
+.screen-application .screen-content { max-width: 624px; }
+.application-actions { flex-direction: column; align-items: center; gap: 8px; }
+.application-actions > .button { width: 100%; }
+.application-card { display: flex; flex-direction: column; gap: 12px; padding: 20px; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); }
+.field select { width: 100%; min-height: 52px; border: 1px solid var(--line); border-radius: 10px; padding: 13px 12px; color: var(--ink); background: var(--surface); font: inherit; }
+.field select:focus { outline: 2px solid var(--brand); outline-offset: 2px; }
 html[data-telegram="true"] .app-shell { height: var(--tg-viewport-stable-height, 100dvh); }
 .sidebar { width: 224px; flex: 0 0 224px; padding: 32px 24px 24px; background: var(--surface); border-right: 1px solid var(--line); display: flex; flex-direction: column; }
 .sidebar-role { color: var(--muted); font-size: 12px; line-height: 18px; margin: 32px 0 16px; }

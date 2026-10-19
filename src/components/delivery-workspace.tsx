@@ -5,8 +5,9 @@ import { actionLabels, nextStatus, type Order, type User } from '../lib/types';
 import { AddressRow, Badge, Brand, Button, EmptyState, Feedback, Icon, MapUnavailable, OrderCard, PriceNote, RouteCard, Skeletons, Timeline, finished, formatTime, initials, orderNumber } from './delivery-ui';
 import { emptyDraft, OrderForm, OrderReview, ParcelChoice, orderPayload, type OrderDraft } from './order-form';
 import { serviceCity, serviceTimezone } from '../lib/service-area';
+import { CourierOnboarding, CourierApplicationAdmin } from './courier-onboarding';
 
-type View = 'home' | 'orders' | 'profile' | 'create' | 'review' | 'detail';
+type View = 'home' | 'orders' | 'profile' | 'create' | 'review' | 'detail' | 'courierApplication' | 'adminApplications';
 type Filter = 'all' | 'active' | 'history';
 type Props = {
   user: User; orders: Order[]; loading: boolean; busy: boolean; error: string; notice: string;
@@ -34,6 +35,11 @@ export function DeliveryWorkspace(props: Props) {
     bodyRef.current?.scrollTo({ top: 0 });
     bodyRef.current?.querySelector<HTMLElement>('h1')?.focus({ preventScroll: true });
   }, [view, selected]);
+
+  useEffect(() => {
+    setFilter(user.role === 'COURIER' ? 'active' : 'all');
+    setView((current) => current === 'courierApplication' || current === 'adminApplications' ? current : 'home');
+  }, [user.role]);
 
   function navigate(target: View) {
     if (busy) return;
@@ -64,6 +70,9 @@ export function DeliveryWorkspace(props: Props) {
   ];
   const card = (order: Order) => <OrderCard key={order.id} order={order} busy={busy} onOpen={() => open(order)}/>;
   const refresh = <Button variant="secondary" onClick={props.onRefresh} disabled={busy}>Обновить список</Button>;
+
+  if (view === 'courierApplication') return <CourierOnboarding user={user} onBack={() => navigate('profile')} onOrders={() => { props.onRefresh(); navigate('home'); }}/>;
+  if (view === 'adminApplications') return <CourierApplicationAdmin user={user} onBack={() => navigate('profile')}/>;
 
   return <div className="app-shell">
     <aside className="sidebar"><Brand/><div className="sidebar-role">{customer ? 'Клиент' : 'Курьер'} · {serviceCity}</div>
@@ -98,7 +107,10 @@ export function DeliveryWorkspace(props: Props) {
           {view === 'create' && customer && <OrderForm draft={draft} onChange={setDraft} onReview={() => navigate('review')} busy={busy}/>}
           {view === 'review' && customer && <OrderReview draft={draft} onEdit={() => navigate('create')} busy={busy}/>}
           {view === 'detail' && (detail ? <OrderDetail order={detail} user={user} onCancel={async () => { if (window.confirm('Отменить этот заказ?')) await props.onMutate(`/api/orders/${detail.id}/status`, { status: 'CANCELLED' }, 'Заказ отменён и сохранён в истории.'); }} busy={busy}/> : <EmptyState title="Заказ больше недоступен" action={<Button variant="secondary" onClick={() => navigate('home')}>К списку заказов</Button>}>Возможно, его уже принял другой курьер. Обновите список и выберите другую доставку.</EmptyState>)}
-          {view === 'profile' && <><h1 className="sr-only" tabIndex={-1}>Профиль</h1><div className="profile-card"><span className="avatar large">{initials(user.name)}</span><h2>{user.name}</h2><p className="muted">{customer ? 'Клиент' : 'Курьер'} · {user.telegramId ? 'Telegram' : 'демонстрационный аккаунт'}</p><p>{user.telegramId ? `Telegram ID: ${user.telegramId}` : user.email}</p></div><div className="profile-stats"><div><strong>{activeOrders.length}</strong><span>Активные</span></div><div><strong>{completed.length}</strong><span>Доставлены</span></div></div><Feedback title="Учебная демонстрация">Используйте тестовые контакты и посылки. Заказы и статусы сохраняются в базе.</Feedback><Button variant="secondary" onClick={() => void props.onSignOut()} disabled={busy}>Выйти из аккаунта</Button></>}
+          {view === 'profile' && <><h1 className="sr-only" tabIndex={-1}>Профиль</h1><div className="profile-card"><span className="avatar large">{initials(user.name)}</span><h2>{user.name}</h2><p className="muted">{customer ? 'Клиент' : 'Курьер'} · {user.telegramId ? 'Telegram' : 'демонстрационный аккаунт'}</p><p>{user.telegramId ? `Telegram ID: ${user.telegramId}` : user.email}</p></div><div className="profile-stats"><div><strong>{activeOrders.length}</strong><span>Активные</span></div><div><strong>{completed.length}</strong><span>Доставлены</span></div></div>
+            {user.telegramId && <><Feedback title={customer ? 'Доставляй с Qadam' : 'Доступ курьера открыт'}>{customer ? 'Подай заявку. Администратор проверит её и откроет доступ к заказам.' : 'Принимай заказы и отмечай каждый шаг доставки.'}</Feedback><Button onClick={() => navigate('courierApplication')} disabled={busy}>{customer ? 'Стать курьером' : 'Моя заявка курьера'}</Button></>}
+            {user.isAdmin && <><h2>Администрирование</h2><Button variant="secondary" onClick={() => navigate('adminApplications')} disabled={busy}>Заявки курьеров</Button></>}
+            <Feedback title="Учебная демонстрация">Используйте тестовые контакты и посылки. Заказы и статусы сохраняются в базе.</Feedback><Button variant="secondary" onClick={() => void props.onSignOut()} disabled={busy}>Выйти из аккаунта</Button></>}
         </div>
       </main>
       {hasFooter && <footer className="sticky-action">{view === 'create' ? <Button form="delivery-form" type="submit" className="wide" disabled={busy}>Проверить заказ</Button> : view === 'review' ? <Button className="wide" onClick={() => void confirmOrder()} disabled={busy}>{busy ? 'Сохраняем…' : 'Подтвердить заказ'}</Button> : completedDetail ? <Button className="wide" onClick={history} disabled={busy}>В историю заказов</Button> : actionable && detail ? <Button className="wide" disabled={busy} onClick={() => void (detail.status === 'SEARCHING_FOR_COURIER' ? accept(detail) : advance(detail))}>{busy ? 'Сохраняем…' : detail.status === 'SEARCHING_FOR_COURIER' ? 'Принять заказ' : actionLabels[detail.status]}</Button> : null}</footer>}
