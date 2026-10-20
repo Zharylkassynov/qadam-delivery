@@ -3,23 +3,11 @@ import { randomUUID } from 'node:crypto';
 import { signedTelegramData } from '../telegram-fixture';
 import pg from 'pg';
 import { mockMapTiles } from './map-fixture';
+import { miniApp } from './telegram-browser-fixture';
 
 // Local test bot key and a mocked Telegram SDK; never forge production identities.
 test.skip(Boolean(process.env.E2E_ORIGIN), 'Synthetic Telegram login runs only against the separate local test database');
 const origin = 'http://127.0.0.1:3100';
-async function miniApp(page: Page, proof: string) {
-  await page.route('https://telegram.org/js/telegram-web-app.js?64', (route) => route.fulfill({
-    contentType: 'application/javascript',
-    body: `window.Telegram={WebApp:{initData:${JSON.stringify(proof)},ready(){},expand(){document.documentElement.style.setProperty('--tg-viewport-stable-height','700px')},isVersionAtLeast(){return true},LocationManager:{isInited:true,isLocationAvailable:true,isAccessGranted:true,isAccessRequested:true,init(cb){cb()},getLocation(cb){cb({latitude:43.24,longitude:76.9,horizontal_accuracy:22})},openSettings(){}}}};`,
-  }));
-  // Strip every cookie to reproduce Telegram Web with third-party cookies blocked.
-  await page.route('**/api/**', async (route) => {
-    const headers = await route.request().allHeaders();
-    delete headers.cookie;
-    await route.continue({ headers });
-  });
-  await page.goto('/#tgWebAppVersion=8.0');
-}
 
 test('Mini App customer completes a delivery with browser courier and restores history without cookies', async ({ browser }, testInfo) => {
   const customerContext = await browser.newContext({ viewport: { width: 390, height: 844 } });

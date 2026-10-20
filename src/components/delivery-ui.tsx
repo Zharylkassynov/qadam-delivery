@@ -32,8 +32,8 @@ export function Feedback({ title, children, tone = 'info', role, action }: { tit
   return <div className={`feedback feedback-${tone}`} role={role}><div><p className="feedback-title">{title}</p>{children && <div className="feedback-description">{children}</div>}</div>{action}</div>;
 }
 
-export function Badge({ status }: { status: Status }) {
-  return <span className={`status-badge status-${status.toLowerCase()}`}>{statusLabels[status]}</span>;
+export function Badge({ status, label }: { status: Status; label?: string }) {
+  return <span className={`status-badge status-${status.toLowerCase()}`}>{label ?? statusLabels[status]}</span>;
 }
 
 export function AddressRow({ kind, address }: { kind: 'pickup' | 'destination'; address: string }) {
@@ -49,12 +49,12 @@ export const finished = (order: Order) => order.status === 'DELIVERED' || order.
 export const formatTime = (at: string) => new Intl.DateTimeFormat('ru-KZ', { day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit', timeZone: serviceTimezone }).format(new Date(at));
 export const initials = (name: string) => name.trim().split(/\s+/).slice(0, 2).map((word) => word[0]).join('').toUpperCase();
 
-export function OrderCard({ order, onOpen, onAccept, busy }: { order: Order; onOpen: () => void; onAccept?: () => void; busy?: boolean }) {
+export function OrderCard({ order, onOpen, onAccept, busy, meta }: { order: Order; onOpen: () => void; onAccept?: () => void; busy?: boolean; meta?: string }) {
   return <article className={`order-card ${onAccept ? 'available-card' : ''}`}>
     <button type="button" className="order-card-open" aria-label={`Открыть заказ ${orderNumber(order)}`} onClick={onOpen} disabled={busy}>
       <div className="order-card-heading"><strong>{orderNumber(order)}</strong><Badge status={order.status}/></div>
       <AddressRow kind="pickup" address={order.pickupAddress}/><AddressRow kind="destination" address={order.destinationAddress}/>
-      <p className="card-meta">{formatTime(order.createdAt)}{order.courierName && ` · ${order.courierName}`}</p>
+      <p className="card-meta">{meta ?? `${formatTime(order.createdAt)}${order.courierName ? ` · ${order.courierName}` : ''}`}</p>
     </button>
     {onAccept && <div className="available-card-action"><Feedback title="Оплата по согласованию">Условия доставки уточняются до начала заказа.</Feedback><Button onClick={onAccept} disabled={busy} className="wide">{busy ? 'Принимаем…' : 'Принять заказ'}</Button></div>}
   </article>;
@@ -72,8 +72,8 @@ export function PriceNote() {
   return <div className="price-row"><span>Стоимость доставки</span><strong>По согласованию</strong></div>;
 }
 
-export function Timeline({ order }: { order: Order }) {
-  return <section className="timeline-section" aria-label="История статусов"><h2>Путь заказа</h2><ol className="timeline">{order.events.map((event) => <li key={event.id}><span className="timeline-mark" aria-hidden="true">✓</span><div><strong>{statusLabels[event.status]}</strong><small>{formatTime(event.at)} · {event.actor}</small></div></li>)}</ol></section>;
+export function Timeline({ order, title = 'Путь заказа', acceptedLabel }: { order: Order; title?: string; acceptedLabel?: string }) {
+  return <section className="timeline-section" aria-label="История статусов"><h2>{title}</h2><ol className="timeline">{order.events.map((event) => <li key={event.id}><span className="timeline-mark" aria-hidden="true">✓</span><div><strong>{event.status === 'ACCEPTED' && acceptedLabel ? acceptedLabel : statusLabels[event.status]}</strong><small>{formatTime(event.at)} · {event.actor}</small></div></li>)}</ol></section>;
 }
 
 export function MapUnavailable({ order }: { order: Order }) {

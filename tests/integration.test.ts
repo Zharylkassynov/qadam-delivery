@@ -12,6 +12,7 @@ import { AppError } from '../src/lib/errors';
 import type { User } from '../src/lib/types';
 import { courierTransports, transportLabels } from '../src/lib/types';
 import { locationSchema, reportLocation } from '../src/lib/locations';
+import { getAdminOrder, listAdminOrders } from '../src/lib/admin-orders';
 
 const url = process.env.TEST_DATABASE_URL;
 if (!url || !new URL(url).pathname.endsWith('_test')) throw new Error('TEST_DATABASE_URL must point to a separate database ending in _test');
@@ -58,6 +59,74 @@ const applicationInput = () => ({ phone: '+7 700 000 00 00', transport: 'FOOT' a
 const pointA = { latitude: 43.2389, longitude: 76.8897 };
 const pointB = { latitude: 43.245, longitude: 76.91 };
 const fix = () => ({ ...pointA, accuracy: 12, capturedAt: new Date().toISOString() });
+
+test('admin observation checks private membership, reads other customers and cannot change their deliveries', async () => {
+  const admin = await telegramAccount('Наблюдатель');
+  const order = await createOrder(otherCustomer, input());
+  for (const actor of [customer, courier, { ...customer, isAdmin: true as const }]) {
+    await rejectsStatus(listAdminOrders(actor), 403);
+    await rejectsStatus(getAdminOrder(actor, order.id), 403);
+  }
+  await database().query('INSERT INTO qadam.administrators(user_id) VALUES($1)', [admin.user.id]);
+  const observed = await getAdminOrder(admin.user, order.id);
+  assert.equal(observed.customerId, otherCustomer.id); assert.equal(observed.courierId, null);
+  assert.equal(observed.status, 'SEARCHING_FOR_COURIER');
+  assert.equal(observed.recipientPhone, input().recipientPhone);
+  await rejectsStatus(acceptOrder(admin.user, order.id), 403);
+  await rejectsStatus(transitionOrder(admin.user, order.id, 'CANCELLED'), 403);
+  await rejectsStatus(reportLocation(admin.user, order.id, fix()), 403);
+  await acceptOrder(courier, order.id); await reportLocation(courier, order.id, fix());
+  for (const status of ['PICKED_UP', 'IN_TRANSIT', 'DELIVERED'] as const) await transitionOrder(courier, order.id, status);
+  const restored = await getAdminOrder(admin.user, order.id);
+  assert.equal(restored.status, 'DELIVERED'); assert.equal(restored.courierId, courier.id);
+  assert.equal(restored.courierLocation?.latitude, pointA.latitude);
+  assert.deepEqual(restored.events.map(e => e.status), ['CREATED', 'SEARCHING_FOR_COURIER', 'ACCEPTED', 'PICKED_UP', 'IN_TRANSIT', 'DELIVERED']);
+  assert.equal((await listOrders(admin.user)).some(o => o.id === order.id), false);
+  await logout(admin.token);
+});
+
+test('admin search, status counters and stable pagination cover orders beyond the ordinary user list', async () => {
+  const admin = await telegramAccount('Список заказов');
+  await database().query('INSERT INTO qadam.administrators(user_id) VALUES($1)', [admin.user.id]);
+  const marker = `Наблюдение-${randomUUID()}`;
+  const orders = [];
+  for (let i = 0; i < 6; i++) orders.push(await createOrder(i % 2 ? customer : otherCustomer, { ...input(), pickupAddress: `${marker}, ${i}` }));
+  await acceptOrder(courier, orders[0].id); await acceptOrder(otherCourier, orders[1].id);
+  for (const s of ['PICKED_UP', 'IN_TRANSIT', 'DELIVERED'] as const) await transitionOrder(otherCourier, orders[1].id, s);
+  await transitionOrder(otherCustomer, orders[2].id, 'CANCELLED');
+  await database().query("UPDATE qadam.orders SET created_at='2026-10-01T10:00:00Z' WHERE id=ANY($1::uuid[])", [orders.map(o => o.id)]);
+  const pages = await Promise.all([0, 2, 4].map(offset => listAdminOrders(admin.user, { search: marker.toUpperCase(), limit: 2, offset })));
+  assert.deepEqual(pages[0].counts, { all: 6, unassigned: 3, active: 4, history: 2 });
+  assert.deepEqual(pages.flatMap(p => p.orders.map(o => o.id)), orders.map(o => o.id).sort().reverse());
+  for (const [filter, total] of [['unassigned', 3], ['active', 4], ['history', 2]] as const) {
+    const page = await listAdminOrders(admin.user, { search: marker, filter });
+    assert.equal(page.total, total); assert.equal(page.orders.length, total);
+  }
+  assert.equal((await listAdminOrders(admin.user, { search: `qd-${orders[0].number.padStart(4, '0')}` })).orders[0].id, orders[0].id);
+  assert.equal((await listAdminOrders(admin.user, { search: `${marker}%_` })).total, 0);
+  for (const invalid of [{ limit: 101 }, { offset: -1 }, { filter: 'DROP TABLE' }, { search: 'x'.repeat(101) }, { isAdmin: true }]) await rejectsStatus(listAdminOrders(admin.user, invalid), 400);
+  await rejectsStatus(getAdminOrder(admin.user, randomUUID()), 404);
+  await logout(admin.token);
+});
+
+test('revoked or disabled admin loses order observation with an existing session; approved transport is readable', async () => {
+  const admin = await telegramAccount('Отзыв наблюдателя'), candidate = await telegramAccount('Курьер наблюдения');
+  await database().query('INSERT INTO qadam.administrators(user_id) VALUES($1)', [admin.user.id]);
+  const application = await submitApplication(candidate.user, { ...applicationInput(), transport: 'ELECTRIC_MOPED' });
+  await reviewApplication(admin.user, application.id, { decision: 'APPROVED', reason: '' });
+  const courierSession = await getSession(candidate.token); assert.equal(courierSession?.role, 'COURIER');
+  const order = await createOrder(customer, input()); await acceptOrder(courierSession!, order.id);
+  assert.equal((await getAdminOrder(admin.user, order.id)).courierTransport, 'ELECTRIC_MOPED');
+  const saved = { ...admin.user, isAdmin: true as const };
+  await database().query('DELETE FROM qadam.administrators WHERE user_id=$1', [admin.user.id]);
+  await rejectsStatus(listAdminOrders(saved), 403); await rejectsStatus(getAdminOrder(saved, order.id), 403);
+  assert.equal((await getSession(admin.token))?.isAdmin, undefined);
+  await database().query('INSERT INTO qadam.administrators(user_id) VALUES($1)', [admin.user.id]);
+  await database().query('UPDATE qadam.users SET active=false WHERE id=$1', [admin.user.id]);
+  await rejectsStatus(getAdminOrder(saved, order.id), 403);
+  await database().query('UPDATE qadam.users SET active=true WHERE id=$1', [admin.user.id]);
+  await logout(admin.token); await logout(candidate.token);
+});
 
 test('map points persist with idempotent order creation; old text-only orders and invalid coordinates are handled', async () => {
   const data = { ...input(), pickupPoint: pointA, destinationPoint: pointB };

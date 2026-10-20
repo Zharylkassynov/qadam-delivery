@@ -7,13 +7,13 @@ import { serviceCity } from '../lib/service-area';
 import { Button, EmptyState, Feedback, Icon, formatTime } from './delivery-ui';
 
 const errorText = (e: unknown) => e instanceof Error ? e.message : 'Не удалось выполнить запрос. Повторите.';
-function ApplicationScreen({ title, children, actions, onBack, busy }: { title: string; children: ReactNode; actions: ReactNode; onBack: () => void; busy: boolean }) {
+export function ApplicationScreen({ title, children, actions, onBack, busy, wide = false, backLabel = 'Назад в профиль' }: { title: string; children: ReactNode; actions: ReactNode; onBack: () => void; busy: boolean; wide?: boolean; backLabel?: string }) {
   const main = useRef<HTMLElement>(null);
-  useEffect(() => { main.current?.focus({ preventScroll: true }); }, [title]);
-  return <div className="app-shell application-shell"><div className="workspace with-action">
+  useEffect(() => { main.current?.scrollTo({ top: 0 }); main.current?.focus({ preventScroll: true }); }, [title]);
+  return <div className={`app-shell application-shell ${wide ? 'application-wide' : ''}`}><div className="workspace with-action">
     <header className="product-header"><span className="product-header-mark"><Icon type="box"/></span><span>Qadam Delivery</span><span/></header>
-    <div className="app-bar"><button className="icon-button" aria-label="Назад в профиль" disabled={busy} onClick={onBack}><Icon type="back"/></button><p>{title}</p><span/></div>
-    <main className="screen-body screen-application" ref={main} tabIndex={-1}><div className="screen-content">{children}</div></main>
+    <div className="app-bar"><button className="icon-button" aria-label={backLabel} disabled={busy} onClick={onBack}><Icon type="back"/></button><p>{title}</p><span/></div>
+    <main className={`screen-body screen-application ${wide ? 'screen-wide' : ''}`} ref={main} tabIndex={-1}><div className="screen-content">{children}</div></main>
     <footer className="sticky-action application-actions">{actions}</footer>
   </div></div>;
 }

@@ -18,7 +18,7 @@ export const createOrderSchema = z.object({
 export const statusSchema = z.object({ status: z.enum(statuses) }).strict();
 export type CreateOrder = z.infer<typeof createOrderSchema>;
 
-const selectOrder = `SELECT o.id,o.number::text,o.customer_id AS "customerId",c.name AS "customerName",
+export const selectOrder = `SELECT o.id,o.number::text,o.customer_id AS "customerId",c.name AS "customerName",
   o.courier_id AS "courierId",r.name AS "courierName",o.pickup_address AS "pickupAddress",
   o.destination_address AS "destinationAddress",o.recipient_name AS "recipientName",
   o.recipient_phone AS "recipientPhone",o.notes,o.status,o.created_at AS "createdAt",o.updated_at AS "updatedAt",

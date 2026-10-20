@@ -32,7 +32,9 @@ export async function orderRoute(actor: User, orderId: string): Promise<Delivery
   const result = await database().query(`SELECT pickup_latitude AS "aLat",pickup_longitude AS "aLon",
     destination_latitude AS "bLat",destination_longitude AS "bLon" FROM qadam.orders
     WHERE id=$1 AND (($3='CUSTOMER' AND customer_id=$2) OR
-      ($3='COURIER' AND (courier_id=$2 OR (courier_id IS NULL AND status='SEARCHING_FOR_COURIER'))))`, [orderId, actor.id, actor.role]);
+      ($3='COURIER' AND (courier_id=$2 OR (courier_id IS NULL AND status='SEARCHING_FOR_COURIER'))) OR
+      EXISTS(SELECT 1 FROM qadam.administrators a JOIN qadam.users u ON u.id=a.user_id
+        WHERE a.user_id=$2 AND u.active=true))`, [orderId, actor.id, actor.role]);
   const row = result.rows[0];
   if (!row) throw new AppError(404, 'Заказ недоступен.');
   if (row.aLat === null || row.aLon === null || row.bLat === null || row.bLon === null) return null;

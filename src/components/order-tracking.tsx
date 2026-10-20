@@ -7,7 +7,7 @@ import type { CourierLocation, DeliveryRoute, Order, User } from '../lib/types';
 import { Button, Feedback, finished, formatTime } from './delivery-ui';
 import { DeliveryMap, type MapMarker } from './delivery-map';
 
-export function OrderTracking({ order, user }: { order: Order; user: User }) {
+export function OrderTracking({ order, user, readOnly = false }: { order: Order; user: User; readOnly?: boolean }) {
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => { const timer = setInterval(() => setNow(Date.now()), 10000); return () => clearInterval(timer); }, []);
   const location = order.courierLocation;
@@ -28,7 +28,7 @@ export function OrderTracking({ order, user }: { order: Order; user: User }) {
       <p>{location.accuracy === null ? 'Точность не указана устройством.' : `Точность: около ${Math.round(location.accuracy)} м.`} {stale && !finished(order) ? 'Новых координат нет более 90 секунд. Курьер мог переместиться.' : ''}</p>
       <p>{finished(order) ? 'Новые координаты для этого заказа больше не принимаются.' : 'Новые точки поступают, пока у курьера открыт заказ и включена геолокация.'}</p>
     </Feedback> : order.courierId ? <Feedback title="Курьер ещё не передал позицию">Координаты появятся, когда курьер разрешит геолокацию и включит её в заказе.</Feedback> : null}
-    {user.role === 'COURIER' && order.courierId === user.id && <CourierSharing key={order.id} orderId={order.id} active={!finished(order)}/>}
+    {!readOnly && user.role === 'COURIER' && order.courierId === user.id && <CourierSharing key={order.id} orderId={order.id} active={!finished(order)}/>}
   </section>;
 }
 

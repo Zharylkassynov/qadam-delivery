@@ -81,6 +81,17 @@ test('missing pins, missing configuration and unsupported service areas do not c
   await status(calculate(users[0], order.id), 422); assert.equal(fetcher.mock.calls.length, 0);
 });
 
+test('administrator route access is read only, rechecks membership and never trusts an isAdmin flag', async () => {
+  const order = await create(); await acceptOrder(users[2], order.id);
+  mock.method(globalThis, 'fetch', async () => answer());
+  await status(calculate({ ...users[1], isAdmin: true }, order.id), 404);
+  await database().query('INSERT INTO qadam.telegram_identities(telegram_user_id,user_id) VALUES($1,$2)', [4100000000000 + Math.floor(Math.random() * 1000000000), users[1].id]);
+  await database().query('INSERT INTO qadam.administrators(user_id) VALUES($1)', [users[1].id]);
+  assert.ok(await calculate(users[1], order.id));
+  await database().query('DELETE FROM qadam.administrators WHERE user_id=$1', [users[1].id]);
+  await status(calculate({ ...users[1], isAdmin: true }, order.id), 404);
+});
+
 test('provider outage, quota, malformed or unrelated geometry never invent a straight route or expose secrets', async () => {
   const order = await create();
   for (const code of [503, 429]) {

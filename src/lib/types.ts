@@ -34,3 +34,8 @@ export type Order = {
   notes: string; status: Status; createdAt: string; updatedAt: string; events: OrderEvent[];
   pickupPoint: MapPoint | null; destinationPoint: MapPoint | null; courierLocation: CourierLocation | null;
 };
+
+export const adminOrderFilters = ['all', 'unassigned', 'active', 'history'] as const;
+export type AdminOrderFilter = typeof adminOrderFilters[number];
+export type AdminOrder = Order & { courierTransport: CourierApplication['transport'] | null };
+export type AdminOrdersPage = { orders: Order[]; total: number; counts: Record<AdminOrderFilter, number> };

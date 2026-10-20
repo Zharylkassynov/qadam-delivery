@@ -2,6 +2,7 @@ import { z } from 'zod';
 import type { PoolClient } from 'pg';
 import { database, transaction } from './db';
 import { AppError } from './errors';
+import { requireAdministrator } from './administrators';
 import { courierTransports, type CourierApplication, type User } from './types';
 
 export const applicationSchema = z.object({
@@ -25,11 +26,6 @@ async function read(db: Queryable, id: string): Promise<CourierApplication> {
 }
 function requireTelegram(actor: User) {
   if (!actor.telegramId) throw new AppError(403, 'Подать заявку можно из Telegram Mini App.');
-}
-async function requireAdministrator(db: Queryable, actor: User) {
-  // Query the membership table; never trust a flag received from a caller.
-  const result = await db.query(`SELECT 1 FROM qadam.administrators a JOIN qadam.users u ON u.id=a.user_id WHERE a.user_id=$1 AND u.active=true`, [actor.id]);
-  if (!result.rowCount) throw new AppError(403, 'Этот раздел доступен только администратору.');
 }
 export async function ownApplication(actor: User): Promise<CourierApplication | null> {
   requireTelegram(actor);
