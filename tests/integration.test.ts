@@ -1,4 +1,5 @@
 import { after, before, test } from 'node:test';
+import { ZodError } from 'zod';
 import assert from 'node:assert/strict';
 import { randomUUID, createHash } from 'node:crypto';
 import { database, closeDatabase, transaction } from '../src/lib/db';
@@ -9,6 +10,7 @@ import { applicationSchema, decisionSchema, listApplications, ownApplication, re
 import { acceptOrder, createOrder, createOrderSchema, listOrders, transitionOrder, type CreateOrder } from '../src/lib/orders';
 import { AppError } from '../src/lib/errors';
 import type { User } from '../src/lib/types';
+import { courierTransports, transportLabels } from '../src/lib/types';
 import { locationSchema, reportLocation } from '../src/lib/locations';
 
 const url = process.env.TEST_DATABASE_URL;
@@ -114,6 +116,36 @@ test('Telegram application submission is private and concurrent retries create o
   await rejectsStatus(listApplications({ ...a.user, isAdmin: true }), 403);
   await rejectsStatus(reviewApplication({ ...a.user, isAdmin: true }, first.id, { decision: 'APPROVED', reason: '' }), 403);
   assert.equal((await getSession(a.token))?.role, 'CUSTOMER');
+});
+
+test('all four current transport choices persist and are visible to an administrator after reopening', async () => {
+  const admin = await telegramAccount('Тест транспорта — администратор');
+  await database().query('INSERT INTO qadam.administrators(user_id) VALUES($1)', [admin.user.id]);
+  assert.deepEqual(courierTransports.map(value => transportLabels[value]), ['Пеший', 'Электромопед', 'Мопед', 'Автомобиль']);
+  for (const transport of courierTransports) {
+    const applicant = await telegramAccount(`Тест транспорта ${transport}`);
+    const data = applicationSchema.parse({ ...applicationInput(), transport });
+    const saved = await submitApplication(applicant.user, data);
+    await closeDatabase();
+    assert.equal((await ownApplication(applicant.user))?.transport, transport);
+    assert.equal((await listApplications(admin.user)).find(a => a.id === saved.id)?.transport, transport);
+  }
+});
+
+test('legacy bicycle applications stay readable and approvable, but new bicycle or unknown transport submissions are rejected', async () => {
+  const admin = await telegramAccount('Тест старой заявки — администратор'), applicant = await telegramAccount('Тест старого велосипеда');
+  await database().query('INSERT INTO qadam.administrators(user_id) VALUES($1)', [admin.user.id]);
+  const legacy = await database().query("INSERT INTO qadam.courier_applications(user_id,phone,transport,notes) VALUES($1,$2,'BICYCLE',$3) RETURNING id", [applicant.user.id, '+77000000000', 'Историческая заявка — автотест']);
+  assert.equal((await ownApplication(applicant.user))?.transport, 'BICYCLE');
+  const approved = await reviewApplication(admin.user, legacy.rows[0].id, { decision: 'APPROVED', reason: '' });
+  assert.equal(approved.transport, 'BICYCLE'); assert.equal((await getSession(applicant.token))?.role, 'COURIER');
+  const next = await telegramAccount('Тест недопустимого транспорта');
+  for (const transport of ['BICYCLE', 'PLANE', '', 'электромопед']) {
+    const input = { ...applicationInput(), transport };
+    assert.equal(applicationSchema.safeParse(input).success, false);
+    await assert.rejects(submitApplication(next.user, input as never), ZodError);
+  }
+  assert.equal(await ownApplication(next.user), null);
 });
 
 test('admin approval grants courier delivery access to existing and reopened sessions, with immutable audit', async () => {

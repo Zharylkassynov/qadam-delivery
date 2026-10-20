@@ -2,11 +2,11 @@ import { z } from 'zod';
 import type { PoolClient } from 'pg';
 import { database, transaction } from './db';
 import { AppError } from './errors';
-import type { CourierApplication, User } from './types';
+import { courierTransports, type CourierApplication, type User } from './types';
 
 export const applicationSchema = z.object({
   phone: z.string().trim().min(7).max(30).regex(/^[+\d\s()\-]+$/).refine((s) => s.replace(/\D/g, '').length >= 7),
-  transport: z.enum(['FOOT', 'BICYCLE', 'CAR']), notes: z.string().trim().max(500).default(''),
+  transport: z.enum(courierTransports), notes: z.string().trim().max(500).default(''),
 }).strict();
 export const decisionSchema = z.object({
   decision: z.enum(['APPROVED', 'REJECTED']), reason: z.string().trim().max(500).default(''),
@@ -38,6 +38,7 @@ export async function ownApplication(actor: User): Promise<CourierApplication | 
 }
 export async function submitApplication(actor: User, input: Input) {
   requireTelegram(actor);
+  const data = applicationSchema.parse(input);
   return transaction(async (db) => {
     await db.query("SELECT pg_advisory_xact_lock(hashtextextended('courier-submit:' || $1,0))", [actor.id]);
     const member = await db.query('SELECT role,active FROM qadam.users WHERE id=$1', [actor.id]);
@@ -47,10 +48,10 @@ export async function submitApplication(actor: User, input: Input) {
     if (existing.rows[0]) {
       const application = await read(db, existing.rows[0].id);
       if (application.status === 'APPROVED') throw new AppError(409, 'Заявка уже одобрена.');
-      if (application.phone !== input.phone || application.transport !== input.transport || application.notes !== input.notes) throw new AppError(409, 'Заявка уже на рассмотрении. Дождитесь решения администратора.');
+      if (application.phone !== data.phone || application.transport !== data.transport || application.notes !== data.notes) throw new AppError(409, 'Заявка уже на рассмотрении. Дождитесь решения администратора.');
       return application;
     }
-    const result = await db.query('INSERT INTO qadam.courier_applications(user_id,phone,transport,notes) VALUES($1,$2,$3,$4) RETURNING id', [actor.id, input.phone, input.transport, input.notes]);
+    const result = await db.query('INSERT INTO qadam.courier_applications(user_id,phone,transport,notes) VALUES($1,$2,$3,$4) RETURNING id', [actor.id, data.phone, data.transport, data.notes]);
     return read(db, result.rows[0].id);
   });
 }

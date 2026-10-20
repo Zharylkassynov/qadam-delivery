@@ -148,6 +148,32 @@ test('Mini App road route authenticates with bearer only and keeps provider erro
   expect((await page.request.post(`/api/orders/${order.id}/status`, { headers, data: { status: 'CANCELLED' } })).ok()).toBe(true);
 });
 
+test('legacy bicycle applicant chooses a current transport when reapplying without losing previous data', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  const proof = signedTelegramData({ id: 3500000000000 + Math.floor(Math.random() * 1000000000), first_name: 'Legacy transport autotest' });
+  const auth = page.waitForResponse(response => response.url().endsWith('/api/auth/telegram'));
+  await miniApp(page, proof); const { user } = await (await auth).json();
+  const url = process.env.TEST_DATABASE_URL;
+  if (!url || !new URL(url).pathname.endsWith('_test')) throw new Error('Legacy fixture is allowed only in the separate local test database');
+  const db = new pg.Client({ connectionString: url }); await db.connect();
+  try {
+    await db.query("INSERT INTO qadam.courier_applications(user_id,phone,transport,notes,status,reviewed_at,reviewed_by,decision_reason) VALUES($1,'+77000000000','BICYCLE','Историческая тестовая заявка','REJECTED',now(),$1,'Уточните данные заявки')", [user.id]);
+  } finally { await db.end(); }
+  await page.getByRole('navigation', { name: 'Мобильная навигация' }).getByRole('button', { name: 'Профиль', exact: true }).click();
+  await page.getByRole('button', { name: 'Стать курьером', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Алматы · Велосипед', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Подать повторно', exact: true }).click();
+  await expect(page.getByLabel('Телефон для связи')).toHaveValue('+77000000000');
+  await expect(page.getByLabel('Комментарий', { exact: true })).toHaveValue('Историческая тестовая заявка');
+  const select = page.getByLabel('Способ доставки'); await expect(select).toHaveValue('');
+  await expect(select.locator('option')).toHaveText(['Выберите способ доставки', 'Пеший', 'Электромопед', 'Мопед', 'Автомобиль']);
+  await page.getByRole('button', { name: 'Отправить заявку', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Доставляй с Qadam', exact: true })).toBeVisible();
+  await select.selectOption('MOPED'); await page.getByRole('button', { name: 'Отправить заявку', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Заявка отправлена', exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Алматы · Мопед', exact: true })).toBeVisible();
+});
+
 test('Telegram applicant is rejected, reapplies, gets admin approval and completes a courier delivery', async ({ browser, request }, testInfo) => {
   test.setTimeout(120000);
   const suffix = randomUUID().slice(0, 8), applicantName = `Курьер E2E ${suffix}`;
@@ -175,12 +201,14 @@ test('Telegram applicant is rejected, reapplies, gets admin approval and complet
     await expect(applicant.getByRole('main').getByRole('alert')).toContainText('Проверьте телефон');
     await expect(applicant.getByLabel('Телефон для связи')).toHaveValue('+++++++');
     await applicant.getByLabel('Телефон для связи').fill('+7 700 000 00 00');
-    await applicant.getByLabel('Способ доставки').selectOption('BICYCLE');
+    await expect(applicant.getByLabel('Способ доставки').locator('option')).toHaveText(['Пеший', 'Электромопед', 'Мопед', 'Автомобиль']);
+    await applicant.getByLabel('Способ доставки').selectOption('ELECTRIC_MOPED');
     await applicant.getByLabel('Комментарий', { exact: true }).fill('Автотест заявки, не реальный курьер');
     expect(await applicant.getByRole('button', { name: 'Отправить заявку', exact: true }).evaluate((n) => n.getBoundingClientRect().bottom)).toBeLessThanOrEqual(700);
     await applicant.screenshot({ path: testInfo.outputPath('courier-application-form.png'), fullPage: true });
     await applicant.getByRole('button', { name: 'Отправить заявку', exact: true }).click();
     await expect(applicant.getByRole('heading', { name: 'Заявка отправлена', exact: true })).toBeVisible();
+    await expect(applicant.getByRole('heading', { name: 'Алматы · Электромопед', exact: true })).toBeVisible();
     const candidate = admin.locator('.application-card').filter({ hasText: applicantName });
     await candidate.getByRole('button', { name: 'Рассмотреть заявку', exact: true }).click();
     await admin.getByRole('button', { name: 'Отклонить заявку', exact: true }).click();
@@ -196,9 +224,12 @@ test('Telegram applicant is rejected, reapplies, gets admin approval and complet
     await expect(reopened.getByText('Причина: Уточните контактный телефон', { exact: true })).toBeVisible();
     await reopened.getByRole('button', { name: 'Подать повторно', exact: true }).click();
     await expect(reopened.getByLabel('Телефон для связи')).toHaveValue('+7 700 000 00 00');
+    await expect(reopened.getByLabel('Способ доставки')).toHaveValue('ELECTRIC_MOPED');
+    await reopened.getByLabel('Способ доставки').selectOption('MOPED');
     await reopened.getByLabel('Телефон для связи').fill('+7 701 000 00 00');
     await reopened.getByRole('button', { name: 'Отправить заявку', exact: true }).click();
     await admin.getByRole('button', { name: 'К списку заявок', exact: true }).click();
+    await expect(candidate).toContainText('Алматы · Мопед');
     await candidate.getByRole('button', { name: 'Рассмотреть заявку', exact: true }).click();
     await admin.getByRole('button', { name: 'Одобрить заявку', exact: true }).click();
     await expect(reopened.getByRole('heading', { name: 'Можно начинать', exact: true })).toBeVisible();

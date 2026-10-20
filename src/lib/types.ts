@@ -1,12 +1,15 @@
 export type Role = 'CUSTOMER' | 'COURIER';
 export type User = { id: string; name: string; email: string; role: Role; telegramId?: string; isAdmin?: true };
+export const courierTransports = ['FOOT', 'ELECTRIC_MOPED', 'MOPED', 'CAR'] as const;
+export type CourierTransport = typeof courierTransports[number];
 export type CourierApplication = {
   id: string; userId: string; name: string; telegramId: string; phone: string;
-  transport: 'FOOT' | 'BICYCLE' | 'CAR'; notes: string;
+  transport: CourierTransport | 'BICYCLE'; notes: string;
   status: 'PENDING' | 'APPROVED' | 'REJECTED'; submittedAt: string;
   reviewedAt: string | null; reviewer: string | null; decisionReason: string; applicantActive: boolean;
 };
-export const transportLabels = { FOOT: 'Пешком', BICYCLE: 'Велосипед', CAR: 'Автомобиль' } as const;
+// Bicycle remains readable in historical applications, but cannot be selected anew.
+export const transportLabels = { FOOT: 'Пеший', ELECTRIC_MOPED: 'Электромопед', MOPED: 'Мопед', CAR: 'Автомобиль', BICYCLE: 'Велосипед' } as const;
 export const statuses = ['CREATED', 'SEARCHING_FOR_COURIER', 'ACCEPTED', 'PICKED_UP', 'IN_TRANSIT', 'DELIVERED', 'CANCELLED'] as const;
 export type Status = typeof statuses[number];
 export const statusLabels: Record<Status, string> = {

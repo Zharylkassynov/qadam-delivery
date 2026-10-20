@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import { api } from '../lib/client-api';
-import { transportLabels, type CourierApplication, type User } from '../lib/types';
+import { courierTransports, transportLabels, type CourierApplication, type CourierTransport, type User } from '../lib/types';
 import { serviceCity } from '../lib/service-area';
 import { Button, EmptyState, Feedback, Icon, formatTime } from './delivery-ui';
 
@@ -24,7 +24,7 @@ export function CourierOnboarding({ user, onBack, onOrders }: { user: User; onBa
   const [error, setError] = useState(''), [editing, setEditing] = useState(false);
   const [loadError, setLoadError] = useState(''), [ready, setReady] = useState(false);
   const version = useRef(0), mutating = useRef(false);
-  const [phone, setPhone] = useState(''), [transport, setTransport] = useState<CourierApplication['transport']>('FOOT'), [notes, setNotes] = useState('');
+  const [phone, setPhone] = useState(''), [transport, setTransport] = useState<CourierTransport | ''>('FOOT'), [notes, setNotes] = useState('');
   const [refresh, setRefresh] = useState(0);
   useEffect(() => {
     let alive = true, fetching = false; const controller = new AbortController();
@@ -53,7 +53,7 @@ export function CourierOnboarding({ user, onBack, onOrders }: { user: User; onBa
   else if (form) action = <Button type="submit" form="courier-application-form" disabled={busy}>{busy ? 'Отправляем…' : 'Отправить заявку'}</Button>;
   else if (granted) action = <Button onClick={onOrders}>К доступным заказам</Button>;
   else if (application?.status === 'APPROVED') action = <Button onClick={onOrders}>К доступным заказам</Button>;
-  else if (application?.status === 'REJECTED') action = <Button onClick={(event) => { event.preventDefault(); setPhone(application.phone); setTransport(application.transport); setNotes(application.notes); setError(''); setEditing(true); }}>Подать повторно</Button>;
+  else if (application?.status === 'REJECTED') action = <Button onClick={(event) => { event.preventDefault(); setPhone(application.phone); setTransport(courierTransports.find(value => value === application.transport) ?? ''); setNotes(application.notes); setError(''); setEditing(true); }}>Подать повторно</Button>;
   return <ApplicationScreen title="Стать курьером" actions={action} onBack={onBack} busy={busy}>
     {loading && <p role="status">Загружаем заявку…</p>}
     {!loading && granted && <><h1>Можно начинать</h1><Feedback title="Доступ курьера открыт" tone="success">Доступ назначен администратором. Повторная заявка не требуется.</Feedback></>}
@@ -61,7 +61,7 @@ export function CourierOnboarding({ user, onBack, onOrders }: { user: User; onBa
     {form && <form id="courier-application-form" onSubmit={(e) => void submit(e)} className="form-fields"><fieldset className="form-fields" disabled={busy}>
       <div className="screen-heading"><h1>Доставляй с Qadam</h1><p>Оставь контакты. Доступ к заказам появится после одобрения.</p></div><p>Город: {serviceCity}</p>
       <div className="field"><label htmlFor="courier-phone">Телефон для связи</label><input id="courier-phone" type="tel" autoComplete="tel" inputMode="tel" required minLength={7} maxLength={30} placeholder="+7 700 000 00 00" value={phone} onChange={(e) => setPhone(e.target.value)}/><small className="field-hint">Укажи номер, по которому с тобой можно связаться.</small></div>
-      <div className="field"><label htmlFor="courier-transport">Способ доставки</label><select id="courier-transport" value={transport} onChange={(e) => setTransport(e.target.value as CourierApplication['transport'])}>{Object.entries(transportLabels).map(([value, label]) => <option value={value} key={value}>{label}</option>)}</select></div>
+      <div className="field"><label htmlFor="courier-transport">Способ доставки</label><select id="courier-transport" required value={transport} onChange={(e) => setTransport(e.target.value as CourierTransport)}>{transport === '' && <option value="" disabled>Выберите способ доставки</option>}{courierTransports.map(value => <option value={value} key={value}>{transportLabels[value]}</option>)}</select></div>
       <div className="field"><label htmlFor="courier-notes">Комментарий</label><textarea id="courier-notes" rows={3} maxLength={500} value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Когда удобно доставлять, опыт или вопросы"/><small className="field-hint">Необязательно · до 500 символов.</small></div>
     </fieldset></form>}
     {!loading && application && !editing && <>
