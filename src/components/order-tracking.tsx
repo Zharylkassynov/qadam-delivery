@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { api, ApiError } from '../lib/client-api';
 import { currentLocation } from '../lib/device-location';
-import type { CourierLocation, Order, User } from '../lib/types';
+import type { CourierLocation, DeliveryRoute, Order, User } from '../lib/types';
 import { Button, Feedback, finished, formatTime } from './delivery-ui';
 import { DeliveryMap, type MapMarker } from './delivery-map';
 
@@ -19,7 +19,7 @@ export function OrderTracking({ order, user }: { order: Order; user: User }) {
   const navigation = `https://www.google.com/maps/dir/?${new URLSearchParams({ api: '1', origin: order.pickupPoint ? `${order.pickupPoint.latitude},${order.pickupPoint.longitude}` : order.pickupAddress, destination: order.destinationPoint ? `${order.destinationPoint.latitude},${order.destinationPoint.longitude}` : order.destinationAddress })}`;
   return <section className="order-tracking" aria-label="Отслеживание доставки">
     <h2>Доставка на карте</h2>
-    {markers.length > 0 ? <DeliveryMap markers={markers} focusCourier/> : <Feedback title="Точки ещё не указаны">В этом заказе сохранены только текстовые адреса. В новом заказе можно отметить отправление и доставку на карте.</Feedback>}
+    {markers.length > 0 ? <OrderRoute key={`route-${order.id}`} order={order} markers={markers}/> : <Feedback title="Точки ещё не указаны">В этом заказе сохранены только текстовые адреса. В новом заказе можно отметить отправление и доставку на карте.</Feedback>}
     <p className="map-legend">А — отправление · Б — доставка</p>
     <a href={navigation} target="_blank" rel="noopener noreferrer">Открыть навигацию</a>
     {(!order.pickupPoint || !order.destinationPoint) && markers.length > 0 && <p className="muted">{!order.pickupPoint ? 'Точка отправления не указана. ' : ''}{!order.destinationPoint ? 'Точка доставки не указана.' : ''}</p>}
@@ -30,6 +30,32 @@ export function OrderTracking({ order, user }: { order: Order; user: User }) {
     </Feedback> : order.courierId ? <Feedback title="Курьер ещё не передал позицию">Координаты появятся, когда курьер разрешит геолокацию и включит её в заказе.</Feedback> : null}
     {user.role === 'COURIER' && order.courierId === user.id && <CourierSharing key={order.id} orderId={order.id} active={!finished(order)}/>}
   </section>;
+}
+
+function OrderRoute({ order, markers }: { order: Order; markers: MapMarker[] }) {
+  const [route, setRoute] = useState<DeliveryRoute | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const [attempt, setAttempt] = useState(0);
+  const hasPoints = !!order.pickupPoint && !!order.destinationPoint;
+  useEffect(() => {
+    const controller = new AbortController(); let active = true;
+    setRoute(null); setError(''); setBusy(hasPoints);
+    const timer = setTimeout(() => { if (hasPoints) void api<{ route: DeliveryRoute | null }>(`/api/orders/${order.id}/route`, undefined, controller.signal)
+      .then((data) => { if (active) { setRoute(data.route); if (!data.route) setError('В заказе не хватает координат. Откройте навигацию по адресам.'); } })
+      .catch((failure) => { if (active) setError(failure instanceof Error ? failure.message : 'Не удалось построить маршрут.'); })
+      .finally(() => { if (active) setBusy(false); }); }, 0);
+    return () => { active = false; clearTimeout(timer); controller.abort(); };
+    // Order polling changes its object and GPS, but never needs a new A-to-B route.
+  }, [order.id, order.pickupPoint?.latitude, order.pickupPoint?.longitude, order.destinationPoint?.latitude, order.destinationPoint?.longitude, hasPoints, attempt]);
+  const distance = route && (route.distanceMeters < 1000 ? `${Math.round(route.distanceMeters)} м` : `${new Intl.NumberFormat('ru-KZ', { maximumFractionDigits: 1 }).format(route.distanceMeters / 1000)} км`);
+  return <>
+    <DeliveryMap markers={markers} route={route} focusCourier/>
+    {busy && <Feedback role="status" title="Строим маршрут…">Адреса и действия с заказом доступны во время расчёта.</Feedback>}
+    {route && <Feedback role="status" title={`Автомаршрут · ${distance}`}>По дорогам от А к Б. Без учёта пробок.</Feedback>}
+    {error && <Feedback tone="warning" role="alert" title="Не удалось построить маршрут">{error} Точки А и Б сохранены.<Button variant="secondary" className="wide" onClick={() => setAttempt(value => value + 1)}>Повторить маршрут</Button></Feedback>}
+    {!hasPoints && <p className="muted">Для маршрута нужны обе точки: отправление и доставка. Можно открыть навигацию по адресам.</p>}
+  </>;
 }
 
 function CourierSharing({ orderId, active }: { orderId: string; active: boolean }) {

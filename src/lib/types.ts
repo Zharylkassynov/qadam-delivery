@@ -21,6 +21,8 @@ export const actionLabels: Partial<Record<Status, string>> = {
 };
 export type OrderEvent = { id: number; status: Status; at: string; actor: string };
 export type MapPoint = { latitude: number; longitude: number };
+// Route paths use Leaflet's [latitude, longitude] order, unlike provider GeoJSON.
+export type DeliveryRoute = { mode: 'drive'; distanceMeters: number; paths: [number, number][][] };
 export type CourierLocation = MapPoint & { accuracy: number | null; capturedAt: string; receivedAt: string };
 export type Order = {
   id: string; number: string; customerId: string; customerName: string;

@@ -74,6 +74,7 @@ test('HTTP API requires authentication, same-origin mutations and server-owned r
   expect((await request.get('/api/orders')).status()).toBe(401);
   expect((await request.get('/api/map-config')).status()).toBe(401);
   expect((await request.get('/api/map-tiles/1/0/0')).status()).toBe(401);
+  expect((await request.get(`/api/orders/${randomUUID()}/route`)).status()).toBe(401);
   expect((await request.post('/api/geocoding', { headers: { Origin: origin }, data: { query: 'Алматы, Абая 10' } })).status()).toBe(401);
   for (const blockedOrigin of [undefined, 'null', 'http://localhost:9999', 'https://localhost:3100', 'http://localhost.evil.invalid:3100']) {
     expect((await request.post('/api/auth/login', { headers: blockedOrigin ? { Origin: blockedOrigin } : {}, data: {} })).status()).toBe(403);

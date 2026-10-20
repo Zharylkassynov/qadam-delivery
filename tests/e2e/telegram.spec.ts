@@ -121,6 +121,33 @@ test('Mini App address search and modern map tiles use bearer authentication wit
   } finally { await context.close(); }
 });
 
+test('Mini App road route authenticates with bearer only and keeps provider errors separate from delivery actions', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 }); await mockMapTiles(page.context());
+  const proof = signedTelegramData({ id: 2000000000000 + Math.floor(Math.random() * 1000000000), first_name: 'Route bearer autotest' });
+  const auth = page.waitForResponse(response => response.url().endsWith('/api/auth/telegram'));
+  await miniApp(page, proof);
+  const { sessionToken } = await (await auth).json();
+  const headers = { Origin: origin, Authorization: `Bearer ${sessionToken}` };
+  await expect(page.getByRole('heading', { name: /Доставка\s*по Алматы/ })).toBeVisible();
+  const created = await page.request.post('/api/orders', { headers, data: {
+    requestKey: randomUUID(), pickupAddress: 'E2E маршрут Telegram, Абая 10', destinationAddress: 'Алматы, Абая 52', recipientName: 'Тест Telegram', recipientPhone: '+77000000000',
+    notes: 'Автотест: маршрут симулирован', pickupPoint: { latitude: 43.24189, longitude: 76.94684 }, destinationPoint: { latitude: 43.2398, longitude: 76.9239 },
+  } }); expect(created.status()).toBe(201); const { order } = await created.json();
+  let requested = false;
+  await page.route('**/api/orders/*/route', async route => {
+    const sent = await route.request().allHeaders(); expect(sent.authorization).toMatch(/^Bearer [a-f0-9]{64}$/); expect(sent.cookie).toBeUndefined();
+    // The actual handler authenticates/authorizes and reaches missing-key fallback.
+    const actual = await route.fetch({ headers: sent }); expect(actual.status()).toBe(503); requested = true;
+    await route.fulfill({ json: { route: { mode: 'drive', distanceMeters: 4277, paths: [[[43.24189, 76.94684], [43.2405, 76.94684], [43.2398, 76.9239]]] } } });
+  });
+  await page.getByRole('navigation', { name: 'Мобильная навигация' }).getByRole('button', { name: 'Заказы', exact: true }).click();
+  await page.getByRole('button', { name: /^Открыть заказ/ }).filter({ hasText: 'E2E маршрут Telegram' }).click();
+  await expect(page.getByText('Автомаршрут · 4,3 км', { exact: true })).toBeVisible();
+  await expect(page.locator('path.qadam-route-line')).toHaveCount(1); expect(requested).toBe(true);
+  expect(await page.context().cookies()).toHaveLength(0);
+  expect((await page.request.post(`/api/orders/${order.id}/status`, { headers, data: { status: 'CANCELLED' } })).ok()).toBe(true);
+});
+
 test('Telegram applicant is rejected, reapplies, gets admin approval and completes a courier delivery', async ({ browser, request }, testInfo) => {
   test.setTimeout(120000);
   const suffix = randomUUID().slice(0, 8), applicantName = `Курьер E2E ${suffix}`;

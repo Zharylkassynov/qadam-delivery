@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import type * as Leaflet from 'leaflet';
-import type { MapPoint } from '../lib/types';
+import type { DeliveryRoute, MapPoint } from '../lib/types';
 import { Button, Feedback } from './delivery-ui';
 import { api } from '../lib/client-api';
 import { sessionTileLayer } from '../lib/map-tile-layer';
@@ -12,17 +12,19 @@ const almaty: [number, number] = [43.2389, 76.8897];
 
 // The library is imported only in the browser; the provider receives tile numbers,
 // never order IDs, recipient names, phone numbers or address text.
-export function DeliveryMap({ markers, onPick, focusCourier = false, center }: { markers: MapMarker[]; onPick?: (point: MapPoint) => void; focusCourier?: boolean; center?: MapPoint }) {
+export function DeliveryMap({ markers, onPick, focusCourier = false, center, route }: { markers: MapMarker[]; onPick?: (point: MapPoint) => void; focusCourier?: boolean; center?: MapPoint; route?: DeliveryRoute | null }) {
   const container = useRef<HTMLDivElement>(null);
-  const state = useRef<{ L: typeof Leaflet; map: Leaflet.Map; layer: Leaflet.LayerGroup } | null>(null);
-  const latest = useRef({ markers, onPick, center }); latest.current = { markers, onPick, center };
+  const state = useRef<{ L: typeof Leaflet; map: Leaflet.Map; layer: Leaflet.LayerGroup; routeLayer: Leaflet.LayerGroup } | null>(null);
+  const latest = useRef({ markers, onPick, center, route }); latest.current = { markers, onPick, center, route };
   const courierShown = useRef(false);
+  const routeShown = useRef(false);
   const [ready, setReady] = useState(false);
   const [error, setError] = useState('');
   const [attempt, setAttempt] = useState(0);
   useEffect(() => {
     let disposed = false;
     courierShown.current = false;
+    routeShown.current = false;
     setReady(false); setError('');
     let observer: ResizeObserver | undefined;
     const controller = new AbortController();
@@ -36,7 +38,8 @@ export function DeliveryMap({ markers, onPick, focusCourier = false, center }: {
       const tiles = (config.provider === 'geoapify' ? sessionTileLayer(L, config.tileUrl, options) : L.tileLayer(config.tileUrl, options)).addTo(map);
       tiles.on('tileerror', () => { if (!disposed) setError('Карта не загрузилась. Проверьте интернет и повторите. Адреса и статусы доступны ниже.'); });
       const layer = L.layerGroup().addTo(map);
-      state.current = { L, map, layer };
+      const routeLayer = L.layerGroup().addTo(map);
+      state.current = { L, map, layer, routeLayer };
       map.on('click', (event: Leaflet.LeafletMouseEvent) => latest.current.onPick?.({ latitude: event.latlng.lat, longitude: event.latlng.lng }));
       const points = latest.current.markers.filter((point) => point.kind !== 'courier');
       const bounds = (points.length ? points : latest.current.markers).map((point): [number, number] => [point.latitude, point.longitude]);
@@ -63,10 +66,26 @@ export function DeliveryMap({ markers, onPick, focusCourier = false, center }: {
     // customer's chosen zoom or interrupt panning.
     if (!onPick && !courierShown.current && markers.some((point) => point.kind === 'courier')) {
       courierShown.current = true;
-      map.fitBounds(L.latLngBounds(markers.map((point): [number, number] => [point.latitude, point.longitude])), { padding: [48, 48], maxZoom: 16, animate: false });
+      map.fitBounds(L.latLngBounds([...markers.map((point): [number, number] => [point.latitude, point.longitude]), ...(latest.current.route?.paths.flat() ?? [])]), { padding: [48, 48], maxZoom: 16, animate: false });
     }
     if (onPick) map.getContainer().setAttribute('aria-label', 'Выбор точки на карте. Перемещайте карту стрелками и выберите точку в центре, либо нажмите на карту.');
   }, [markers, ready, onPick]);
+
+  useEffect(() => {
+    const current = state.current;
+    if (!ready || !current) return;
+    const { L, map, routeLayer } = current;
+    routeLayer.clearLayers();
+    if (!route) return;
+    const tokens = getComputedStyle(map.getContainer());
+    L.polyline(route.paths, { color: tokens.getPropertyValue('--surface').trim(), weight: 8, interactive: false, className: 'qadam-route-casing' }).addTo(routeLayer);
+    L.polyline(route.paths, { color: tokens.getPropertyValue('--brand').trim(), weight: 5, interactive: false, className: 'qadam-route-line' }).addTo(routeLayer);
+    if (!routeShown.current) {
+      routeShown.current = true;
+      const points = [...route.paths.flat(), ...latest.current.markers.map((m): [number, number] => [m.latitude, m.longitude])];
+      map.fitBounds(L.latLngBounds(points), { padding: [48, 48], maxZoom: 16, animate: false });
+    }
+  }, [route, ready]);
 
   const courier = markers.find((point) => point.kind === 'courier');
   return <div className="delivery-map-block">
