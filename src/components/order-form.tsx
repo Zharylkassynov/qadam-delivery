@@ -1,7 +1,7 @@
 'use client';
 
 import { useRef, useState, type FormEvent, type InputHTMLAttributes } from 'react';
-import { Button, Feedback, PriceNote, RouteCard } from './delivery-ui';
+import { AddressRow, Button, Feedback, PriceNote, RouteCard } from './delivery-ui';
 import type { MapPoint } from '../lib/types';
 import { DeliveryMap } from './delivery-map';
 
@@ -54,15 +54,10 @@ export function OrderForm({ draft, onChange, onReview, onPoint, busy }: { draft:
   }
   return <form id="delivery-form" ref={formRef} onSubmit={review} noValidate>
     <fieldset className="form-fields" disabled={busy}>
-      <div className="screen-heading"><h1>Откуда и куда</h1><p>Шаг 1 из 2 · заполните данные доставки</p></div>
-      <p className="form-required-note">Адреса, имя и телефон обязательны.</p>
-      <Field label="Адрес отправления" name="pickupAddress" autoComplete="off" placeholder="Город, улица, дом" required minLength={5} maxLength={300} value={draft.pickupAddress} error={errors.pickupAddress} onChange={(e) => change('pickupAddress', e.target.value)}/>
-      <Button variant="secondary" onClick={() => onPoint('pickup')} disabled={draft.pickupAddress.trim().length < 5}>{draft.pickupPoint ? 'Изменить точку отправления' : 'Найти отправление на карте'}</Button>
-      {draft.pickupPoint && <small className="field-hint">А · точка отправления выбрана</small>}
-      <Field label="Адрес доставки" name="destinationAddress" autoComplete="off" placeholder="Город, улица, дом, квартира" required minLength={5} maxLength={300} value={draft.destinationAddress} error={errors.destinationAddress} onChange={(e) => change('destinationAddress', e.target.value)} hint="Укажите подъезд или ориентир в комментарии."/>
-      <Button variant="secondary" onClick={() => onPoint('destination')} disabled={draft.destinationAddress.trim().length < 5}>{draft.destinationPoint ? 'Изменить точку доставки' : 'Найти доставку на карте'}</Button>
-      <small className="field-hint">{draft.destinationPoint ? 'Б · точка доставки выбрана' : 'Отметьте обе точки, чтобы клиент и курьер видели адреса на карте. Без точек сохранятся только текстовые адреса.'}</small>
-      <h2>Получатель</h2>
+      <div className="screen-heading"><h1 tabIndex={-1}>Получатель и посылка</h1><p>Шаг 2 из 3 · детали доставки</p></div>
+      <div className="recipient-route" aria-label="Адреса доставки">{(['pickup', 'destination'] as const).map((kind) => <div key={kind}><button type="button" className="address-edit" aria-label={kind === 'pickup' ? 'Изменить адрес отправления' : 'Изменить адрес доставки'} aria-invalid={!!errors[`${kind}Address`]} onClick={() => onPoint(kind)}><AddressRow kind={kind} address={draft[`${kind}Address`] || 'Укажите адрес'}/></button>{errors[`${kind}Address`] && <small className="field-error">{errors[`${kind}Address`]}</small>}</div>)}</div>
+      <div className="divider"/>
+      <p className="form-required-note">Имя и телефон обязательны.</p>
       <Field label="Имя получателя" name="recipientName" autoComplete="name" placeholder="Кому передать посылку" required minLength={2} maxLength={100} value={draft.recipientName} error={errors.recipientName} onChange={(e) => change('recipientName', e.target.value)}/>
       <Field label="Телефон получателя" name="recipientPhone" type="tel" autoComplete="tel" inputMode="tel" placeholder="+7 700 123 45 67" required minLength={7} maxLength={30} value={draft.recipientPhone} error={errors.recipientPhone} onChange={(e) => change('recipientPhone', e.target.value)} hint="Курьер позвонит, чтобы передать посылку."/>
       <h2>Что отправляем</h2>
@@ -76,7 +71,7 @@ export function OrderForm({ draft, onChange, onReview, onPoint, busy }: { draft:
 }
 
 export function OrderReview({ draft, onEdit, busy }: { draft: OrderDraft; onEdit: () => void; busy: boolean }) {
-  return <div className="form-fields"><div className="screen-heading"><h1>Всё верно?</h1><p>Шаг 2 из 2 · проверьте перед отправкой</p></div>
+  return <div className="form-fields"><div className="screen-heading"><h1 tabIndex={-1}>Всё верно?</h1><p>Шаг 3 из 3 · проверьте перед отправкой</p></div>
     <RouteCard pickup={draft.pickupAddress} destination={draft.destinationAddress}/>
     {(draft.pickupPoint || draft.destinationPoint) && <DeliveryMap markers={[
       ...(draft.pickupPoint ? [{ ...draft.pickupPoint, kind: 'pickup' as const, label: `А · ${draft.pickupAddress}` }] : []),

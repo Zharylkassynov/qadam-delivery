@@ -1,28 +1,65 @@
 import { expect, test, type Page } from '@playwright/test';
 import { randomUUID } from 'node:crypto';
+import { mockMapTiles } from './map-fixture';
 
 const origin = process.env.E2E_ORIGIN ?? 'http://127.0.0.1:3100';
 
-async function login(page: Page, email: string) {
+test.beforeEach(async ({ context }) => { await mockMapTiles(context); });
+
+async function login(page: Page, email: string, waitForOrders = true) {
   await page.goto('/');
   await page.getByLabel('Логин', { exact: true }).fill(email);
   await page.getByLabel('Пароль', { exact: true }).fill(process.env.DEMO_PASSWORD!);
+  const ordersLoaded = waitForOrders ? page.waitForResponse((response) => response.url().endsWith('/api/orders') && response.request().method() === 'GET') : undefined;
   await page.getByRole('button', { name: 'Войти в аккаунт', exact: true }).click();
   await expect(page.getByRole('button', { name: 'Выйти', exact: true })).toBeVisible();
+  if (ordersLoaded) {
+    await ordersLoaded;
+    await expect(page.getByRole('status', { name: 'Загружаем заказы' })).toHaveCount(0);
+    await expect(page.getByRole('status').filter({ hasText: 'Загружаем доставки…' })).toHaveCount(0);
+  }
+}
+
+async function newDelivery(page: Page) {
+  await expect(page.getByRole('heading', { name: /^(Куда доставить\?|Текущая доставка)$/ })).toBeVisible();
+  if (await page.getByRole('heading', { name: 'Текущая доставка', exact: true }).isVisible()) {
+    await page.getByRole('button', { name: 'Новая доставка', exact: true }).click();
+  }
+  await expect(page.getByRole('heading', { name: 'Куда доставить?', exact: true })).toBeVisible();
+}
+
+async function chooseRoute(page: Page, pickup: string, destination: string) {
+  await page.getByRole('button', { name: 'Указать адреса', exact: true }).click();
+  await page.getByLabel('Адрес отправления', { exact: true }).fill(pickup);
+  const choose = page.getByRole('button', { name: 'Выбрать адрес', exact: true });
+  await expect(choose).toBeInViewport();
+  await choose.click();
+  await page.getByLabel('Адрес доставки', { exact: true }).fill(destination);
+  await choose.click();
+  await expect(page.getByRole('main')).toContainText(pickup);
+  await expect(page.getByRole('main')).toContainText(destination);
+  await expect(page.getByRole('button', { name: 'Далее — получатель', exact: true })).toBeInViewport();
+}
+
+async function recipientForm(page: Page, pickup: string, destination: string) {
+  await newDelivery(page);
+  await chooseRoute(page, pickup, destination);
+  await page.getByRole('button', { name: 'Далее — получатель', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Получатель и посылка', exact: true })).toBeVisible();
 }
 
 test('customer and courier complete a delivery; polling, reopening and history retain it', async ({ browser }, testInfo) => {
   const customerContext = await browser.newContext();
   const courierContext = await browser.newContext({ viewport: { width: 390, height: 844 } });
+  await mockMapTiles(customerContext);
+  await mockMapTiles(courierContext);
   const customer = await customerContext.newPage();
   const courier = await courierContext.newPage();
   const pickup = `E2E ${randomUUID().slice(0, 8)}, улица Абая, 10`;
   try {
     await login(customer, 'customer1@qadam.demo');
     await login(courier, 'courier1@qadam.demo');
-    await customer.getByRole('button', { name: 'Заказать доставку', exact: true }).click();
-    await customer.getByLabel('Адрес отправления', { exact: true }).fill(pickup);
-    await customer.getByLabel('Адрес доставки', { exact: true }).fill('Алматы, улица Ауэзова, 20');
+    await recipientForm(customer, pickup, 'Алматы, улица Ауэзова, 20');
     await customer.getByLabel('Имя получателя', { exact: true }).fill('Получатель автотеста');
     await customer.getByLabel('Телефон получателя', { exact: true }).fill('+7 700 123 45 67');
     await customer.getByLabel('Комментарий курьеру', { exact: true }).fill('Автоматическая проверка — не реальная доставка');
@@ -52,7 +89,7 @@ test('customer and courier complete a delivery; polling, reopening and history r
     await customer.close();
     const reopened = await customerContext.newPage();
     await reopened.goto('/');
-    await expect(reopened.getByRole('heading', { name: /Доставка\s*по Алматы/ })).toBeVisible();
+    await expect(reopened.getByRole('heading', { name: /^(Куда доставить\?|Текущая доставка)$/ })).toBeVisible();
     await reopened.getByRole('navigation', { name: 'Разделы', exact: true }).getByRole('button', { name: 'Мои заказы', exact: true }).click();
     await reopened.getByRole('button', { name: 'Завершённые', exact: true }).click();
     await reopened.getByRole('button', { name: orderButton, exact: true }).click();
@@ -120,10 +157,19 @@ for (const width of [390, 360]) {
     await login(page, 'customer2@qadam.demo');
     await expect(page.getByRole('navigation', { name: 'Мобильная навигация' })).toBeVisible();
     await page.evaluate(() => document.fonts.ready);
-    await expect(page.getByRole('heading', { name: /Доставка\s*по Алматы/ })).toBeVisible();
+    await newDelivery(page);
+    await expect(page.getByRole('button', { name: 'Указать адреса', exact: true })).toBeInViewport();
+    const map = page.getByRole('region', { name: 'Карта доставки', exact: true });
+    await expect(map).toBeVisible();
+    await expect.poll(() => map.evaluate((element) => element.getBoundingClientRect().height)).toBeGreaterThanOrEqual(200);
+    await expect(map.locator('.leaflet-tile-loaded').first()).toBeVisible();
     await page.screenshot({ path: testInfo.outputPath(`customer-home-${width}.png`), fullPage: true });
-    await page.getByRole('button', { name: 'Заказать доставку', exact: true }).click();
-    await expect(page.getByLabel('Адрес отправления', { exact: true })).toBeVisible();
+    await chooseRoute(page, 'Алматы, проспект Абая, 10', 'Алматы, улица Ауэзова, 20');
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+    await expect.poll(() => page.locator('img').evaluateAll((images) => images.every((image) => (image as HTMLImageElement).complete && (image as HTMLImageElement).naturalWidth > 0))).toBe(true);
+    await page.screenshot({ path: testInfo.outputPath(`customer-route-${width}.png`), fullPage: true });
+    await page.getByRole('button', { name: 'Далее — получатель', exact: true }).click();
+    await expect(page.getByRole('heading', { name: 'Получатель и посылка', exact: true })).toBeVisible();
     const action = page.getByRole('button', { name: 'Проверить заказ', exact: true });
     await expect(action).toBeInViewport();
     await page.getByLabel('Комментарий курьеру', { exact: true }).scrollIntoViewIfNeeded();
@@ -136,22 +182,29 @@ for (const width of [390, 360]) {
 
 test('review preserves the draft and a lost create response can be retried without a duplicate order', async ({ page }) => {
   await login(page, 'customer3@qadam.demo');
-  await page.getByRole('button', { name: 'Заказать доставку', exact: true }).click();
-  await page.getByRole('button', { name: 'Проверить заказ', exact: true }).click();
-  await expect(page.getByLabel('Адрес отправления', { exact: true })).toBeFocused();
-  await expect(page.getByText('Укажите имя получателя — минимум 2 символа.', { exact: true })).toBeVisible();
   const pickup = `E2E retry ${randomUUID().slice(0, 8)}, улица Абая, 27`;
-  await page.getByLabel('Адрес отправления', { exact: true }).fill(pickup);
-  await page.getByLabel('Адрес доставки', { exact: true }).fill('Алматы, улица Ауэзова, 12');
+  await recipientForm(page, pickup, 'Алматы, улица Ауэзова, 12');
+  await page.getByRole('button', { name: 'Проверить заказ', exact: true }).click();
+  await expect(page.getByLabel('Имя получателя', { exact: true })).toBeFocused();
+  await expect(page.getByText('Укажите имя получателя — минимум 2 символа.', { exact: true })).toBeVisible();
   await page.getByLabel('Имя получателя', { exact: true }).fill('Получатель проверки повтора');
   await page.getByLabel('Телефон получателя', { exact: true }).fill('+7 700 000 00 00');
   await page.getByRole('button', { name: 'Документы', exact: true }).click();
   await page.getByLabel('О посылке', { exact: true }).fill('Конверт, тестовые документы');
   await page.getByLabel('Комментарий курьеру', { exact: true }).fill('E2E — не реальная доставка');
+  await page.getByRole('button', { name: 'Изменить адрес отправления', exact: true }).click();
+  await expect(page.getByLabel('Адрес отправления', { exact: true })).toHaveValue(pickup);
+  const editedPickup = `${pickup}, подъезд 2`;
+  await page.getByLabel('Адрес отправления', { exact: true }).fill(editedPickup);
+  await page.getByRole('button', { name: 'Выбрать адрес', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Получатель и посылка', exact: true })).toBeVisible();
+  await expect(page.getByLabel('Имя получателя', { exact: true })).toHaveValue('Получатель проверки повтора');
+  await expect(page.getByLabel('Телефон получателя', { exact: true })).toHaveValue('+7 700 000 00 00');
+  await expect(page.getByRole('button', { name: 'Изменить адрес отправления', exact: true })).toContainText(editedPickup);
   await page.getByRole('button', { name: 'Проверить заказ', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Всё верно?', exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'Изменить данные', exact: true }).click();
-  await expect(page.getByLabel('Адрес отправления', { exact: true })).toHaveValue(pickup);
+  await expect(page.getByRole('button', { name: 'Изменить адрес отправления', exact: true })).toContainText(editedPickup);
   await expect(page.getByLabel('О посылке', { exact: true })).toHaveValue('Конверт, тестовые документы');
   await expect(page.getByRole('button', { name: 'Документы', exact: true })).toHaveAttribute('aria-pressed', 'true');
   await page.getByRole('button', { name: 'Проверить заказ', exact: true }).click();
@@ -174,7 +227,7 @@ test('review preserves the draft and a lost create response can be retried witho
   expect(requestKeys).toHaveLength(2);
   expect(requestKeys[0]).toBe(requestKeys[1]);
   const { orders } = await (await page.request.get('/api/orders')).json();
-  const saved = orders.filter((order: { pickupAddress: string }) => order.pickupAddress === pickup);
+  const saved = orders.filter((order: { pickupAddress: string }) => order.pickupAddress === editedPickup);
   expect(saved).toHaveLength(1);
   expect(saved[0].notes).toContain('Тип отправления: Документы');
   expect(saved[0].notes).toContain('О посылке: Конверт, тестовые документы');
@@ -187,10 +240,13 @@ test('loading, empty list and connection errors offer a working recovery action'
     await pending;
     await route.fulfill({ json: { orders: [] } });
   });
-  await login(page, 'customer2@qadam.demo');
-  await expect(page.getByRole('status', { name: 'Загружаем заказы' })).toBeVisible();
+  await login(page, 'customer2@qadam.demo', false);
+  const loading = page.getByRole('status').filter({ hasText: 'Загружаем доставки…' });
+  await expect(loading).toBeVisible();
   release();
-  await expect(page.getByRole('heading', { name: 'Пока нет доставок', exact: true })).toBeVisible();
+  await expect(loading).toHaveCount(0);
+  await expect(page.getByRole('heading', { name: 'Куда доставить?', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Указать адреса', exact: true })).toBeVisible();
   await page.unroute('**/api/orders');
   await page.route('**/api/orders', (route) => route.abort('connectionfailed'));
   await expect(page.getByRole('main').getByRole('alert')).toContainText('Данные не обновлены');

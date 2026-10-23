@@ -9,22 +9,28 @@ import { miniApp } from './telegram-browser-fixture';
 test.skip(Boolean(process.env.E2E_ORIGIN), 'Synthetic Telegram login runs only against the separate local test database');
 const origin = 'http://127.0.0.1:3100';
 
+test.beforeEach(async ({ context }) => { await mockMapTiles(context); });
+
 test('Mini App customer completes a delivery with browser courier and restores history without cookies', async ({ browser }, testInfo) => {
   const customerContext = await browser.newContext({ viewport: { width: 390, height: 844 } });
   const courierContext = await browser.newContext();
+  await mockMapTiles(customerContext);
   const customer = await customerContext.newPage();
   const courier = await courierContext.newPage();
   const proof = signedTelegramData({ id: 2000000000000 + Math.floor(Math.random() * 1000000000), first_name: 'Telegram автотест' });
   const pickup = `E2E Telegram ${randomUUID().slice(0, 8)}, Алматы, Абая, 10`;
   try {
     await miniApp(customer, proof);
-    await expect(customer.getByRole('heading', { name: /Доставка\s*по Алматы/ })).toBeVisible();
+    await expect(customer.getByRole('heading', { name: /^(Куда доставить\?|Текущая доставка)$/ })).toBeVisible();
     const nav = customer.getByRole('navigation', { name: 'Мобильная навигация' });
     expect(await nav.evaluate((el) => el.getBoundingClientRect().bottom)).toBeLessThanOrEqual(700);
-    await customer.getByRole('button', { name: 'Заказать доставку', exact: true }).click();
-    expect(await customer.getByRole('button', { name: 'Проверить заказ', exact: true }).evaluate((el) => el.getBoundingClientRect().bottom)).toBeLessThanOrEqual(700);
+    await customer.getByRole('button', { name: 'Указать адреса', exact: true }).click();
+    expect(await customer.getByRole('button', { name: 'Выбрать адрес', exact: true }).evaluate((el) => el.getBoundingClientRect().bottom)).toBeLessThanOrEqual(700);
     await customer.getByLabel('Адрес отправления', { exact: true }).fill(pickup);
+    await customer.getByRole('button', { name: 'Выбрать адрес', exact: true }).click();
     await customer.getByLabel('Адрес доставки', { exact: true }).fill('Алматы, улица Ауэзова, 20');
+    await customer.getByRole('button', { name: 'Выбрать адрес', exact: true }).click();
+    await customer.getByRole('button', { name: 'Далее — получатель', exact: true }).click();
     await customer.getByLabel('Имя получателя', { exact: true }).fill('Тестовый получатель');
     await customer.getByLabel('Телефон получателя', { exact: true }).fill('+7 700 123 45 67');
     await customer.getByRole('button', { name: 'Проверить заказ', exact: true }).click();
@@ -78,11 +84,12 @@ test('Mini App rejects forged proof and a client role, and permits only Telegram
 
 test('Mini App address search and modern map tiles use bearer authentication with cookies absent', async ({ browser }) => {
   const context = await browser.newContext({ viewport: { width: 390, height: 844 } });
+  await mockMapTiles(context);
   const page = await context.newPage();
   try {
     const proof = signedTelegramData({ id: 2000000000000 + Math.floor(Math.random() * 1000000000), first_name: 'Map bearer autotest' });
     await miniApp(page, proof);
-    await expect(page.getByRole('heading', { name: /Доставка\s*по Алматы/ })).toBeVisible();
+    await expect(page.getByRole('heading', { name: /^(Куда доставить\?|Текущая доставка)$/ })).toBeVisible();
     await context.clearCookies();
     await page.route('**/api/map-config', async (route) => {
       const headers = await route.request().allHeaders();
@@ -100,10 +107,11 @@ test('Mini App address search and modern map tiles use bearer authentication wit
       const headers = await route.request().allHeaders(); expect(headers.authorization).toMatch(/^Bearer [a-f0-9]{64}$/); expect(headers.cookie).toBeUndefined();
       await route.fulfill({ json: { results: [{ id: 'test-house', address: 'проспект Абая, 10', detail: 'Алматы', precision: 'building', latitude: 43.24189, longitude: 76.94684 }] } });
     });
-    await page.getByRole('button', { name: 'Заказать доставку', exact: true }).click();
+    await page.getByRole('button', { name: 'Указать адреса', exact: true }).click();
     await page.getByLabel('Адрес отправления', { exact: true }).fill('Алматы, Абая 10');
-    await page.getByRole('button', { name: 'Найти отправление на карте', exact: true }).click();
-    await expect(page.getByText('Дом найден автоматически', { exact: true })).toBeVisible();
+    await page.getByRole('button', { name: 'Найти адрес', exact: true }).click();
+    await expect(page.getByRole('heading', { name: 'Найденный адрес', exact: true })).toBeVisible();
+    await page.getByRole('button', { name: 'Уточнить на карте', exact: true }).click();
     await expect.poll(async () => page.locator('.leaflet-tile-loaded').count()).toBeGreaterThan(0);
     expect(tiles).toBeGreaterThan(0); expect(await context.cookies()).toHaveLength(0);
   } finally { await context.close(); }
@@ -116,7 +124,7 @@ test('Mini App road route authenticates with bearer only and keeps provider erro
   await miniApp(page, proof);
   const { sessionToken } = await (await auth).json();
   const headers = { Origin: origin, Authorization: `Bearer ${sessionToken}` };
-  await expect(page.getByRole('heading', { name: /Доставка\s*по Алматы/ })).toBeVisible();
+  await expect(page.getByRole('heading', { name: /^(Куда доставить\?|Текущая доставка)$/ })).toBeVisible();
   const created = await page.request.post('/api/orders', { headers, data: {
     requestKey: randomUUID(), pickupAddress: 'E2E маршрут Telegram, Абая 10', destinationAddress: 'Алматы, Абая 52', recipientName: 'Тест Telegram', recipientPhone: '+77000000000',
     notes: 'Автотест: маршрут симулирован', pickupPoint: { latitude: 43.24189, longitude: 76.94684 }, destinationPoint: { latitude: 43.2398, longitude: 76.9239 },
@@ -240,7 +248,7 @@ test('Telegram applicant is rejected, reapplies, gets admin approval and complet
     // Native LocationManager is simulated here; no browser GPS or real Telegram identity.
     expect(orders.find((item: { id: string }) => item.id === order.id).courierLocation.latitude).toBe(43.24);
     await admin.getByRole('button', { name: 'Назад в профиль' }).click();
-    await expect(admin.getByRole('heading', { name: /Доставка\s*по Алматы/ })).toHaveCount(0);
+    await expect(admin.getByRole('heading', { name: /^(Куда доставить\?|Текущая доставка)$/ })).toHaveCount(0);
     // Administrator remains a customer, with their own ordinary order access.
     await admin.getByRole('button', { name: 'Назад в профиль' }).click();
     await expect(admin.locator('.profile-card')).toContainText('Клиент');

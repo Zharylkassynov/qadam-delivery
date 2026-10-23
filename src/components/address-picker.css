@@ -1,0 +1,141 @@
+.screen-point,
+.screen-create {
+  background: var(--surface);
+}
+
+.address-app-bar { padding-inline: 12px; }
+.address-app-bar > p { text-align: left; }
+.sticky-action.address-action { padding: 20px 20px calc(20px + env(safe-area-inset-bottom)); }
+
+.address-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+}
+
+.address-picker-query,
+.address-picker-pickup,
+.address-picker-selected,
+.address-picker-result-list {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+}
+
+.address-picker-selected > h2,
+.address-picker-result-list > h2 {
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 20px;
+  font-weight: 500;
+}
+
+.address-picker-input-wrap {
+  position: relative;
+  min-width: 0;
+}
+
+.address-picker-input-wrap > input {
+  padding-right: 92px;
+}
+
+.address-picker-input-wrap > .address-picker-search-action {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  min-height: 44px;
+  max-width: 84px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  font-size: 14px;
+  line-height: 20px;
+}
+
+.address-picker-result {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+  width: 100%;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--ink);
+  text-align: left;
+}
+
+.address-picker-result:hover {
+  border-color: var(--brand);
+}
+
+.address-picker-result > span,
+.address-picker-result > small,
+.address-picker-hint,
+.address-picker-attribution {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 18px;
+  overflow-wrap: anywhere;
+}
+
+.address-picker-attribution {
+  margin-top: 4px;
+}
+
+.address-picker-map {
+  gap: 20px;
+}
+
+.address-picker-map-view {
+  margin: -32px -32px 0;
+}
+
+.address-picker-map-view .delivery-map-wrap {
+  height: 392px;
+  border: 0;
+  border-radius: 0;
+}
+
+.address-picker-map-view .delivery-map-block > .button,
+.address-picker-map-view .delivery-map-block > .feedback {
+  margin-right: 20px;
+  margin-left: 20px;
+  width: calc(100% - 40px);
+}
+
+.address-picker-map-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+}
+
+.address-picker-map-panel > h2 {
+  font-size: 22px;
+  line-height: 28px;
+  font-weight: 600;
+}
+
+.address-picker-return {
+  align-self: flex-start;
+  padding-right: 0;
+  padding-left: 0;
+  text-align: left;
+}
+
+@media (max-width: 959px) {
+  .screen-point .screen-content { padding: 20px; }
+  .address-picker-map-view {
+    margin: -20px -20px 0;
+  }
+}
+
+@media (max-width: 374px) {
+  .address-picker-map-view {
+    margin-right: -20px;
+    margin-left: -20px;
+  }
+}
