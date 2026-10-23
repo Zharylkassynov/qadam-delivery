@@ -19,6 +19,9 @@ async function login(page: Page, email: string) {
   await page.getByRole('button', { name: 'Войти в аккаунт', exact: true }).click();
   await expect(page.getByRole('button', { name: 'Выйти', exact: true })).toBeVisible();
 }
+async function enterOrders(page: Page) {
+  await page.getByRole('navigation').getByRole('button', { name: /^(Заказы|Мои заказы)$/ }).click();
+}
 async function create(page: Page, pins = true) {
   const pickup = `E2E маршрут ${randomUUID().slice(0, 8)}, Абая 10`;
   const response = await page.request.post('/api/orders', { headers: { Origin: origin }, data: {
@@ -32,7 +35,7 @@ test('client and courier see the road route, retain it through status changes an
   let requests = 0;
   await page.route('**/api/orders/*/route', async route => { requests++; await route.fulfill({ json: routeFixture }); });
   await login(page, 'customer1@qadam.demo'); const order = await create(page);
-  await page.reload(); await page.getByRole('button', { name: /^Открыть заказ/ }).filter({ hasText: order.pickup }).click();
+  await page.reload(); await enterOrders(page); await page.getByRole('button', { name: /^Открыть заказ/ }).filter({ hasText: order.pickup }).click();
   await expect(page.getByText('Автомаршрут · 4,3 км', { exact: true })).toBeVisible();
   await expect(page.locator('path.qadam-route-line')).toHaveCount(1);
   await expect(page.locator('.qadam-map-marker')).toHaveCount(2);
@@ -53,7 +56,7 @@ test('client and courier see the road route, retain it through status changes an
     // Polling and transitions must preserve the route without provider re-requests.
     expect(requests).toBe(1); expect(courierRequests).toBe(1);
     await page.reload();
-    await page.getByRole('navigation', { name: 'Мобильная навигация' }).getByRole('button', { name: 'Заказы', exact: true }).click();
+    await enterOrders(page);
     await page.getByRole('button', { name: 'Завершённые', exact: true }).click();
     await page.getByRole('button', { name: /^Открыть заказ/ }).filter({ hasText: order.pickup }).click();
     await expect(page.locator('path.qadam-route-line')).toHaveCount(1); expect(requests).toBe(2);
@@ -69,7 +72,7 @@ test('route loading and retry preserve the order; missing coordinates do not tri
     attempts++; if (attempts === 1) { await release; await route.fulfill({ status: 503, json: { error: 'Тестовая ошибка сервиса маршрутов' } }); }
     else await route.fulfill({ json: routeFixture });
   });
-  await page.reload(); await page.getByRole('button', { name: /^Открыть заказ/ }).filter({ hasText: order.pickup }).click();
+  await page.reload(); await enterOrders(page); await page.getByRole('button', { name: /^Открыть заказ/ }).filter({ hasText: order.pickup }).click();
   await expect(page.getByText('Строим маршрут…', { exact: true })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Отменить заказ', exact: true })).toBeEnabled(); firstResponse!();
   await expect(page.getByText('Не удалось построить маршрут', { exact: true })).toBeVisible();
@@ -77,7 +80,7 @@ test('route loading and retry preserve the order; missing coordinates do not tri
   await page.getByRole('button', { name: 'Повторить маршрут', exact: true }).click();
   await expect(page.locator('path.qadam-route-line')).toHaveCount(1);
   expect((await page.request.post(`/api/orders/${order.id}/status`, { headers: { Origin: origin }, data: { status: 'CANCELLED' } })).ok()).toBe(true);
-  const without = await create(page, false); await page.reload();
+  const without = await create(page, false); await page.reload(); await enterOrders(page);
   await page.getByRole('button', { name: /^Открыть заказ/ }).filter({ hasText: without.pickup }).click();
   await expect(page.getByText('Точки ещё не указаны', { exact: true })).toBeVisible(); expect(attempts).toBe(2);
   expect((await page.request.post(`/api/orders/${without.id}/status`, { headers: { Origin: origin }, data: { status: 'CANCELLED' } })).ok()).toBe(true);
