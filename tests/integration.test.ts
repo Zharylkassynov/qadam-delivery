@@ -2,6 +2,7 @@ import { after, before, test } from 'node:test';
 import { ZodError } from 'zod';
 import assert from 'node:assert/strict';
 import { randomUUID, createHash } from 'node:crypto';
+import { readFile } from 'node:fs/promises';
 import { database, closeDatabase, transaction } from '../src/lib/db';
 import { migrate } from '../scripts/migrate';
 import { hashPassword, login, loginTelegram, logout, getSession } from '../src/lib/auth';
@@ -59,6 +60,40 @@ const applicationInput = () => ({ phone: '+7 700 000 00 00', transport: 'FOOT' a
 const pointA = { latitude: 43.2389, longitude: 76.8897 };
 const pointB = { latitude: 43.245, longitude: 76.91 };
 const fix = () => ({ ...pointA, accuracy: 12, capturedAt: new Date().toISOString() });
+
+test('restricted application role can read and append events with RLS, but cannot change history', async () => {
+  const order = await createOrder(customer, input());
+  const migration = await readFile(new URL('../db/migrations/20261026095352_order_events_rls.sql', import.meta.url), 'utf8');
+  await transaction(async client => {
+    // Roles are cluster-wide: roll all temporary grants, policies and role creation back.
+    await client.query('SAVEPOINT role_fixture');
+    if (!(await client.query("SELECT 1 FROM pg_roles WHERE rolname='qadam_app'")).rowCount)
+      await client.query('CREATE ROLE qadam_app NOLOGIN NOSUPERUSER NOBYPASSRLS NOINHERIT');
+    await client.query('GRANT USAGE ON SCHEMA qadam TO qadam_app');
+    await client.query(migration);
+    await client.query(migration); // Reapplying the ready-to-run SQL is safe.
+    const policies = (await client.query("SELECT cmd,roles::text[] AS roles FROM pg_policies WHERE schemaname='qadam' AND tablename='order_events' ORDER BY cmd")).rows;
+    assert.deepEqual(policies.map(p => p.cmd), ['INSERT', 'SELECT']);
+    for (const policy of policies) assert.deepEqual(policy.roles, ['qadam_app']);
+    const privileges = (await client.query(`SELECT
+      has_table_privilege('qadam_app','qadam.order_events','UPDATE') AS update,
+      has_table_privilege('qadam_app','qadam.order_events','DELETE') AS delete`)).rows[0];
+    assert.deepEqual(privileges, { update: false, delete: false });
+    await client.query('SET LOCAL ROLE qadam_app');
+    assert.equal((await client.query('SELECT count(*)::int AS count FROM qadam.order_events WHERE order_id=$1', [order.id])).rows[0].count, 2);
+    await client.query("INSERT INTO qadam.order_events(order_id,actor_id,status) VALUES($1,$2,'CREATED')", [order.id, customer.id]);
+    assert.equal((await client.query('SELECT count(*)::int AS count FROM qadam.order_events WHERE order_id=$1', [order.id])).rows[0].count, 3);
+    for (const query of ['UPDATE qadam.order_events SET status=status WHERE order_id=$1', 'DELETE FROM qadam.order_events WHERE order_id=$1']) {
+      await client.query('SAVEPOINT denied_write');
+      await assert.rejects(client.query(query, [order.id]), (error: unknown) => typeof error === 'object' && error !== null && 'code' in error && error.code === '42501');
+      await client.query('ROLLBACK TO SAVEPOINT denied_write');
+      await client.query('RELEASE SAVEPOINT denied_write');
+    }
+    await client.query('RESET ROLE');
+    await client.query('ROLLBACK TO SAVEPOINT role_fixture');
+  });
+  assert.equal((await listOrders(customer)).find(o => o.id === order.id)!.events.length, 2);
+});
 
 test('recipient contacts stay private until assignment, including retries and administrator access', async () => {
   const data = input();
