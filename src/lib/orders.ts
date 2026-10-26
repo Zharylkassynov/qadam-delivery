@@ -30,9 +30,19 @@ export const selectOrder = `SELECT o.id,o.number::text,o.customer_id AS "custome
     FROM qadam.order_events e JOIN qadam.users u ON u.id=e.actor_id WHERE e.order_id=o.id),'[]'::jsonb) AS events
   FROM qadam.orders o JOIN qadam.users c ON c.id=o.customer_id LEFT JOIN qadam.users r ON r.id=o.courier_id`;
 
-async function readOrder(client: PoolClient, id: string): Promise<Order> {
+// Apply this to every ordinary order response, including mutation retries.
+async function protectRecipientContacts(client: Pick<PoolClient, 'query'>, actor: User, orders: Order[]): Promise<Order[]> {
+  if (actor.role !== 'COURIER' || orders.every(order => order.courierId === actor.id)) return orders;
+  // Recheck private membership rather than trusting a supplied isAdmin flag.
+  const admin = await client.query(`SELECT 1 FROM qadam.administrators a
+    JOIN qadam.users u ON u.id=a.user_id WHERE a.user_id=$1 AND u.active=true`, [actor.id]);
+  if (admin.rowCount) return orders;
+  return orders.map(order => order.courierId === actor.id ? order : { ...order, recipientName: null, recipientPhone: null });
+}
+
+async function readOrder(client: PoolClient, id: string, actor: User): Promise<Order> {
   const result = await client.query(`${selectOrder} WHERE o.id=$1`, [id]);
-  return result.rows[0];
+  return (await protectRecipientContacts(client, actor, result.rows))[0];
 }
 
 async function event(client: PoolClient, id: string, actor: User, status: Status) {
@@ -44,7 +54,7 @@ export async function listOrders(actor: User): Promise<Order[]> {
     ? 'o.customer_id=$1'
     : "(o.courier_id=$1 OR (o.courier_id IS NULL AND o.status='SEARCHING_FOR_COURIER'))";
   const result = await database().query(`${selectOrder} WHERE ${where} ORDER BY o.created_at DESC LIMIT 100`, [actor.id]);
-  return result.rows;
+  return protectRecipientContacts(database(), actor, result.rows);
 }
 
 export async function createOrder(actor: User, input: CreateOrder): Promise<Order> {
@@ -59,7 +69,7 @@ export async function createOrder(actor: User, input: CreateOrder): Promise<Orde
       data.pickupPoint?.latitude ?? null, data.pickupPoint?.longitude ?? null, data.destinationPoint?.latitude ?? null, data.destinationPoint?.longitude ?? null]);
     if (!result.rowCount) {
       const existing = await client.query('SELECT id FROM qadam.orders WHERE customer_id=$1 AND request_key=$2', [actor.id, data.requestKey]);
-      const order = await readOrder(client, existing.rows[0].id);
+      const order = await readOrder(client, existing.rows[0].id, actor);
       const fields = ['pickupAddress', 'destinationAddress', 'recipientName', 'recipientPhone', 'notes'] as const;
       if (fields.some((field) => order[field] !== data[field])) throw new AppError(409, 'Этот запрос уже использован для другого заказа. Обновите страницу.');
       for (const field of ['pickupPoint', 'destinationPoint'] as const) {
@@ -72,7 +82,7 @@ export async function createOrder(actor: User, input: CreateOrder): Promise<Orde
     await event(client, id, actor, 'CREATED');
     await client.query("UPDATE qadam.orders SET status='SEARCHING_FOR_COURIER',updated_at=now() WHERE id=$1", [id]);
     await event(client, id, actor, 'SEARCHING_FOR_COURIER');
-    return readOrder(client, id);
+    return readOrder(client, id, actor);
   });
 }
 
@@ -84,11 +94,11 @@ export async function acceptOrder(actor: User, id: string): Promise<Order> {
     const result = await client.query('SELECT status,courier_id FROM qadam.orders WHERE id=$1 FOR UPDATE', [id]);
     const order = result.rows[0];
     if (!order) throw new AppError(404, 'Заказ не найден.');
-    if (order.courier_id === actor.id && order.status !== 'CANCELLED') return readOrder(client, id);
+    if (order.courier_id === actor.id && order.status !== 'CANCELLED') return readOrder(client, id, actor);
     if (order.status !== 'SEARCHING_FOR_COURIER' || order.courier_id) throw new AppError(409, 'Заказ уже принят другим курьером или больше недоступен.');
     await client.query("UPDATE qadam.orders SET courier_id=$1,status='ACCEPTED',updated_at=now() WHERE id=$2", [actor.id, id]);
     await event(client, id, actor, 'ACCEPTED');
-    return readOrder(client, id);
+    return readOrder(client, id, actor);
   });
 }
 
@@ -102,15 +112,15 @@ export async function transitionOrder(actor: User, id: string, target: Status): 
     if (actor.role === 'CUSTOMER') {
       if (order.customer_id !== actor.id) throw new AppError(403, 'Нет доступа к этому заказу.');
       if (target !== 'CANCELLED') throw new AppError(403, 'Клиент может только отменить заказ до назначения курьера.');
-      if (order.status === 'CANCELLED') return readOrder(client, id);
+      if (order.status === 'CANCELLED') return readOrder(client, id, actor);
       if (!['CREATED', 'SEARCHING_FOR_COURIER'].includes(order.status)) throw new AppError(409, 'После назначения курьера отмена недоступна.');
     } else {
       if (order.courier_id !== actor.id) throw new AppError(403, 'Этот заказ вам не назначен.');
-      if (order.status === target) return readOrder(client, id);
+      if (order.status === target) return readOrder(client, id, actor);
       if (nextStatus[order.status] !== target) throw new AppError(409, 'Недопустимый переход статуса. Обновите заказ и выполните следующий шаг.');
     }
     await client.query('UPDATE qadam.orders SET status=$1,updated_at=now() WHERE id=$2', [target, id]);
     await event(client, id, actor, target);
-    return readOrder(client, id);
+    return readOrder(client, id, actor);
   });
 }

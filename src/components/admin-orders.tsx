@@ -127,7 +127,7 @@ function AdminOrderDetail({ order, user }: { order: AdminOrder; user: User }) {
     {order.courierName && <div className="admin-contact"><h2>{order.courierName}</h2><p className="muted">{order.courierTransport ? transportLabels[order.courierTransport] : 'Курьер'}</p></div>}
     {activeCourier && <OrderTracking order={order} user={user} readOnly/>}
     <RouteCard pickup={order.pickupAddress} destination={order.destinationAddress}/>
-    <div className="admin-contact"><small>Клиент</small><p>{order.customerName}</p><small>Получатель</small><p>{order.recipientName} · <a href={`tel:${order.recipientPhone.replace(/[^+\d]/g, '')}`}>{order.recipientPhone}</a></p></div>
+    <div className="admin-contact"><small>Клиент</small><p>{order.customerName}</p><small>Получатель</small><p>{order.recipientName}{order.recipientPhone && <> · <a href={`tel:${order.recipientPhone.replace(/[^+\d]/g, '')}`}>{order.recipientPhone}</a></>}</p></div>
     {order.notes && <p className="muted pre-wrap">{order.notes}</p>}
     {order.status === 'SEARCHING_FOR_COURIER' && <Feedback title="Заказ доступен курьерам">Одобренный курьер сам выбирает доставку и нажимает «Принять заказ».</Feedback>}
     <Timeline order={order} title="История заказа" acceptedLabel="Принят курьером"/>

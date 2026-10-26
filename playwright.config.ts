@@ -14,11 +14,17 @@ export default defineConfig({
   retries: 0,
   reporter: 'list',
   use: { ...devices['Desktop Chrome'], channel: process.env.CI ? undefined : 'chrome', baseURL: 'http://127.0.0.1:3100', viewport: { width: 1440, height: 1000 }, trace: 'retain-on-failure' },
-  webServer: {
+  webServer: [{
     command: 'node --env-file=.env --import tsx scripts/prepare-e2e.ts && npm run dev -- --port 3100',
     url: 'http://127.0.0.1:3100/api/session',
     reuseExistingServer: false,
     timeout: 120000,
     env: { DATABASE_URL: testUrl, DEMO_AUTH_ENABLED: 'true', TELEGRAM_AUTH_ENABLED: 'true', TELEGRAM_BOT_TOKEN: testBotToken, GEOAPIFY_API_KEY: '', APP_ORIGIN: 'http://127.0.0.1:3100', QADAM_NEXT_DIST_DIR: '.next-test', NEXT_TELEMETRY_DISABLED: '1' },
-  },
+  }, {
+    command: 'npm run dev -- --port 3101',
+    url: 'http://127.0.0.1:3101/api/session',
+    reuseExistingServer: false,
+    timeout: 120000,
+    env: { DATABASE_URL: testUrl, DEMO_AUTH_ENABLED: 'false', TELEGRAM_AUTH_ENABLED: 'true', TELEGRAM_BOT_TOKEN: testBotToken, GEOAPIFY_API_KEY: '', APP_ORIGIN: 'http://127.0.0.1:3101', QADAM_NEXT_DIST_DIR: '.next-telegram-only', NEXT_TELEMETRY_DISABLED: '1' },
+  }],
 });

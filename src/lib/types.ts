@@ -30,7 +30,7 @@ export type CourierLocation = MapPoint & { accuracy: number | null; capturedAt: 
 export type Order = {
   id: string; number: string; customerId: string; customerName: string;
   courierId: string | null; courierName: string | null;
-  pickupAddress: string; destinationAddress: string; recipientName: string; recipientPhone: string;
+  pickupAddress: string; destinationAddress: string; recipientName: string | null; recipientPhone: string | null;
   notes: string; status: Status; createdAt: string; updatedAt: string; events: OrderEvent[];
   pickupPoint: MapPoint | null; destinationPoint: MapPoint | null; courierLocation: CourierLocation | null;
 };

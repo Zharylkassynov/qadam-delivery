@@ -7,7 +7,7 @@ const onest = localFont({ src: '../../public/fonts/Onest-Variable.ttf', variable
 
 export const metadata: Metadata = {
   title: 'Qadam Delivery — доставка шаг за шагом',
-  description: 'Учебное приложение для создания и выполнения заказов доставки.',
+  description: 'Qadam Delivery — заказывайте доставку и принимайте заказы в Telegram. Алматы.',
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {

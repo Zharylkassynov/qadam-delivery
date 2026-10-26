@@ -60,6 +60,41 @@ const pointA = { latitude: 43.2389, longitude: 76.8897 };
 const pointB = { latitude: 43.245, longitude: 76.91 };
 const fix = () => ({ ...pointA, accuracy: 12, capturedAt: new Date().toISOString() });
 
+test('recipient contacts stay private until assignment, including retries and administrator access', async () => {
+  const data = input();
+  const created = await createOrder(customer, data);
+  const contacts = (order: { recipientName: string | null; recipientPhone: string | null }) => [order.recipientName, order.recipientPhone];
+  const expected = [data.recipientName, data.recipientPhone];
+  assert.deepEqual(contacts(created), expected);
+  assert.deepEqual(contacts(await createOrder(customer, data)), expected);
+  for (const actor of [courier, otherCourier, { ...courier, isAdmin: true as const }]) {
+    const available = (await listOrders(actor)).find(order => order.id === created.id)!;
+    assert.deepEqual(contacts(available), [null, null]);
+    assert.equal(available.pickupAddress, data.pickupAddress);
+    assert.equal(available.destinationAddress, data.destinationAddress);
+  }
+  // A courier may also be an administrator; only actual membership grants access.
+  const administrator = await telegramAccount('Администратор контактов');
+  await database().query("UPDATE qadam.users SET role='COURIER' WHERE id=$1", [administrator.user.id]);
+  const adminCourier = { ...administrator.user, role: 'COURIER' as const };
+  await database().query('INSERT INTO qadam.administrators(user_id) VALUES($1)', [adminCourier.id]);
+  try {
+    assert.deepEqual(contacts((await listOrders(adminCourier)).find(order => order.id === created.id)!), expected);
+    assert.deepEqual(contacts(await getAdminOrder(adminCourier, created.id)), expected);
+    assert.deepEqual(contacts((await listAdminOrders(adminCourier)).orders.find(order => order.id === created.id)!), expected);
+  } finally { await database().query('DELETE FROM qadam.administrators WHERE user_id=$1', [adminCourier.id]); }
+  assert.deepEqual(contacts((await listOrders({ ...adminCourier, isAdmin: true })).find(order => order.id === created.id)!), [null, null]);
+  assert.deepEqual(contacts(await acceptOrder(courier, created.id)), expected);
+  assert.deepEqual(contacts(await acceptOrder(courier, created.id)), expected);
+  assert.deepEqual(contacts((await listOrders(courier)).find(order => order.id === created.id)!), expected);
+  assert.equal((await listOrders(otherCourier)).some(order => order.id === created.id), false);
+  assert.deepEqual(contacts((await listOrders(customer)).find(order => order.id === created.id)!), expected);
+  for (const status of ['PICKED_UP', 'IN_TRANSIT', 'DELIVERED'] as const) {
+    assert.deepEqual(contacts(await transitionOrder(courier, created.id, status)), expected);
+    assert.deepEqual(contacts(await transitionOrder(courier, created.id, status)), expected);
+  }
+});
+
 test('admin observation checks private membership, reads other customers and cannot change their deliveries', async () => {
   const admin = await telegramAccount('Наблюдатель');
   const order = await createOrder(otherCustomer, input());

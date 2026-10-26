@@ -127,14 +127,24 @@ export function DeliveryApp() {
   if (booting) return <main className="boot-screen"><Brand/><p className="muted" role="status">Открываем Qadam…</p></main>;
   if (bootError) return <main className="boot-screen"><Brand/><p role="alert">{bootError}</p><button className="button primary" onClick={() => void boot()}>Повторить подключение</button></main>;
   if (!user && telegram) return <main className="boot-screen"><Brand/><p className="muted">Сессия завершена. Ваши заказы сохранены.</p><Button onClick={() => void boot()}>Войти через Telegram</Button></main>;
-  if (!user) return <Login demo={demo} onLogin={signIn}/>;
+  if (!user) return demo ? <Login onLogin={signIn}/> : <TelegramEntry/>;
 
-  return <DeliveryWorkspace user={user} orders={orders} loading={loading} busy={busy} error={error} notice={notice} syncError={syncError} syncedAt={syncedAt} selected={selected}
+  return <DeliveryWorkspace user={user} telegram={telegram} orders={orders} loading={loading} busy={busy} error={error} notice={notice} syncError={syncError} syncedAt={syncedAt} selected={selected}
     onSelect={setSelected} onSignOut={signOut} onMutate={mutate} onCreate={create}
     onRefresh={() => setRefresh((value) => value + 1)} onClearMessages={() => { setError(''); setNotice(''); }}/>;
 }
 
-function Login({ demo, onLogin }: { demo: boolean; onLogin: (email: string, password: string) => Promise<void> }) {
+function TelegramEntry() {
+  return <main className="boot-screen telegram-entry"><div className="telegram-entry-content">
+    <Brand/>
+    <h1>Откройте Qadam<br/>в Telegram</h1>
+    <p className="muted">Заказывайте доставку и принимайте заказы в приложении Qadam через Telegram.</p>
+    <a className="button primary wide" href="https://t.me/qadam_delivery_bot">Открыть в Telegram</a>
+    <p className="telegram-entry-hint muted">Вход выполняется автоматически.</p>
+  </div></main>;
+}
+
+function Login({ onLogin }: { onLogin: (email: string, password: string) => Promise<void> }) {
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const [email, setEmail] = useState('');
@@ -149,14 +159,13 @@ function Login({ demo, onLogin }: { demo: boolean; onLogin: (email: string, pass
   return <main className="login-page">
     <section className="login-story"><Brand/><div className="login-story-content"><h1>От отправителя<br/>до получателя.</h1><p>Доставка по {serviceCity}.<br/>Понятный путь на каждом шаге.</p><ol className="login-steps"><li><span>1</span>Создайте заказ</li><li><span>2</span>Курьер заберёт посылку</li><li><span>3</span>Получатель получит доставку</li></ol></div><small>Qadam Delivery · Учебный MVP, 2026</small></section>
     <section className="login-form-section"><div className="login-card"><div className="login-mobile-brand"><Brand/></div><span className="demo-tag">Демонстрационный вход</span><h1>С возвращением</h1><p className="muted">Войдите в свой тестовый аккаунт.</p>
-      {!demo && <Feedback tone="error" title="Демонстрационный вход отключён на сервере."/>}
-      <form onSubmit={(event) => void submit(event)}><fieldset disabled={busy || !demo}>
+      <form onSubmit={(event) => void submit(event)}><fieldset disabled={busy}>
         <div className="field"><label htmlFor="login-email">Логин</label><input id="login-email" type="email" name="email" autoComplete="username" placeholder="customer1@qadam.demo" required value={email} onChange={(event) => setEmail(event.target.value)}/></div>
         <div className="field"><label htmlFor="login-password">Пароль</label><input id="login-password" type="password" name="password" autoComplete="current-password" placeholder="Пароль тестового аккаунта" required maxLength={200}/></div>
         {error && <Feedback tone="error" title={error} role="alert"/>}
-        <Button type="submit" className="wide" disabled={busy || !demo}>{busy ? 'Входим…' : 'Войти в аккаунт'}<Icon type="arrow"/></Button>
+        <Button type="submit" className="wide" disabled={busy}>{busy ? 'Входим…' : 'Войти в аккаунт'}<Icon type="arrow"/></Button>
       </fieldset></form>
-      {demo && <div className="demo-accounts"><h2>Аккаунты для проверки</h2><p>По три тестовых аккаунта клиента и курьера. Выберите логин, затем введите пароль из инструкции.</p><div className="choice-row"><button className="choice" type="button" disabled={busy} onClick={() => setEmail('customer1@qadam.demo')}>Клиент 1</button><button className="choice" type="button" disabled={busy} onClick={() => setEmail('courier1@qadam.demo')}>Курьер 1</button></div><small>customer1…3@qadam.demo<br/>courier1…3@qadam.demo</small></div>}
+      <div className="demo-accounts"><h2>Аккаунты для проверки</h2><p>По три тестовых аккаунта клиента и курьера. Выберите логин, затем введите пароль из инструкции.</p><div className="choice-row"><button className="choice" type="button" disabled={busy} onClick={() => setEmail('customer1@qadam.demo')}>Клиент 1</button><button className="choice" type="button" disabled={busy} onClick={() => setEmail('courier1@qadam.demo')}>Курьер 1</button></div><small>customer1…3@qadam.demo<br/>courier1…3@qadam.demo</small></div>
       <p className="login-footnote">Для одновременной проверки клиента и курьера используйте разные профили браузера.</p>
     </div></section>
   </main>;
