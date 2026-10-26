@@ -56,7 +56,7 @@ export function OrderCard({ order, onOpen, onAccept, busy, meta }: { order: Orde
       <AddressRow kind="pickup" address={order.pickupAddress}/><AddressRow kind="destination" address={order.destinationAddress}/>
       <p className="card-meta">{meta ?? `${formatTime(order.createdAt)}${order.courierName ? ` · ${order.courierName}` : ''}`}</p>
     </button>
-    {onAccept && <div className="available-card-action"><Feedback title="Оплата по согласованию">Условия доставки уточняются до начала заказа.</Feedback><Button onClick={onAccept} disabled={busy} className="wide">{busy ? 'Принимаем…' : 'Принять заказ'}</Button></div>}
+    {onAccept && <div className="available-card-action">{order.recipientPhone === null && <p className="card-meta">Контакты получателя откроются после принятия заказа</p>}<Feedback title="Оплата по согласованию">Условия доставки уточняются до начала заказа.</Feedback><Button onClick={onAccept} disabled={busy} className="wide">{busy ? 'Принимаем…' : 'Принять заказ'}</Button></div>}
   </article>;
 }
 

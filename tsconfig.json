@@ -34,7 +34,9 @@
     ".next-cloud/types/**/*.ts",
     ".next-cloud/dev/types/**/*.ts",
     ".next-cloud-test/types/**/*.ts",
-    ".next-cloud-test/dev/types/**/*.ts"
+    ".next-cloud-test/dev/types/**/*.ts",
+    ".next-telegram-only/types/**/*.ts",
+    ".next-telegram-only/dev/types/**/*.ts"
   ],
   "exclude": [
     "node_modules"

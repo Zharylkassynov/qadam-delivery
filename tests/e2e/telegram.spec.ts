@@ -17,11 +17,13 @@ test('Mini App customer completes a delivery with browser courier and restores h
   await mockMapTiles(customerContext);
   const customer = await customerContext.newPage();
   const courier = await courierContext.newPage();
-  const proof = signedTelegramData({ id: 2000000000000 + Math.floor(Math.random() * 1000000000), first_name: 'Telegram автотест' });
+  const proof = signedTelegramData({ id: 2000000000000 + Math.floor(Math.random() * 1000000000), first_name: 'Айгерим' });
   const pickup = `E2E Telegram ${randomUUID().slice(0, 8)}, Алматы, Абая, 10`;
   try {
     await miniApp(customer, proof);
     await expect(customer.getByRole('heading', { name: /^(Куда доставить\?|Текущая доставка)$/ })).toBeVisible();
+    await expect(customer.getByRole('button', { name: /^Выйти/ })).toHaveCount(0);
+    await expect(customer.locator('body')).not.toContainText(/демонстрац|учебн|тестов/i);
     const nav = customer.getByRole('navigation', { name: 'Мобильная навигация' });
     expect(await nav.evaluate((el) => el.getBoundingClientRect().bottom)).toBeLessThanOrEqual(700);
     await customer.getByRole('button', { name: 'Указать адреса', exact: true }).click();
@@ -31,7 +33,7 @@ test('Mini App customer completes a delivery with browser courier and restores h
     await customer.getByLabel('Адрес доставки', { exact: true }).fill('Алматы, улица Ауэзова, 20');
     await customer.getByRole('button', { name: 'Выбрать адрес', exact: true }).click();
     await customer.getByRole('button', { name: 'Далее — получатель', exact: true }).click();
-    await customer.getByLabel('Имя получателя', { exact: true }).fill('Тестовый получатель');
+    await customer.getByLabel('Имя получателя', { exact: true }).fill('Айдана');
     await customer.getByLabel('Телефон получателя', { exact: true }).fill('+7 700 123 45 67');
     await customer.getByRole('button', { name: 'Проверить заказ', exact: true }).click();
     await customer.getByRole('button', { name: 'Подтвердить заказ', exact: true }).click();
@@ -44,8 +46,18 @@ test('Mini App customer completes a delivery with browser courier and restores h
     const card = courier.getByRole('button', { name: /^Открыть заказ/ }).filter({ hasText: pickup });
     await expect(card).toBeVisible();
     const orderButton = (await card.getAttribute('aria-label'))!;
+    const { orders: availableOrders } = await (await courier.request.get('/api/orders')).json();
+    const availableOrder = availableOrders.find((order: { pickupAddress: string }) => order.pickupAddress === pickup);
+    expect(availableOrder.recipientName).toBeNull(); expect(availableOrder.recipientPhone).toBeNull();
     await card.click();
+    await expect(courier.getByText('Контакты получателя откроются после принятия заказа', { exact: true })).toBeVisible();
+    await expect(courier.locator('a[href^="tel:"]')).toHaveCount(0);
     await courier.getByRole('button', { name: 'Принять заказ', exact: true }).click();
+    await expect(courier.locator('.recipient-section')).toContainText('Айдана');
+    await expect(courier.getByRole('link', { name: '+7 700 123 45 67' })).toBeVisible();
+    const { orders: assignedOrders } = await (await courier.request.get('/api/orders')).json();
+    expect(assignedOrders.find((order: { id: string }) => order.id === availableOrder.id).recipientPhone).toBe('+7 700 123 45 67');
+    await expect(customer.locator('body')).not.toContainText(/демонстрац|учебн|тестов/i);
     for (const action of ['Посылка у меня', 'Начать доставку', 'Завершить доставку']) await courier.getByRole('button', { name: action, exact: true }).click();
     await expect(detail.getByRole('heading', { name: 'Посылка у получателя', exact: true })).toBeVisible();
     expect((await customerContext.cookies()).filter((cookie) => cookie.name === 'qadam_session')).toHaveLength(0);
@@ -59,12 +71,13 @@ test('Mini App customer completes a delivery with browser courier and restores h
     await reopened.getByRole('button', { name: orderButton, exact: true }).click();
     await expect(reopened.locator('.timeline li')).toHaveCount(6);
     await reopened.screenshot({ path: testInfo.outputPath('telegram-mobile-history.png'), fullPage: true });
-    await reopened.getByRole('button', { name: 'Выйти', exact: true }).click();
-    await expect(reopened.getByRole('button', { name: 'Войти через Telegram', exact: true })).toBeVisible();
+    await expect(reopened.getByRole('button', { name: /^Выйти/ })).toHaveCount(0);
     expect((await reopened.request.get('/api/orders')).status()).toBe(401);
-    await reopened.getByRole('button', { name: 'Войти через Telegram', exact: true }).click();
+    await reopened.reload();
     await navigation.getByRole('button', { name: 'Профиль', exact: true }).click();
     await expect(reopened.locator('.profile-card')).toContainText('Telegram ID:');
+    await expect(reopened.getByRole('button', { name: /^Выйти/ })).toHaveCount(0);
+    await expect(reopened.locator('body')).not.toContainText(/демонстрац|учебн|тестов/i);
   } finally { await customerContext.close(); await courierContext.close(); }
 });
 
@@ -232,6 +245,13 @@ test('Telegram applicant is rejected, reapplies, gets admin approval and complet
     await reopened.screenshot({ path: testInfo.outputPath('courier-application-approved.png'), fullPage: true });
     await reopened.getByRole('button', { name: 'К доступным заказам', exact: true }).click();
     await expect(reopened.getByRole('heading', { name: 'Можно принять', exact: true })).toBeVisible();
+    await expect(reopened.getByRole('button', { name: /^Выйти/ })).toHaveCount(0);
+    await expect(reopened.locator('body')).not.toContainText(/демонстрац|учебн|тестов/i);
+    await mobileProfile(reopened).click();
+    await expect(reopened.getByRole('button', { name: /^Выйти/ })).toHaveCount(0);
+    await expect(reopened.locator('.profile-card')).toContainText('Курьер');
+    await expect(reopened.locator('body')).not.toContainText(/демонстрац|учебн|тестов/i);
+    await reopened.getByRole('navigation', { name: 'Мобильная навигация' }).getByRole('button', { name: 'Доступные', exact: true }).click();
     const pickup = `E2E approved ${suffix}, Алматы, Абая 14`;
     expect((await request.post('/api/auth/login', { headers: { Origin: origin }, data: { email: 'customer1@qadam.demo', password: process.env.DEMO_PASSWORD } })).status()).toBe(200);
     const orderResponse = await request.post('/api/orders', { headers: { Origin: origin }, data: { requestKey: randomUUID(), pickupAddress: pickup, destinationAddress: 'Алматы, Ауэзова 20', recipientName: 'Тестовый получатель', recipientPhone: '+7 700 000 00 00', notes: 'E2E проверка одобренного курьера' } });
