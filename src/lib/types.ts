@@ -7,6 +7,8 @@ export type CourierApplication = {
   transport: CourierTransport | 'BICYCLE'; notes: string;
   status: 'PENDING' | 'APPROVED' | 'REJECTED'; submittedAt: string;
   reviewedAt: string | null; reviewer: string | null; decisionReason: string; applicantActive: boolean;
+  district: import('./courier-options').District | null; availability: import('./courier-options').Availability[];
+  ageConfirmed: boolean; consentAt: string | null; source: string | null;
 };
 // Bicycle remains readable in historical applications, but cannot be selected anew.
 export const transportLabels = { FOOT: 'Пеший', ELECTRIC_MOPED: 'Электромопед', MOPED: 'Мопед', CAR: 'Автомобиль', BICYCLE: 'Велосипед' } as const;

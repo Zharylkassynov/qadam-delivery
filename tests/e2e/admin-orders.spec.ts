@@ -23,7 +23,7 @@ test('Telegram administrator observes self-accepted delivery, history, search, p
   const adminAccount = await account('Наблюдатель E2E'), clientAccount = await account('Клиент наблюдения E2E'), courierAccount = await account('Курьер наблюдения E2E');
   const headers = (token: string) => ({ Authorization: `Bearer ${token}`, Origin: origin });
   await db.query('INSERT INTO qadam.administrators(user_id) VALUES($1)', [adminAccount.user.id]);
-  const application = await request.post('/api/courier-application', { headers: headers(courierAccount.token), data: { phone: '+77000000000', transport: 'ELECTRIC_MOPED', notes: 'Автотест — вымышленные данные' } });
+  const application = await request.post('/api/courier-application', { headers: headers(courierAccount.token), data: { phone: '+77000000000', transport: 'ELECTRIC_MOPED', notes: 'Автотест — вымышленные данные', district: 'ALMALY', availability: ['EVENING'], ageConfirmed: true, acceptRules: true } });
   expect(application.status()).toBe(201);
   const applicationId = (await application.json()).application.id;
   expect((await request.post(`/api/admin/courier-applications/${applicationId}`, { headers: headers(adminAccount.token), data: { decision: 'APPROVED', reason: '' } })).status()).toBe(200);

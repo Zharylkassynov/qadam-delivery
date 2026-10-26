@@ -52,6 +52,9 @@ jobs:
           DATABASE_URL: postgresql://qadam_app.abcdefghijklmnopqrst:ci-only@aws-example.pooler.supabase.com:6543/postgres
           DATABASE_SSL_CA_FILE: config/certs/supabase-root.crt
           DATABASE_POOL_MAX: '3'
+          TELEGRAM_AUTH_ENABLED: 'true'
+          TELEGRAM_BOT_TOKEN: '123456789:local_test_only_abcdefghijklmnopqrstuvwxyz'
+          TELEGRAM_WEBHOOK_SECRET: 'local_test_only_webhook_secret_abcdefghijklmnopqrstuvwxyz'
       - run: npm run check:build
       - run: npx playwright install --with-deps chromium
       - run: npm run test:e2e

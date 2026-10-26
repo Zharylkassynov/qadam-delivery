@@ -40,8 +40,10 @@
 - **Код:**
   - `src/lib/` — логика: `orders.ts` (заказы, статусы, блокировки `SELECT … FOR UPDATE`), `courier-applications.ts`,
     `auth.ts` (сессии, вход через Telegram), `telegram.ts` (проверка HMAC initData), `locations.ts`, `routing.ts`,
-    `geocoding.ts`, `admin-orders.ts`, `administrators.ts`, `http.ts` (`handle`, `json`, `requireUser`,
-    `checkMutation`, `readJson` с лимитом 16 КБ), `deployment-config.ts` (валидация переменных окружения).
+    `geocoding.ts`, `admin-orders.ts`, `administrators.ts`, `telegram-bot.ts` (вебхук и обработка событий),
+    `telegram-bot-api.ts` (транспорт Telegram), `telegram-notifications.ts` (очередь уведомлений),
+    `http.ts` (`handle`, `json`, `requireUser`, `checkMutation`, `readJson`: 16 КБ по умолчанию,
+    64 КБ для вебхука), `deployment-config.ts` (валидация переменных окружения).
   - `src/components/` — `delivery-app.tsx` (запуск, сессия, опрос сервера), `delivery-workspace.tsx` (экраны и навигация),
     `courier-onboarding.tsx` (заявка курьера и экран админа), `order-form.tsx`, `order-tracking.tsx`, `admin-orders.tsx`,
     `delivery-ui.tsx` (общие компоненты).
@@ -60,9 +62,11 @@
   - `orders` — SELECT/INSERT/UPDATE на всю таблицу (новые колонки покрыты);
   - `order_events` — SELECT/INSERT; `sessions` — SELECT/INSERT/DELETE;
   - `users` — SELECT и INSERT только `(email, name, password_hash)`, **UPDATE нет**;
-  - `telegram_identities` — SELECT/INSERT, **UPDATE нет**;
-  - `courier_applications` — SELECT, INSERT `(user_id, phone, transport, notes)`, UPDATE `(status, reviewed_at, reviewed_by, decision_reason)`;
+  - `telegram_identities` — SELECT/INSERT, UPDATE `(allows_write, bot_blocked_at, source)`;
+  - `courier_applications` — SELECT, INSERT `(user_id, phone, transport, notes, district, availability, age_confirmed, consent_at, source)`, UPDATE `(status, reviewed_at, reviewed_by, decision_reason)`;
   - `administrators` — только SELECT.
+  - `telegram_bot_chats`, `telegram_updates`, `telegram_outbox` — SELECT/INSERT/UPDATE/DELETE
+    только серверной роли, RLS; последовательность `telegram_outbox_id_seq` — USAGE.
   - Новая таблица: `ENABLE ROW LEVEL SECURITY`, `REVOKE ALL … FROM PUBLIC` и от `anon/authenticated/service_role`,
     `GRANT` нужных прав `qadam_app` и `CREATE POLICY … TO qadam_app` — по образцу существующих миграций
     (блок `DO $$ … IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname='qadam_app') …`). Новые колонки в таблицах
@@ -102,7 +106,7 @@
 | --- | --- | --- | --- |
 | 0. Подготовка | Готово | 26.10 | typecheck ✓, 50 серверных тестов ✓, 21 e2e ✓, build ✓, check:build ✓; бот отвечает, кнопка меню → https://qadam-delivery.vercel.app/ |
 | 1. Готовность к реальным пользователям | Готово | 27.10 | 26.10: typecheck ✓, 52 серверные проверки ✓, 25 e2e ✓, build ✓, check:build ✓; Production опубликован, исправление `42501` применено и проверено; владелец подтвердил работу в Telegram; ветка `stage-1-production-readiness` |
-| 2. Бот и регистрация курьеров | Не начат | 29.10 | |
+| 2. Бот и регистрация курьеров | Ждёт публикации | 29.10 | 26.10: typecheck ✓, 60 серверных проверок ✓, 28 e2e на готовой сборке ✓, build ✓, check:build ✓; макет и тексты утверждены; миграция Supabase и секрет Vercel настроены; осталось опубликовать код, подключить вебхук и подтвердить работу в Telegram; ветка `stage-2-courier-bot` |
 | 3. Набор курьеров | Не начат | 29.10 | |
 | 4. Заказы и уведомления | Не начат | 03.11 | |
 | 5. Цена, оплата и связь | Не начат | 05.11 | |
@@ -176,6 +180,20 @@ WHERE status IN ('CREATED','SEARCHING_FOR_COURIER','ACCEPTED','PICKED_UP','IN_TR
 
 Цель: курьер регистрируется по одной ссылке или QR примерно за минуту и получает решение сообщением в Telegram.
 
+26.10.2026 владелец разрешил этап, утвердил локальный макет вместо Figma после
+исчерпания лимита Starter и тексты правил/политики (Команда Qadam, @zharlkssnv).
+Миграция `20261026102512_courier_bot.sql` применена в Supabase, checksum и права
+проверены. Секрет вебхука настроен в Vercel Production. Подробности и оставшиеся
+ручные шаги — в [инструкции этапа 2](STAGE_2.md).
+Реализация проверена: typecheck, 60 серверных тестов, build, check:build и
+28 браузерных сценариев на готовой сборке. E2E используют `next start`, чтобы
+перезагрузки сервера разработки не сбрасывали сценарии входа. Код пока не
+опубликован, настоящий вебхук подключает владелец после публикации.
+Владелец выбрал бюджет 0 ₸ для казахстанской базы; постоянный бесплатный
+управляемый PostgreSQL не подтверждён, перенос отложен. Текущее размещение во
+Франкфурте отражено в утверждённой политике; вопрос локализации остаётся открытым
+перед публичным набором.
+
 1. **Вебхук** `src/app/api/telegram/webhook/route.ts` (POST):
    - сравнить заголовок `X-Telegram-Bot-Api-Secret-Token` с `TELEGRAM_WEBHOOK_SECRET` через `timingSafeEqual`, иначе 401;
      `checkMutation` здесь не применять (Telegram не шлёт Origin);
@@ -229,9 +247,11 @@ WHERE status IN ('CREATED','SEARCHING_FOR_COURIER','ACCEPTED','PICKED_UP','IN_TR
 Ручные шаги владельца:
 
 1. BotFather: `/mybots` → @qadam_delivery_bot → Bot Settings → Configure Mini App → включить, URL `https://qadam-delivery.vercel.app`.
-2. Сгенерировать секрет: `node -e "console.log(require('crypto').randomBytes(32).toString('base64url'))"`,
-   добавить `TELEGRAM_WEBHOOK_SECRET` в Vercel (Production) и в `.env.telegram`.
-3. Выполнить SQL миграции в Supabase.
+2. Секрет уже создан ассистентом в Vercel Production; локальная команда читает
+   совпадающее значение из `.secrets/stage-2-telegram-webhook-secret` (файл игнорируется Git).
+   При переносе на другой компьютер восстановить локальный секрет или заменить его
+   одновременно в Vercel и `.env.telegram`, затем перепубликовать приложение.
+3. Миграция Supabase уже применена ассистентом и проверена. Повторный SQL не нужен.
 4. После деплоя: `npm run telegram:webhook`.
 
 Проверка: новый аккаунт Telegram открывает ссылку → сразу анкета → телефон одной кнопкой → «Отправить» →

@@ -57,6 +57,16 @@ fieldset { margin: 0; border: 0; padding: 0; min-width: 0; }
 
 .app-shell { display: flex; height: 100dvh; min-height: 0; }
 .screen-application .screen-content { max-width: 624px; }
+.screen-application:focus { outline: none; }
+.courier-onboarding .screen-application { background: var(--surface); }
+.courier-onboarding .screen-content { padding: 24px; gap: 24px; }
+.courier-onboarding .form-fields { gap: 22px; }
+.courier-onboarding .application-actions { padding: 16px 24px; border-top: 1px solid var(--line); }
+.courier-onboarding .feedback { padding: 16px; border: 1px solid var(--line); }
+.courier-onboarding .feedback-title { font-size: 18px; line-height: 26px; font-weight: 600; }
+.courier-onboarding .feedback-description { font-size: 14px; line-height: 21px; color: var(--muted); }
+.courier-onboarding .feedback-info { background: var(--canvas); color: var(--ink); }
+.courier-onboarding .feedback-warning { background: #fff8ec; border-color: #ecd8ac; color: #805913; }
 .application-actions { flex-direction: column; align-items: center; gap: 8px; }
 .application-actions > .button { width: 100%; }
 .application-card { display: flex; flex-direction: column; gap: 12px; padding: 20px; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); }
@@ -175,6 +185,27 @@ html[data-telegram="true"] .app-shell { height: var(--tg-viewport-stable-height,
 .field input:focus, .field textarea:focus { border-color: var(--brand); box-shadow: 0 0 0 2px var(--brand-soft); }
 .field input[aria-invalid="true"] { border-color: var(--danger); }
 .field-hint { color: var(--muted); }
+.courier-city { align-self: flex-start; background: var(--brand-soft); color: var(--brand); padding: 4px 10px; border-radius: 6px; font-size: 13px; }
+.courier-availability { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.courier-availability + .field-hint { margin-top: 0; }
+.field > legend { margin-bottom: 8px; font-size: 14px; font-weight: 500; }
+.courier-time-choice { display: flex; align-items: center; gap: 10px; border: 1px solid var(--line); border-radius: 10px; padding: 12px; min-height: 48px; font-size: 14px; cursor: pointer; }
+.courier-time-choice:has(:checked) { border-color: var(--brand); background: var(--brand-soft); }
+.courier-time-choice input, .courier-consent input { flex: 0 0 20px; width: 20px; height: 20px; min-height: 0; margin: 0; padding: 0; accent-color: var(--brand); }
+.courier-consent { display: flex; align-items: flex-start; gap: 12px; font-size: 14px; line-height: 22px; cursor: pointer; }
+.courier-consent input { margin-top: 2px; }
+.courier-consent a { display: inline; }
+.courier-details { display: grid; grid-template-columns: 95px minmax(0,1fr); gap: 10px; font-size: 14px; margin: 0; }
+.courier-details dt { color: var(--muted); }
+.courier-details dd { margin: 0; overflow-wrap: anywhere; }
+.feedback-description .button { margin-top: 12px; width: 100%; }
+.courier-directory-row { display: flex; flex-direction: column; gap: 8px; padding: 20px 0; border-top: 1px solid var(--line); font-size: 14px; }
+.courier-access-label { align-self: flex-start; background: var(--success-soft); color: var(--success); font-size: 12px; padding: 2px 8px; border-radius: 5px; }
+.legal-page { max-width: 780px; padding: 32px 24px 64px; margin: 0 auto; background: var(--surface); min-height: 100dvh; }
+.legal-page header { display: flex; flex-direction: column; gap: 16px; padding-bottom: 24px; border-bottom: 1px solid var(--line); }
+.legal-page section { display: flex; flex-direction: column; gap: 12px; margin-top: 28px; }
+.legal-page li + li { margin-top: 8px; }
+.legal-page ul { margin: 0; padding-left: 22px; }
 .field-error { color: var(--danger); }
 .review-section { display: flex; flex-direction: column; gap: 12px; }
 .review-section p { overflow-wrap: anywhere; }

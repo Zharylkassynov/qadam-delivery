@@ -10,7 +10,7 @@ const rejects = (raw: string) => assert.throws(() => verifyTelegramData(raw, tes
 
 test('Telegram HMAC handles Unicode, 52-bit IDs and signed extra fields without accepting a role', () => {
   const data = signedTelegramData(user, { signature: 'signed-additional-field', start_param: 'courier' });
-  assert.deepEqual(verifyTelegramData(data, testBotToken), { id: '4503599627370495', name: 'Әлия Тест' });
+  assert.deepEqual(verifyTelegramData(data, testBotToken), { id: '4503599627370495', name: 'Әлия Тест', source: 'courier' });
 });
 test('Telegram rejects tampering, another bot key and duplicate parameters', () => {
   const data = signedTelegramData(user);

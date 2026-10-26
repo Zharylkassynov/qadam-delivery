@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { signedTelegramData } from '../telegram-fixture';
 import pg from 'pg';
 import { mockMapTiles } from './map-fixture';
-import { miniApp } from './telegram-browser-fixture';
+import { miniApp, fillCourierDetails } from './telegram-browser-fixture';
 
 // Local test bot key and a mocked Telegram SDK; never forge production identities.
 test.skip(Boolean(process.env.E2E_ORIGIN), 'Synthetic Telegram login runs only against the separate local test database');
@@ -178,7 +178,7 @@ test('legacy bicycle applicant chooses a current transport when reapplying witho
   await expect(select.locator('option')).toHaveText(['Выберите способ доставки', 'Пеший', 'Электромопед', 'Мопед', 'Автомобиль']);
   await page.getByRole('button', { name: 'Отправить заявку', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Доставляй с Qadam', exact: true })).toBeVisible();
-  await select.selectOption('MOPED'); await page.getByRole('button', { name: 'Отправить заявку', exact: true }).click();
+  await select.selectOption('MOPED'); await fillCourierDetails(page); await page.getByRole('button', { name: 'Отправить заявку', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Заявка отправлена', exact: true })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Алматы · Мопед', exact: true })).toBeVisible();
 });
@@ -206,6 +206,7 @@ test('Telegram applicant is rejected, reapplies, gets admin approval and complet
     await mobileProfile(applicant).click(); await expect(applicant.getByRole('button', { name: 'Заявки курьеров', exact: true })).toHaveCount(0);
     await applicant.getByRole('button', { name: 'Стать курьером', exact: true }).click();
     await applicant.getByLabel('Телефон для связи').fill('+++++++');
+    await fillCourierDetails(applicant);
     await applicant.getByRole('button', { name: 'Отправить заявку', exact: true }).click();
     await expect(applicant.getByRole('main').getByRole('alert')).toContainText('Проверьте телефон');
     await expect(applicant.getByLabel('Телефон для связи')).toHaveValue('+++++++');
@@ -236,12 +237,22 @@ test('Telegram applicant is rejected, reapplies, gets admin approval and complet
     await expect(reopened.getByLabel('Способ доставки')).toHaveValue('ELECTRIC_MOPED');
     await reopened.getByLabel('Способ доставки').selectOption('MOPED');
     await reopened.getByLabel('Телефон для связи').fill('+7 701 000 00 00');
+    await fillCourierDetails(reopened);
     await reopened.getByRole('button', { name: 'Отправить заявку', exact: true }).click();
     await admin.getByRole('button', { name: 'К списку заявок', exact: true }).click();
     await expect(candidate).toContainText('Алматы · Мопед');
     await candidate.getByRole('button', { name: 'Рассмотреть заявку', exact: true }).click();
     await admin.getByRole('button', { name: 'Одобрить заявку', exact: true }).click();
     await expect(reopened.getByRole('heading', { name: 'Можно начинать', exact: true })).toBeVisible();
+    await admin.getByRole('button', { name: 'К списку заявок', exact: true }).click();
+    await admin.getByRole('button', { name: 'Назад в профиль', exact: true }).click();
+    await admin.getByRole('button', { name: 'Курьеры', exact: true }).click();
+    const courierRow = admin.locator('.courier-directory-row').filter({ hasText: applicantName });
+    await expect(courierRow).toContainText('Алмалинский');
+    await expect(courierRow).toContainText('Вечером');
+    await admin.screenshot({ path: testInfo.outputPath('courier-directory-mobile.png') });
+    await admin.setViewportSize({ width: 1440, height: 1000 });
+    await admin.screenshot({ path: testInfo.outputPath('courier-directory-desktop.png') });
     await reopened.screenshot({ path: testInfo.outputPath('courier-application-approved.png'), fullPage: true });
     await reopened.getByRole('button', { name: 'К доступным заказам', exact: true }).click();
     await expect(reopened.getByRole('heading', { name: 'Можно принять', exact: true })).toBeVisible();
@@ -270,7 +281,6 @@ test('Telegram applicant is rejected, reapplies, gets admin approval and complet
     await admin.getByRole('button', { name: 'Назад в профиль' }).click();
     await expect(admin.getByRole('heading', { name: /^(Куда доставить\?|Текущая доставка)$/ })).toHaveCount(0);
     // Administrator remains a customer, with their own ordinary order access.
-    await admin.getByRole('button', { name: 'Назад в профиль' }).click();
     await expect(admin.locator('.profile-card')).toContainText('Клиент');
   } finally { await adminContext.close(); await applicantContext.close(); }
 });
