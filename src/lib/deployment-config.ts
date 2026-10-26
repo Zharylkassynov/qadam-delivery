@@ -25,7 +25,7 @@ export function validateDeployment(env: Environment = process.env) {
     throw new Error('Vercel must use the standard .next output directory');
   }
   if (env.VERCEL_ENV === 'preview') {
-    if (env.DEMO_AUTH_ENABLED === 'true' || env.DATABASE_URL || env.TELEGRAM_AUTH_ENABLED === 'true' || env.TELEGRAM_BOT_TOKEN || env.GEOAPIFY_API_KEY) {
+    if (env.DEMO_AUTH_ENABLED === 'true' || env.DATABASE_URL || env.TELEGRAM_AUTH_ENABLED === 'true' || env.TELEGRAM_BOT_TOKEN || env.TELEGRAM_WEBHOOK_SECRET || env.GEOAPIFY_API_KEY) {
       throw new Error('Preview must have login disabled and no database or bot credentials; scope credentials to Production');
     }
     return;
@@ -35,6 +35,9 @@ export function validateDeployment(env: Environment = process.env) {
   if (env.TELEGRAM_AUTH_ENABLED && !['true', 'false'].includes(env.TELEGRAM_AUTH_ENABLED)) throw new Error('TELEGRAM_AUTH_ENABLED must be true or false');
   if (env.TELEGRAM_AUTH_ENABLED === 'true' && !/^\d+:[A-Za-z0-9_-]{30,}$/.test(env.TELEGRAM_BOT_TOKEN ?? '')) {
     throw new Error('TELEGRAM_BOT_TOKEN is required when Telegram login is enabled');
+  }
+  if (env.TELEGRAM_AUTH_ENABLED === 'true' && !/^[A-Za-z0-9_-]{32,256}$/.test(env.TELEGRAM_WEBHOOK_SECRET ?? '')) {
+    throw new Error('TELEGRAM_WEBHOOK_SECRET is required when Telegram login is enabled');
   }
   const ref = env.SUPABASE_PROJECT_REF;
   if (!ref || !/^[a-z]{20}$/.test(ref)) throw new Error('SUPABASE_PROJECT_REF is required');

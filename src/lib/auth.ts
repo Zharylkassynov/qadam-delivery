@@ -88,10 +88,14 @@ export async function loginTelegram(initData: string) {
       await client.query('INSERT INTO qadam.telegram_identities(telegram_user_id,user_id) VALUES($1,$2)', [identity.id, row.id]);
     }
     const user = publicUser({ ...row, telegramId: identity.id });
+    await client.query(`UPDATE qadam.telegram_identities SET
+      allows_write=$2 OR EXISTS(SELECT 1 FROM qadam.telegram_bot_chats c WHERE c.telegram_user_id=$1 AND c.allows_write AND c.bot_blocked_at IS NULL),
+      bot_blocked_at=CASE WHEN $2 THEN NULL ELSE bot_blocked_at END,
+      source=coalesce($3,source) WHERE telegram_user_id=$1`, [identity.id, identity.allowsWrite === true, identity.source ?? null]);
     const token = randomBytes(32).toString('hex');
     await client.query("INSERT INTO qadam.sessions(token_hash,user_id,expires_at) VALUES($1,$2,now()+$3 * interval '1 second')", [hashToken(token), user.id, sessionMaxAge]);
     await client.query('DELETE FROM qadam.sessions WHERE expires_at < now()');
-    return { user, token };
+    return { user, token, source: identity.source, startScreen: identity.source?.startsWith('courier') ? 'courier' as const : undefined };
   });
 }
 

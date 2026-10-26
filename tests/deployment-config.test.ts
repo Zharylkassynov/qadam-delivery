@@ -55,6 +55,9 @@ test('local development keeps explicit origins and does not need Vercel settings
 test('Telegram requires a server token when enabled and stays disabled on Preview', () => {
   assert.throws(() => validateDeployment({ ...production, TELEGRAM_AUTH_ENABLED: 'true' }));
   assert.throws(() => validateDeployment({ ...production, TELEGRAM_AUTH_ENABLED: 'yes' }));
-  assert.doesNotThrow(() => validateDeployment({ ...production, TELEGRAM_AUTH_ENABLED: 'true', TELEGRAM_BOT_TOKEN: '123456789:synthetic_ci_only_abcdefghijklmnopqrstuvwxyz' }));
+  const telegram = { ...production, TELEGRAM_AUTH_ENABLED: 'true', TELEGRAM_BOT_TOKEN: '123456789:synthetic_ci_only_abcdefghijklmnopqrstuvwxyz', TELEGRAM_WEBHOOK_SECRET: 'local-test-secret-abcdefghijklmnopqrstuvwxyz' };
+  assert.doesNotThrow(() => validateDeployment(telegram));
+  for (const secret of [undefined, 'short', 'x'.repeat(257), 'invalid secret'.repeat(4)]) assert.throws(() => validateDeployment({ ...telegram, TELEGRAM_WEBHOOK_SECRET: secret }));
+  assert.throws(() => validateDeployment({ VERCEL: '1', VERCEL_ENV: 'preview', VERCEL_URL: 'qadam-test.vercel.app', TELEGRAM_WEBHOOK_SECRET: telegram.TELEGRAM_WEBHOOK_SECRET }));
   assert.throws(() => validateDeployment({ VERCEL: '1', VERCEL_ENV: 'preview', VERCEL_URL: 'qadam-test.vercel.app', TELEGRAM_BOT_TOKEN: 'private' }));
 });

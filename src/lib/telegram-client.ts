@@ -5,6 +5,8 @@ type TelegramWebApp = {
   isVersionAtLeast?(version: string): boolean; isActive?: boolean;
   onEvent?(event: string, callback: () => void): void;
   offEvent?(event: string, callback: () => void): void;
+  requestContact?(callback: (shared: boolean) => void): void;
+  requestWriteAccess?(callback: (allowed: boolean) => void): void;
   LocationManager?: {
     isInited: boolean; isLocationAvailable: boolean; isAccessGranted: boolean; isAccessRequested: boolean;
     init(callback: () => void): void;

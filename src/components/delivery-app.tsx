@@ -7,6 +7,7 @@ import { DeliveryWorkspace } from './delivery-workspace';
 import type { orderPayload } from './order-form';
 import { telegramApp } from '../lib/telegram-client';
 import { serviceCity } from '../lib/service-area';
+import { validSource } from '../lib/courier-options';
 import { api, ApiError, setTelegramSessionToken } from '../lib/client-api';
 
 const message = (error: unknown) => error instanceof Error ? error.message : 'Произошла ошибка. Попробуйте ещё раз.';
@@ -17,6 +18,7 @@ export function DeliveryApp() {
   const [bootError, setBootError] = useState('');
   const [demo, setDemo] = useState(false);
   const [telegram, setTelegram] = useState(false);
+  const [entry, setEntry] = useState<{ screen?: 'courier' | 'adminApplications'; source?: string }>({});
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
   const [syncError, setSyncError] = useState('');
@@ -39,8 +41,10 @@ export function DeliveryApp() {
         const app = await telegramApp();
         setTelegram(Boolean(app));
         if (app) {
-          const data = await api<{ user: User; sessionToken: string }>('/api/auth/telegram', { initData: app.initData });
+          const data = await api<{ user: User; sessionToken: string; source?: string; startScreen?: 'courier' }>('/api/auth/telegram', { initData: app.initData });
           setTelegramSessionToken(data.sessionToken);
+          const params = new URLSearchParams(window.location.search);
+          setEntry({ screen: data.startScreen ?? (params.get('screen') === 'courier' ? 'courier' : params.get('screen') === 'adminApplications' && data.user.isAdmin ? 'adminApplications' : undefined), source: data.source ?? validSource(params.get('src')) });
           setUser(data.user); setOrders([]); setLoading(true); setSelected(null); setError(''); setSyncError(''); setSyncedAt(null);
         } else {
           setTelegramSessionToken(undefined);
@@ -129,7 +133,7 @@ export function DeliveryApp() {
   if (!user && telegram) return <main className="boot-screen"><Brand/><p className="muted">Сессия завершена. Ваши заказы сохранены.</p><Button onClick={() => void boot()}>Войти через Telegram</Button></main>;
   if (!user) return demo ? <Login onLogin={signIn}/> : <TelegramEntry/>;
 
-  return <DeliveryWorkspace user={user} telegram={telegram} orders={orders} loading={loading} busy={busy} error={error} notice={notice} syncError={syncError} syncedAt={syncedAt} selected={selected}
+  return <DeliveryWorkspace user={user} telegram={telegram} initialScreen={entry.screen} source={entry.source} orders={orders} loading={loading} busy={busy} error={error} notice={notice} syncError={syncError} syncedAt={syncedAt} selected={selected}
     onSelect={setSelected} onSignOut={signOut} onMutate={mutate} onCreate={create}
     onRefresh={() => setRefresh((value) => value + 1)} onClearMessages={() => { setError(''); setNotice(''); }}/>;
 }

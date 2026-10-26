@@ -2,17 +2,21 @@ import { after, before, test } from 'node:test';
 import { ZodError } from 'zod';
 import assert from 'node:assert/strict';
 import { randomUUID, createHash } from 'node:crypto';
+import { readFile } from 'node:fs/promises';
 import { database, closeDatabase, transaction } from '../src/lib/db';
 import { migrate } from '../scripts/migrate';
 import { hashPassword, login, loginTelegram, logout, getSession } from '../src/lib/auth';
 import { signedTelegramData, testBotToken } from './telegram-fixture';
-import { applicationSchema, decisionSchema, listApplications, ownApplication, reviewApplication, submitApplication } from '../src/lib/courier-applications';
+import { applicationSchema, decisionSchema, listApplications, listCouriers, ownApplication, reviewApplication, submitApplication } from '../src/lib/courier-applications';
 import { acceptOrder, createOrder, createOrderSchema, listOrders, transitionOrder, type CreateOrder } from '../src/lib/orders';
 import { AppError } from '../src/lib/errors';
 import type { User } from '../src/lib/types';
 import { courierTransports, transportLabels } from '../src/lib/types';
 import { locationSchema, reportLocation } from '../src/lib/locations';
 import { getAdminOrder, listAdminOrders } from '../src/lib/admin-orders';
+import { processTelegramJobs, receiveTelegramUpdate, telegramProfile } from '../src/lib/telegram-bot';
+import { BotApiError } from '../src/lib/telegram-bot-api';
+import { drainBotOutbox, enqueueBotMessage } from '../src/lib/telegram-notifications';
 
 const url = process.env.TEST_DATABASE_URL;
 if (!url || !new URL(url).pathname.endsWith('_test')) throw new Error('TEST_DATABASE_URL must point to a separate database ending in _test');
@@ -41,6 +45,9 @@ before(async () => {
 after(async () => {
   const ids = users.map((user) => user.id);
   if (ids.length) await transaction(async (client) => {
+    const telegramIds = users.flatMap(user => user.telegramId ? [user.telegramId] : []);
+    await client.query('DELETE FROM qadam.telegram_outbox WHERE telegram_user_id=ANY($1::bigint[])', [telegramIds]);
+    await client.query('DELETE FROM qadam.telegram_bot_chats WHERE telegram_user_id=ANY($1::bigint[])', [telegramIds]);
     await client.query('DELETE FROM qadam.courier_applications WHERE user_id=ANY($1::uuid[]) OR reviewed_by=ANY($1::uuid[])', [ids]);
     await client.query('DELETE FROM qadam.orders WHERE customer_id=ANY($1::uuid[])', [ids]);
     await client.query('DELETE FROM qadam.login_attempts WHERE email=ANY($1::text[])', [users.map((user) => user.email)]);
@@ -54,11 +61,167 @@ async function telegramAccount(name: string) {
   const proof = signedTelegramData({ id: 3000000000000 + Math.floor(Math.random() * 1000000000), first_name: name });
   const account = await loginTelegram(proof); users.push(account.user); return { ...account, proof };
 }
-const applicationInput = () => ({ phone: '+7 700 000 00 00', transport: 'FOOT' as const, notes: 'Автотест заявки — не реальный курьер' });
+const applicationInput = () => ({ phone: '+7 700 000 00 00', transport: 'FOOT' as const, notes: 'Автотест заявки — не реальный курьер',
+  district: 'ALMALY' as const, availability: ['EVENING' as const], ageConfirmed: true as const, acceptRules: true as const });
 
 const pointA = { latitude: 43.2389, longitude: 76.8897 };
 const pointB = { latitude: 43.245, longitude: 76.91 };
 const fix = () => ({ ...pointA, accuracy: 12, capturedAt: new Date().toISOString() });
+
+test('bot start, verified contact, application notices and admin callbacks are private and deduplicated', async () => {
+  const admin = await telegramAccount('Бот — администратор'), candidate = await telegramAccount('Бот — кандидат');
+  await database().query('INSERT INTO qadam.administrators(user_id) VALUES($1)', [admin.user.id]);
+  let updateId = Date.now(); const updateIds: number[] = [], messages: { method: string; body: Record<string, unknown> }[] = [];
+  const transport = async (method: string, body: Record<string, unknown>) => { messages.push({ method, body }); return { message_id: 20 }; };
+  const send = async (telegramId: string, extra: Record<string, unknown>) => {
+    const update = { update_id: ++updateId, message: { message_id: 1, from: { id: Number(telegramId) }, chat: { id: Number(telegramId), type: 'private' }, ...extra } };
+    updateIds.push(update.update_id); await receiveTelegramUpdate(update); await receiveTelegramUpdate(update); await processTelegramJobs(transport); return update;
+  };
+  try {
+    const start = await send(admin.user.telegramId!, { text: '/start courier_kaspi' });
+    assert.equal(messages.filter(m => m.method === 'sendMessage').length, 1);
+    assert.match(JSON.stringify(messages[0].body), /screen=courier/);
+    assert.match(JSON.stringify(messages[0].body), /courier_kaspi/);
+    assert.equal((await database().query('SELECT count(*)::int AS n FROM qadam.telegram_updates WHERE update_id=$1', [start.update_id])).rows[0].n, 1);
+    await send(candidate.user.telegramId!, { text: '/start' });
+    await send(candidate.user.telegramId!, { contact: { user_id: Number(admin.user.telegramId), phone_number: '+77000000000' } });
+    assert.equal((await telegramProfile(candidate.user)).phone, null);
+    await send(candidate.user.telegramId!, { contact: { user_id: Number(candidate.user.telegramId), phone_number: '+7 701 000 00 00' } });
+    assert.deepEqual(await telegramProfile(candidate.user), { phone: '+77010000000', allowsWrite: true });
+    const application = await submitApplication(candidate.user, { ...applicationInput(), source: 'courier_kaspi' });
+    await submitApplication(candidate.user, { ...applicationInput(), source: 'courier_kaspi' });
+    await drainBotOutbox(transport);
+    assert.equal(messages.filter(m => String(m.body.text).startsWith('Новая заявка')).length, 1);
+    const callback = (telegramId: string) => ({ update_id: ++updateId, callback_query: { id: `query-${updateId}`, from: { id: Number(telegramId) }, data: `app:approve:${application.id}`, message: { message_id: 20, chat: { id: Number(telegramId), type: 'private' } } } });
+    const denied = callback(candidate.user.telegramId!); updateIds.push(denied.update_id);
+    await receiveTelegramUpdate(denied); await processTelegramJobs(transport);
+    assert.equal((await ownApplication(candidate.user))?.status, 'PENDING');
+    const allowed = callback(admin.user.telegramId!); updateIds.push(allowed.update_id);
+    await receiveTelegramUpdate(allowed); await receiveTelegramUpdate(allowed); await processTelegramJobs(transport);
+    assert.equal((await ownApplication(candidate.user))?.status, 'APPROVED');
+    assert.equal(messages.filter(m => String(m.body.text).startsWith('Заявка одобрена!')).length, 1);
+    assert.ok(messages.some(m => m.method === 'editMessageText'));
+    await rejectsStatus(listCouriers(candidate.user), 403);
+    const listed = (await listCouriers(admin.user)).find(item => item.id === application.id);
+    assert.equal(listed?.district, 'ALMALY'); assert.deepEqual(listed?.availability, ['EVENING']);
+    assert.equal(listed?.source, 'courier_kaspi');
+    await database().query('UPDATE qadam.users SET active=false WHERE id=$1', [candidate.user.id]);
+    assert.equal((await listCouriers(admin.user)).some(item => item.id === application.id), false);
+    await database().query('UPDATE qadam.users SET active=true WHERE id=$1', [candidate.user.id]);
+    // Bot failures never undo an application decision; 403 records a blocked bot.
+    const next = await telegramAccount('Бот — отказ уведомлений');
+    await send(next.user.telegramId!, { text: '/start' });
+    const pending = await submitApplication(next.user, applicationInput());
+    await reviewApplication(admin.user, pending.id, { decision: 'REJECTED', reason: 'Уточни номер телефона' });
+    await drainBotOutbox(async () => { throw new BotApiError(403); });
+    assert.equal((await ownApplication(next.user))?.status, 'REJECTED');
+    assert.equal((await telegramProfile(next.user)).allowsWrite, false);
+  } finally {
+    await database().query('DELETE FROM qadam.telegram_updates WHERE update_id=ANY($1::bigint[])', [updateIds]);
+    const telegramIds = users.flatMap(u => u.telegramId ? [u.telegramId] : []);
+    await database().query('DELETE FROM qadam.telegram_outbox WHERE telegram_user_id=ANY($1::bigint[])', [telegramIds]);
+    await database().query('DELETE FROM qadam.telegram_bot_chats WHERE telegram_user_id=ANY($1::bigint[])', [telegramIds]);
+  }
+});
+
+test('bot outbox retries transient failures and competing workers send a queued message once', async () => {
+  const account = await telegramAccount('Очередь бота');
+  const key = `retry:${account.user.id}`;
+  await enqueueBotMessage(database(), key, account.user.telegramId!, { chat_id: account.user.telegramId!, text: 'Synthetic queue test' });
+  await enqueueBotMessage(database(), key, account.user.telegramId!, { chat_id: account.user.telegramId!, text: 'Synthetic queue test' });
+  await drainBotOutbox(async () => { throw new BotApiError(429, 25); }, 1);
+  const retry = (await database().query('SELECT attempts,failed,sent_at,available_at>now()+interval \'20 seconds\' AS delayed FROM qadam.telegram_outbox WHERE dedupe_key=$1', [key])).rows[0];
+  assert.deepEqual(retry, { attempts: 1, failed: false, sent_at: null, delayed: true });
+  await database().query('UPDATE qadam.telegram_outbox SET available_at=now() WHERE dedupe_key=$1', [key]);
+  let sent = 0;
+  const transport = async () => { sent++; await new Promise(resolve => setTimeout(resolve, 30)); return {}; };
+  await Promise.all([drainBotOutbox(transport, 1), drainBotOutbox(transport, 1)]);
+  assert.equal(sent, 1);
+  const delivered = (await database().query('SELECT attempts,sent_at IS NOT NULL AS sent,body FROM qadam.telegram_outbox WHERE dedupe_key=$1', [key])).rows[0];
+  assert.deepEqual(delivered, { attempts: 2, sent: true, body: {} });
+});
+
+test('signed start source and message permission persist; new application consents are mandatory', async () => {
+  process.env.TELEGRAM_AUTH_ENABLED = 'true'; process.env.TELEGRAM_BOT_TOKEN = testBotToken;
+  const account = await loginTelegram(signedTelegramData({ id: 3700000000000 + Math.floor(Math.random() * 1000000000), first_name: 'Ссылка', allows_write_to_pm: true }, { start_param: 'courier_uni' }));
+  users.push(account.user);
+  assert.equal(account.startScreen, 'courier'); assert.equal(account.source, 'courier_uni');
+  assert.equal((await telegramProfile(account.user)).allowsWrite, true);
+  const saved = await submitApplication(account.user, { ...applicationInput(), source: 'untrusted_url' });
+  assert.equal(saved.source, 'courier_uni'); assert.equal(saved.ageConfirmed, true); assert.ok(saved.consentAt);
+  for (const invalid of [{ ageConfirmed: false }, { acceptRules: false }, { district: 'OTHER' }, { availability: [] }, { availability: ['DAY', 'DAY'] }, { source: '../bad' }])
+    assert.equal(applicationSchema.safeParse({ ...applicationInput(), ...invalid }).success, false);
+});
+
+test('restricted application role can persist bot jobs and new application fields with RLS', async () => {
+  const account = await telegramAccount('Проверка прав бота');
+  const migration = await readFile(new URL('../db/migrations/20261026102512_courier_bot.sql', import.meta.url), 'utf8');
+  await transaction(async client => {
+    await client.query('SAVEPOINT bot_role_fixture');
+    if (!(await client.query("SELECT 1 FROM pg_roles WHERE rolname='qadam_app'")).rowCount)
+      await client.query('CREATE ROLE qadam_app NOLOGIN NOSUPERUSER NOBYPASSRLS NOINHERIT');
+    await client.query('GRANT USAGE ON SCHEMA qadam TO qadam_app');
+    await client.query('GRANT SELECT ON qadam.telegram_identities,qadam.courier_applications TO qadam_app');
+    await client.query('GRANT INSERT(user_id,phone,transport,notes) ON qadam.courier_applications TO qadam_app');
+    await client.query('CREATE POLICY bot_fixture_identity_read ON qadam.telegram_identities FOR SELECT TO qadam_app USING(true)');
+    await client.query('CREATE POLICY bot_fixture_application_read ON qadam.courier_applications FOR SELECT TO qadam_app USING(true)');
+    await client.query("CREATE POLICY bot_fixture_application_insert ON qadam.courier_applications FOR INSERT TO qadam_app WITH CHECK(status='PENDING')");
+    for (const [table, policy] of [['telegram_identities','telegram_server_update'], ['telegram_bot_chats','bot_chats_server'], ['telegram_updates','bot_updates_server'], ['telegram_outbox','bot_outbox_server']])
+      await client.query(`DROP POLICY IF EXISTS ${policy} ON qadam.${table}`);
+    // Table definitions were already migrated. Exercise the exact production grants and policies.
+    await client.query(migration.slice(migration.indexOf('ALTER TABLE qadam.telegram_bot_chats ENABLE ROW LEVEL SECURITY;')));
+    await client.query('SET LOCAL ROLE qadam_app');
+    assert.equal((await client.query("UPDATE qadam.telegram_identities SET allows_write=true,source='courier_uni' WHERE user_id=$1 RETURNING allows_write", [account.user.id])).rows[0].allows_write, true);
+    await client.query("INSERT INTO qadam.telegram_bot_chats(telegram_user_id,phone) VALUES($1,'+77010000000')", [account.user.telegramId]);
+    await client.query('UPDATE qadam.telegram_bot_chats SET allows_write=false WHERE telegram_user_id=$1', [account.user.telegramId]);
+    await client.query("INSERT INTO qadam.telegram_updates(update_id,payload) VALUES(9007199254740000,'{}')");
+    await client.query('UPDATE qadam.telegram_updates SET processed_at=now() WHERE update_id=9007199254740000');
+    assert.ok((await client.query("INSERT INTO qadam.telegram_outbox(dedupe_key,telegram_user_id,method,body) VALUES($1,$2,'sendMessage','{}') RETURNING id", [`rls:${account.user.id}`, account.user.telegramId])).rows[0].id);
+    const saved = await client.query(`INSERT INTO qadam.courier_applications(user_id,phone,transport,notes,district,availability,age_confirmed,consent_at,source)
+      VALUES($1,'+77010000000','FOOT','','ALMALY',ARRAY['DAY'],true,now(),'courier_uni') RETURNING district,age_confirmed`, [account.user.id]);
+    assert.deepEqual(saved.rows[0], { district: 'ALMALY', age_confirmed: true });
+    await client.query('SAVEPOINT identity_write_denied');
+    await assert.rejects(client.query('UPDATE qadam.telegram_identities SET user_id=user_id WHERE user_id=$1', [account.user.id]), (error: unknown) => typeof error === 'object' && error !== null && 'code' in error && error.code === '42501');
+    await client.query('ROLLBACK TO SAVEPOINT identity_write_denied');
+    await client.query('RESET ROLE');
+    await client.query('ROLLBACK TO SAVEPOINT bot_role_fixture');
+  });
+  assert.equal((await telegramProfile(account.user)).allowsWrite, false);
+});
+
+test('restricted application role can read and append events with RLS, but cannot change history', async () => {
+  const order = await createOrder(customer, input());
+  const migration = await readFile(new URL('../db/migrations/20261026095352_order_events_rls.sql', import.meta.url), 'utf8');
+  await transaction(async client => {
+    // Roles are cluster-wide: roll all temporary grants, policies and role creation back.
+    await client.query('SAVEPOINT role_fixture');
+    if (!(await client.query("SELECT 1 FROM pg_roles WHERE rolname='qadam_app'")).rowCount)
+      await client.query('CREATE ROLE qadam_app NOLOGIN NOSUPERUSER NOBYPASSRLS NOINHERIT');
+    await client.query('GRANT USAGE ON SCHEMA qadam TO qadam_app');
+    await client.query(migration);
+    await client.query(migration); // Reapplying the ready-to-run SQL is safe.
+    const policies = (await client.query("SELECT cmd,roles::text[] AS roles FROM pg_policies WHERE schemaname='qadam' AND tablename='order_events' ORDER BY cmd")).rows;
+    assert.deepEqual(policies.map(p => p.cmd), ['INSERT', 'SELECT']);
+    for (const policy of policies) assert.deepEqual(policy.roles, ['qadam_app']);
+    const privileges = (await client.query(`SELECT
+      has_table_privilege('qadam_app','qadam.order_events','UPDATE') AS update,
+      has_table_privilege('qadam_app','qadam.order_events','DELETE') AS delete`)).rows[0];
+    assert.deepEqual(privileges, { update: false, delete: false });
+    await client.query('SET LOCAL ROLE qadam_app');
+    assert.equal((await client.query('SELECT count(*)::int AS count FROM qadam.order_events WHERE order_id=$1', [order.id])).rows[0].count, 2);
+    await client.query("INSERT INTO qadam.order_events(order_id,actor_id,status) VALUES($1,$2,'CREATED')", [order.id, customer.id]);
+    assert.equal((await client.query('SELECT count(*)::int AS count FROM qadam.order_events WHERE order_id=$1', [order.id])).rows[0].count, 3);
+    for (const query of ['UPDATE qadam.order_events SET status=status WHERE order_id=$1', 'DELETE FROM qadam.order_events WHERE order_id=$1']) {
+      await client.query('SAVEPOINT denied_write');
+      await assert.rejects(client.query(query, [order.id]), (error: unknown) => typeof error === 'object' && error !== null && 'code' in error && error.code === '42501');
+      await client.query('ROLLBACK TO SAVEPOINT denied_write');
+      await client.query('RELEASE SAVEPOINT denied_write');
+    }
+    await client.query('RESET ROLE');
+    await client.query('ROLLBACK TO SAVEPOINT role_fixture');
+  });
+  assert.equal((await listOrders(customer)).find(o => o.id === order.id)!.events.length, 2);
+});
 
 test('recipient contacts stay private until assignment, including retries and administrator access', async () => {
   const data = input();

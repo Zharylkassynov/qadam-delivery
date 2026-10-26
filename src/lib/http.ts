@@ -53,7 +53,7 @@ export function checkMutation(request: Request) {
   if (!request.headers.get('content-type')?.toLowerCase().startsWith('application/json')) throw new AppError(415, 'Требуется application/json.');
 }
 
-export async function readJson(request: Request): Promise<unknown> {
+export async function readJson(request: Request, maxBytes = 16384): Promise<unknown> {
   // Bound the actual streamed body, not just the caller-provided Content-Length.
   const reader = request.body?.getReader();
   if (!reader) throw new AppError(400, 'Пустой запрос.');
@@ -63,7 +63,7 @@ export async function readJson(request: Request): Promise<unknown> {
     const { value, done } = await reader.read();
     if (done) break;
     size += value.byteLength;
-    if (size > 16384) { await reader.cancel(); throw new AppError(413, 'Слишком большой запрос.'); }
+    if (size > maxBytes) { await reader.cancel(); throw new AppError(413, 'Слишком большой запрос.'); }
     chunks.push(value);
   }
   return JSON.parse(Buffer.concat(chunks).toString('utf8'));

@@ -6,16 +6,18 @@ import { AddressRow, Badge, Brand, Button, EmptyState, Feedback, Icon, OrderCard
 import { emptyDraft, OrderForm, OrderReview, orderPayload, type OrderDraft } from './order-form';
 import { serviceCity, serviceTimezone } from '../lib/service-area';
 import { CourierOnboarding, CourierApplicationAdmin } from './courier-onboarding';
+import { CourierDirectory } from './courier-directory';
 import { AddressPicker, type AddressPickerMode } from './address-picker';
 import { CustomerHome } from './customer-home';
 import { OrderTracking } from './order-tracking';
 import { AdminOrders } from './admin-orders';
 
-type View = 'home' | 'orders' | 'profile' | 'create' | 'review' | 'detail' | 'point' | 'courierApplication' | 'adminApplications' | 'adminOrders';
+type View = 'home' | 'orders' | 'profile' | 'create' | 'review' | 'detail' | 'point' | 'courierApplication' | 'adminApplications' | 'adminOrders' | 'couriers';
 type Filter = 'all' | 'active' | 'history';
 type Props = {
   user: User; telegram: boolean; orders: Order[]; loading: boolean; busy: boolean; error: string; notice: string;
   syncError: string; syncedAt: string | null; selected: string | null;
+  initialScreen?: 'courier' | 'adminApplications'; source?: string;
   onSelect: (id: string) => void; onSignOut: () => Promise<void>; onRefresh: () => void; onClearMessages: () => void;
   onMutate: (path: string, body: unknown, success: string) => Promise<boolean>;
   onCreate: (input: ReturnType<typeof orderPayload>) => Promise<boolean>;
@@ -23,7 +25,7 @@ type Props = {
 
 export function DeliveryWorkspace(props: Props) {
   const { user, orders, loading, busy, error, notice, syncError, syncedAt, selected } = props;
-  const [view, setView] = useState<View>('home');
+  const [view, setView] = useState<View>(props.initialScreen === 'courier' ? 'courierApplication' : props.initialScreen === 'adminApplications' && user.isAdmin ? 'adminApplications' : 'home');
   const [filter, setFilter] = useState<Filter>(user.role === 'CUSTOMER' ? 'all' : 'active');
   const [draft, setDraft] = useState<OrderDraft>({ ...emptyDraft });
   const [pointKind, setPointKind] = useState<'pickup' | 'destination'>('pickup');
@@ -50,7 +52,7 @@ export function DeliveryWorkspace(props: Props) {
 
   useEffect(() => {
     setFilter(user.role === 'COURIER' ? 'active' : 'all');
-    setView((current) => current === 'courierApplication' || current === 'adminApplications' || current === 'adminOrders' ? current : 'home');
+    setView((current) => current === 'courierApplication' || current === 'adminApplications' || current === 'adminOrders' || current === 'couriers' ? current : 'home');
   }, [user.role]);
 
   function navigate(target: View) {
@@ -106,7 +108,8 @@ export function DeliveryWorkspace(props: Props) {
   const card = (order: Order) => <OrderCard key={order.id} order={order} busy={busy} onOpen={() => open(order)}/>;
   const refresh = <Button variant="secondary" onClick={props.onRefresh} disabled={busy}>Обновить список</Button>;
 
-  if (view === 'courierApplication') return <CourierOnboarding user={user} onBack={() => navigate('profile')} onOrders={() => { props.onRefresh(); navigate('home'); }}/>;
+  if (view === 'courierApplication') return <CourierOnboarding user={user} source={props.source} onBack={() => navigate('profile')} onOrders={() => { props.onRefresh(); navigate('home'); }}/>;
+  if (view === 'couriers') return <CourierDirectory user={user} onBack={() => navigate('profile')}/>;
   if (view === 'adminApplications') return <CourierApplicationAdmin user={user} onBack={() => navigate('profile')}/>;
   if (view === 'adminOrders') return <AdminOrders user={user} onBack={() => navigate('profile')}/>;
 
@@ -140,7 +143,7 @@ export function DeliveryWorkspace(props: Props) {
           {view === 'detail' && (detail ? <OrderDetail order={detail} user={user} onCancel={async () => { if (window.confirm('Отменить этот заказ?')) await props.onMutate(`/api/orders/${detail.id}/status`, { status: 'CANCELLED' }, 'Заказ отменён и сохранён в истории.'); }} busy={busy}/> : <EmptyState title="Заказ больше недоступен" action={<Button variant="secondary" onClick={() => navigate('home')}>К списку заказов</Button>}>Возможно, его уже принял другой курьер. Обновите список и выберите другую доставку.</EmptyState>)}
           {view === 'profile' && <><h1 className="sr-only" tabIndex={-1}>Профиль</h1><div className="profile-card"><span className="avatar large">{initials(user.name)}</span><h2>{user.name}</h2><p className="muted">{customer ? 'Клиент' : 'Курьер'}{user.telegramId && ' · Telegram'}</p><p>{user.telegramId ? `Telegram ID: ${user.telegramId}` : user.email}</p></div><div className="profile-stats"><div><strong>{activeOrders.length}</strong><span>Активные</span></div><div><strong>{completed.length}</strong><span>Доставлены</span></div></div>
             {user.telegramId && <><Feedback title={customer ? 'Доставляй с Qadam' : 'Доступ курьера открыт'}>{customer ? 'Подай заявку. Администратор проверит её и откроет доступ к заказам.' : 'Принимай заказы и отмечай каждый шаг доставки.'}</Feedback><Button onClick={() => navigate('courierApplication')} disabled={busy}>{customer ? 'Стать курьером' : 'Моя заявка курьера'}</Button></>}
-            {user.isAdmin && <><h2>Администрирование</h2><Button variant="secondary" onClick={() => navigate('adminOrders')} disabled={busy}>Все заказы</Button><Button variant="secondary" onClick={() => navigate('adminApplications')} disabled={busy}>Заявки курьеров</Button></>}
+            {user.isAdmin && <><h2>Администрирование</h2><Button variant="secondary" onClick={() => navigate('adminOrders')} disabled={busy}>Все заказы</Button><Button variant="secondary" onClick={() => navigate('adminApplications')} disabled={busy}>Заявки курьеров</Button><Button variant="secondary" onClick={() => navigate('couriers')} disabled={busy}>Курьеры</Button></>}
             {!props.telegram && <Button variant="secondary" onClick={() => void props.onSignOut()} disabled={busy}>Выйти из аккаунта</Button>}</>}
         </div>
       </main>
