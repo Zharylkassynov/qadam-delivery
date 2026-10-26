@@ -1,0 +1,377 @@
+# Qadam Delivery — дорожная карта
+
+Актуально на 26 октября 2026. Этот файл — главный источник плана для команды и ИИ-ассистентов.
+Он заменяет приоритеты из `PROJECT_BRIEF.md` (дедлайн 21 октября и раздел «Out of Scope») и раздел
+«Deadline priority» в `AGENTS.md`. Правила дизайна и инженерные правила из `AGENTS.md` продолжают действовать.
+
+## 1. Цель и позиционирование
+
+- Учебный MVP по курсу «Технологическое предпринимательство» сделан. Теперь цель — реальное использование.
+- Ближайшая задача (до ~2 ноября): найти и зарегистрировать курьеров в Telegram Mini App `@qadam_delivery_bot`.
+- Позиционирование: **курьеры для цветочных, кондитерских и подарочных магазинов Алматы — ко времени, бережно,
+  с фото вручения и фиксированной ценой; заказ курьера за 30 секунд в Telegram.**
+- Пользователи: магазины (заказчики), курьеры (исполнители), админы (команда). Частных клиентов не продвигаем:
+  частные посылки уже закрывают Wolt Packages, inDrive.Курьеры и Яндекс Go.
+
+Факты рынка, на которые опирается план (ссылки в разделе 9):
+
+- inDrive.Курьеры — главный конкурент в сегменте: договорная цена (торг), выбор курьера по фото и рейтингу,
+  бизнес-режим со страховкой до 25 000 ₸, код при вручении; по данным компании 56% клиентов — малый и средний бизнес.
+- Wolt Packages с сентября 2025 возит посылки по Алматы и Астане за час, получатель следит без приложения.
+- Яндекс Go с 2019 года возит посылки водителями такси, получатель получает SMS со ссылкой.
+- Алматы тратит на доставку больше половины денег страны: около 51 из 86 млрд ₸ в 2025 году.
+- Главный мессенджер страны — WhatsApp (отчёт «Молодёжь Казахстана 2024»: WhatsApp 89,4%, Telegram 24,6%).
+  Telegram подходит для курьеров, но магазинам и получателям нельзя оставлять только его.
+
+Что мешало реальному использованию на 26 октября:
+
+1. Бот ничего не отправляет: курьер видит заказ, только пока Mini App открыт; кандидат не узнаёт о решении.
+2. Нет цены («по согласованию»), а договориться негде: курьер не видит телефон отправителя, клиент — курьера.
+3. Нет роли магазина: адрес магазина вводится каждый раз, нет доставки ко времени.
+4. На проде включён демо-вход с опубликованным паролем; курьер видит имена и телефоны получателей всех открытых заказов.
+
+## 2. Как устроен проект (кратко)
+
+- **Стек:** Next.js 16 (App Router, API в `src/app/api/**/route.ts`, `runtime = 'nodejs'`), React 19, TypeScript,
+  zod 4, `pg` без ORM, Leaflet, Tailwind 4 + `src/app/globals.css`. Перед изменениями Next.js читать
+  `node_modules/next/dist/docs/` (см. `AGENTS.md`).
+- **Деплой:** Vercel (регион `fra1`, Node 22, автодеплой `main` из приватного GitHub `Zharylkassynov/qadam-delivery`).
+  База — Supabase Postgres (Франкфурт) через transaction pooler под ограниченной ролью `qadam_app`.
+- **Код:**
+  - `src/lib/` — логика: `orders.ts` (заказы, статусы, блокировки `SELECT … FOR UPDATE`), `courier-applications.ts`,
+    `auth.ts` (сессии, вход через Telegram), `telegram.ts` (проверка HMAC initData), `locations.ts`, `routing.ts`,
+    `geocoding.ts`, `admin-orders.ts`, `administrators.ts`, `http.ts` (`handle`, `json`, `requireUser`,
+    `checkMutation`, `readJson` с лимитом 16 КБ), `deployment-config.ts` (валидация переменных окружения).
+  - `src/components/` — `delivery-app.tsx` (запуск, сессия, опрос сервера), `delivery-workspace.tsx` (экраны и навигация),
+    `courier-onboarding.tsx` (заявка курьера и экран админа), `order-form.tsx`, `order-tracking.tsx`, `admin-orders.tsx`,
+    `delivery-ui.tsx` (общие компоненты).
+- **Вход:** Mini App отправляет `initData` → `/api/auth/telegram` проверяет подпись → создаёт клиента → сессия
+  (в `qadam.sessions` хранится SHA-256 токена) → токен в `Authorization: Bearer`, только в памяти страницы.
+  Демо-вход по паролю (cookie) включается `DEMO_AUTH_ENABLED=true`.
+- **Роли:** все новые пользователи — `CUSTOMER`; `COURIER` вычисляется из одобренной заявки
+  (`qadam.courier_applications.status='APPROVED'`); админ — строка в `qadam.administrators` (добавляет только владелец БД).
+- **Заказы:** `CREATED → SEARCHING_FOR_COURIER → ACCEPTED → PICKED_UP → IN_TRANSIT → DELIVERED`, плюс `CANCELLED`.
+  События — `qadam.order_events`; повтор создания защищён `request_key`. Клиент опрашивает `/api/orders` каждые 3 с,
+  пока вкладка видима.
+- **Карта:** Geoapify (поиск, тайлы, маршрут) через серверные прокси, суточные лимиты — `qadam.service_limits`.
+- **Миграции:** `db/migrations/*.sql`, применяются по имени, sha256 содержимого хранится в `public.qadam_migrations`.
+  Применённые файлы не редактировать — только новые файлы `YYYYMMDDHHMMSS_<slug>.sql`.
+- **Права `qadam_app` в Supabase** (локально и в CI этой роли нет, ошибки прав видны только в облаке):
+  - `orders` — SELECT/INSERT/UPDATE на всю таблицу (новые колонки покрыты);
+  - `order_events` — SELECT/INSERT; `sessions` — SELECT/INSERT/DELETE;
+  - `users` — SELECT и INSERT только `(email, name, password_hash)`, **UPDATE нет**;
+  - `telegram_identities` — SELECT/INSERT, **UPDATE нет**;
+  - `courier_applications` — SELECT, INSERT `(user_id, phone, transport, notes)`, UPDATE `(status, reviewed_at, reviewed_by, decision_reason)`;
+  - `administrators` — только SELECT.
+  - Новая таблица: `ENABLE ROW LEVEL SECURITY`, `REVOKE ALL … FROM PUBLIC` и от `anon/authenticated/service_role`,
+    `GRANT` нужных прав `qadam_app` и `CREATE POLICY … TO qadam_app` — по образцу существующих миграций
+    (блок `DO $$ … IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname='qadam_app') …`). Новые колонки в таблицах
+    с поколоночными правами требуют отдельного `GRANT INSERT/UPDATE (колонки)`.
+- **Тесты:** `npm test` (node:test, интеграционные на отдельной БД `*_test`, `tests/integration.test.ts`),
+  `npm run test:e2e` (Playwright, `tests/e2e/*.spec.ts`; Telegram SDK подменяется в `tests/e2e/telegram-browser-fixture.ts`,
+  подпись — `tests/telegram-fixture.ts` с синтетическим токеном). CI: `.github/workflows/ci.yml`
+  (typecheck → test → build с прод-конфигом → check:build → e2e).
+- **Окружение:** новые переменные добавлять в `src/lib/deployment-config.ts` (Production — обязательность и формат,
+  Preview — запрет секретов) и в `tests/deployment-config.test.ts`.
+
+## 3. Правила работы
+
+1. Этапы идут по порядку. Перед этапом ассистент пишет короткий план (файлы, миграции, тесты, ручные шаги)
+   и ждёт «ок» владельца репозитория.
+2. Одна ветка на этап: `stage-N-<slug>`. Владелец смотрит изменения в WebStorm, пушит ветку, открывает Pull Request
+   на GitHub и мёржит после зелёной проверки CI. Vercel выкатывает `main` сам.
+3. Перед сдачей этапа всё зелёное: `npm run typecheck`, `npm test`, `npm run build`, `npm run check:build`,
+   `npm run test:e2e`. Новое поведение покрыто тестами. Для локальных тестов нужен PostgreSQL
+   (`docker compose up -d --wait`, затем `npm run db:test:setup`).
+4. Для Supabase ассистент даёт готовый SQL: текст миграции +
+   `INSERT INTO public.qadam_migrations(name,checksum) VALUES('<имя файла>','<sha256 содержимого файла>');`
+   (так же делает `scripts/export-supabase.ts`). Владелец выполняет его в Supabase → SQL Editor.
+5. Секреты из `.env*` не читать и не выводить. Команды с токеном бота (`npm run telegram:*`) запускает владелец.
+6. Интерфейс — на русском, после этапа 1 без слов «демо», «учебный», «тестовый».
+7. Не обещать фоновое отслеживание из Mini App; старые координаты помечать устаревшими.
+8. После этапа обновить таблицу статуса ниже.
+
+## 4. Статус
+
+| Этап | Статус | Цель | Итог |
+| --- | --- | --- | --- |
+| 0. Подготовка | Готово | 26.10 | typecheck ✓, 50 серверных тестов ✓, 21 e2e ✓, build ✓, check:build ✓; бот отвечает, кнопка меню → https://qadam-delivery.vercel.app/ |
+| 1. Готовность к реальным пользователям | Ждёт «ок» | 27.10 | |
+| 2. Бот и регистрация курьеров | Не начат | 29.10 | |
+| 3. Набор курьеров | Не начат | 29.10 | |
+| 4. Заказы и уведомления | Не начат | 03.11 | |
+| 5. Цена, оплата и связь | Не начат | 05.11 | |
+| 6. Для магазинов | Не начат | 09.11 | |
+| 7. Доверие и управление | Не начат | 12.11 | |
+| 8. Получатель и WhatsApp | Не начат | 13.11 | |
+| 9. Удобство в Telegram | Не начат | 16.11 | |
+| 10. Фишки | Не начат | 23.11 | |
+| 11. Инфраструктура | По мере роста | — | |
+| Пилот с магазинами | Не начат | старт 16.11 | |
+
+## 5. Этапы
+
+### Этап 1. Готовность к реальным пользователям
+
+Цель: настоящие курьеры и клиенты не видят учебных надписей, тестовых заказов и чужих телефонов.
+
+1. Убрать учебные надписи:
+   - `delivery-workspace.tsx`: «Демонстрационный аккаунт» и «Учебный MVP · 2026 / Заказы сохраняются в базе» в сайдбаре,
+     «· город демонстрации» на главной курьера, «демонстрационный аккаунт» в профиле, блок «Учебная демонстрация»,
+     «Ваш курьер · тестовый профиль»;
+   - `delivery-app.tsx` (экран входа): «Учебный MVP, 2026», «Демонстрационный вход» и блок демо-аккаунтов — только при включённом демо;
+   - `layout.tsx`: описание «Учебное приложение…».
+2. Когда демо-вход выключен, браузерная страница вместо формы входа показывает экран «Откройте Qadam в Telegram»
+   с кнопкой `https://t.me/qadam_delivery_bot`.
+3. Курьер не получает `recipientName` и `recipientPhone` в заказах, которые ему не назначены. Обнулять на сервере
+   (`listOrders` в `orders.ts` и все ответы с заказом), не только в интерфейсе. В карточке свободного заказа:
+   «Контакты получателя откроются после принятия заказа». Админ видит всё.
+4. Внутри Telegram скрыть кнопку «Выйти» (шапка и профиль): там вход автоматический.
+5. Тесты: интеграционный — у курьера в свободном заказе нет телефона и имени получателя, в назначенном есть;
+   e2e — в Telegram нет кнопки «Выйти», на экранах нет «Демонстрац…»/«Учебн…»/«тестов…».
+
+Ручные шаги владельца:
+
+- Vercel → Settings → Environment Variables (Production): `DEMO_AUTH_ENABLED=false`, затем Redeploy.
+- Supabase → SQL Editor (отменить открытые заказы демо-клиентов и отключить демо-аккаунты — их сессии сразу перестанут работать):
+
+```sql
+BEGIN;
+WITH demo AS (SELECT id FROM qadam.users WHERE email LIKE '%@qadam.demo'),
+cancelled AS (
+  UPDATE qadam.orders SET status = 'CANCELLED', updated_at = now()
+  WHERE customer_id IN (SELECT id FROM demo)
+    AND status IN ('CREATED','SEARCHING_FOR_COURIER','ACCEPTED','PICKED_UP','IN_TRANSIT')
+  RETURNING id, customer_id
+)
+INSERT INTO qadam.order_events(order_id, actor_id, status)
+SELECT id, customer_id, 'CANCELLED' FROM cancelled;
+UPDATE qadam.users SET active = false WHERE email LIKE '%@qadam.demo';
+COMMIT;
+-- Проверить, не осталось ли открытых тестовых заказов от реальных аккаунтов:
+SELECT number, status, created_at, left(notes, 60) FROM qadam.orders
+WHERE status IN ('CREATED','SEARCHING_FOR_COURIER','ACCEPTED','PICKED_UP','IN_TRANSIT') ORDER BY created_at;
+```
+
+Проверка: курьер в Telegram открывает свободный заказ — адреса есть, телефона нет; после «Принять заказ» телефон есть.
+На сайте вместо формы входа — кнопка «Открыть в Telegram». После этапа демо-аккаунты на сайте не работают:
+показывать продукт нужно через Telegram.
+
+### Этап 2. Бот и регистрация курьеров
+
+Цель: курьер регистрируется по одной ссылке или QR примерно за минуту и получает решение сообщением в Telegram.
+
+1. **Вебхук** `src/app/api/telegram/webhook/route.ts` (POST):
+   - сравнить заголовок `X-Telegram-Bot-Api-Secret-Token` с `TELEGRAM_WEBHOOK_SECRET` через `timingSafeEqual`, иначе 401;
+     `checkMutation` здесь не применять (Telegram не шлёт Origin);
+   - ограничить тело (~64 КБ), быстро отвечать 200, работу после ответа — через `waitUntil` из `@vercel/functions`;
+   - защита от повторов по `update_id` (Telegram может прислать update ещё раз).
+2. **Модуль** `src/lib/telegram-bot.ts`: `botApi(method, body)` через `fetch` на `https://api.telegram.org/bot<token>/<method>`
+   с таймаутом; токен никогда не попадает в логи и ошибки (как в `scripts/telegram-bot.mjs`); `sendMessage`,
+   `editMessageText`, `answerCallbackQuery`. Транспорт подменяемый — тесты без сети.
+3. **/start [payload]**: приветствие и inline-кнопки `web_app`: «Стать курьером» → `${APP_ORIGIN}/?screen=courier&src=<source>`,
+   «Заказать доставку» → `${APP_ORIGIN}`. `/start courier_kaspi` → source `courier_kaspi`.
+4. **Прямая ссылка** `https://t.me/qadam_delivery_bot?startapp=courier_<source>` (нужен Main Mini App в BotFather).
+   `start_param` приходит внутри подписанного `initData` — сервер берёт source оттуда при входе. Для кнопок `web_app`
+   использовать `?screen=courier&src=` из URL (только аналитика). Формат source: `^[a-z0-9_]{1,64}$`.
+   Значение `courier…` открывает экран заявки курьера сразу после входа.
+5. **Анкета 2.0** (`courier-onboarding.tsx`, `courier-applications.ts`, миграция):
+   - телефон кнопкой «Поделиться номером» → `Telegram.WebApp.requestContact(cb)`; номер из ответа подставить в поле.
+     Проверенный номер приходит боту сообщением `message.contact` (`contact.user_id === from.id`) — сохранить его в вебхуке.
+     Ручной ввод остаётся;
+   - район: `ALATAU, ALMALY, AUEZOV, BOSTANDYK, ZHETYSU, MEDEU, NAURYZBAY, TURKSIB`
+     (Алатауский, Алмалинский, Ауэзовский, Бостандыкский, Жетысуский, Медеуский, Наурызбайский, Турксибский);
+   - когда удобно: `MORNING, DAY, EVENING, WEEKEND` (несколько);
+   - «Мне есть 18» и согласие с правилами и обработкой персональных данных — обязательны;
+   - миграция: `ALTER TABLE qadam.courier_applications ADD COLUMN district text CHECK (…), ADD COLUMN availability text[] NOT NULL DEFAULT '{}',
+     ADD COLUMN age_confirmed boolean NOT NULL DEFAULT false, ADD COLUMN consent_at timestamptz, ADD COLUMN source text CHECK (source ~ '^[a-z0-9_]{1,64}$')`
+     и `GRANT INSERT (district, availability, age_confirmed, consent_at, source) ON qadam.courier_applications TO qadam_app`.
+     Старые заявки остаются валидными.
+6. **Страницы** `src/app/rules/page.tsx` и `src/app/privacy/page.tsx`, ссылки из анкеты. В политике честно: какие данные
+   (имя и ID в Telegram, телефон, район, адреса и телефоны в заказах, геопозиция курьера во время заказа), зачем,
+   где хранятся (Supabase, Франкфурт), как удалить. Тексты утверждает команда.
+7. **Разрешение писать пользователю:** колонки `qadam.telegram_identities.allows_write boolean NOT NULL DEFAULT false`
+   и `bot_blocked_at timestamptz` + `GRANT UPDATE (allows_write, bot_blocked_at)` и политика RLS `FOR UPDATE` для `qadam_app`.
+   Обновлять из `initData.user.allows_write_to_pm` при каждом входе и после `/start`; ответ Telegram 403 → `bot_blocked_at`.
+   Если писать нельзя — в приложении кнопка «Разрешить уведомления» → `Telegram.WebApp.requestWriteAccess(cb)`.
+8. **Уведомления по заявкам** (отправка после COMMIT, ошибка Telegram не ломает операцию):
+   - новая заявка → всем админам (`qadam.administrators` + `telegram_identities`) с кнопками «Одобрить»
+     (`callback_data = app:approve:<uuid>`, ≤ 64 байт) и «Открыть в приложении» (web_app);
+   - `callback_query`: проверить, что `from.id` принадлежит действующему админу; вызвать `reviewApplication`;
+     `answerCallbackQuery` и `editMessageText` «Одобрено: <кем>». Отклонение с причиной — через приложение;
+   - решение → кандидату: «Одобрено, вот как начать» (кнопка «Открыть Qadam») или причина и кнопка «Подать повторно».
+9. **Список курьеров для админа:** `GET /api/admin/couriers` (`requireAdministrator`) — имя, телефон, район, время,
+   транспорт, источник, дата одобрения; экран «Курьеры» в профиле админа.
+10. **Скрипт:** в `scripts/telegram-bot.mjs` режим `webhook` — `setWebhook` с `url=${APP_ORIGIN}/api/telegram/webhook`,
+    `secret_token`, `allowed_updates=['message','callback_query','edited_message']`, `drop_pending_updates=true`;
+    вывод `getWebhookInfo` без токена; `setMyCommands` (/start). В `package.json` — `telegram:webhook`.
+11. **Окружение:** `TELEGRAM_WEBHOOK_SECRET` обязателен в Production при `TELEGRAM_AUTH_ENABLED=true`
+    (формат `^[A-Za-z0-9_-]{32,256}$`), запрещён в Preview; тесты в `tests/deployment-config.test.ts`.
+12. **Тесты:** секрет вебхука, разбор `/start` и `start_param`, валидация source, новые поля заявки, одобрение из бота
+    только админом, уведомление кандидату, флаг `allows_write`; e2e — `?screen=courier` открывает анкету,
+    `requestContact` подставляет номер (SDK подменяется в фикстуре).
+
+Ручные шаги владельца:
+
+1. BotFather: `/mybots` → @qadam_delivery_bot → Bot Settings → Configure Mini App → включить, URL `https://qadam-delivery.vercel.app`.
+2. Сгенерировать секрет: `node -e "console.log(require('crypto').randomBytes(32).toString('base64url'))"`,
+   добавить `TELEGRAM_WEBHOOK_SECRET` в Vercel (Production) и в `.env.telegram`.
+3. Выполнить SQL миграции в Supabase.
+4. После деплоя: `npm run telegram:webhook`.
+
+Проверка: новый аккаунт Telegram открывает ссылку → сразу анкета → телефон одной кнопкой → «Отправить» →
+админу приходит заявка → «Одобрить» → кандидату приходит «Одобрено», в приложении открыт кабинет курьера.
+
+### Этап 3. Набор курьеров
+
+Цель: у команды есть ссылки и QR по каналам, тексты и экран воронки.
+
+1. Каналы и метки: `courier_uni`, `courier_dorm`, `courier_kaspi`, `courier_olx`, `courier_hh`, `courier_tg`,
+   `courier_ref_<номер курьера>`. Ссылка: `https://t.me/qadam_delivery_bot?startapp=<метка>`.
+2. QR: скрипт `scripts/recruiting-qr.mjs` (dev-зависимость `qrcode`) кладёт PNG в `artifacts/qr/` (папка в `.gitignore`).
+3. Воронка: таблица `qadam.funnel_events(id bigint GENERATED ALWAYS AS IDENTITY, user_id uuid NULL, event text, source text, created_at timestamptz)`
+   с событиями `app_open` (вход через Telegram с меткой) и `application_started`; отправка, одобрение и первая доставка
+   считаются из существующих таблиц. `GET /api/admin/funnel` — счётчики по меткам; экран «Воронка» у админа.
+4. Реферальная ссылка в кабинете курьера (по порядковому номеру курьера, не по UUID).
+5. Тексты в `docs/recruiting.md`: объявление для Kaspi Объявлений, OLX и hh.kz, пост для чатов вуза, листовка A5,
+   ответы на частые вопросы. Обещать честно: это пилот, заказы от магазинов — в ноябре, выплата видна до принятия,
+   деньги сразу от магазина, штрафов за отказ нет. Комиссию на пилоте решает команда.
+6. Команда (29.10–01.11): разместить объявления, раздать QR в вузе и общежитиях, поговорить с курьерами других сервисов;
+   с первыми одобренными — короткая встреча и тестовая доставка.
+
+### Этап 4. Заказы и уведомления
+
+Цель: курьеру не нужно держать приложение открытым — заказ сам приходит в Telegram.
+
+1. «Я на линии»: `qadam.courier_status(user_id uuid PRIMARY KEY, online boolean NOT NULL, updated_at timestamptz NOT NULL)`
+   + права и RLS; `POST /api/courier/status`. Онлайн считается, только если `online` и `updated_at` за последние 8 часов
+   (без крона).
+2. Новый заказ → после COMMIT сообщение онлайн-курьерам с `allows_write`: адреса, расстояние, кнопка web_app `/?order=<id>`.
+   `qadam.order_notifications(order_id, user_id, chat_id, message_id, kind)` — после принятия у остальных
+   `editMessageText` «Заказ уже принят».
+3. Клиенту — сообщение на каждый статус: курьер назначен (имя), посылка у курьера, в пути, доставлено, отменено.
+4. Заказ без курьера дольше 10 минут → сообщение админам. Без крона: проверка при запросах списка заказов,
+   атомарная отметка `alerted_at`, чтобы не слать дважды. Позже при необходимости — Supabase `pg_cron`.
+5. Открытие приложения сразу на заказе: `?order=<uuid>` и `start_param` `order_<номер>`.
+6. Опрос: список — раз в 15 с, открытый заказ — раз в 3 с.
+
+### Этап 5. Цена, оплата и связь
+
+Цель: цена известна до заказа, курьер видит выплату до принятия, стороны могут созвониться.
+
+1. Тариф в `src/lib/pricing.ts`: база, цена за км маршрута, минимум, надбавки «срочно» и «авто», комиссия платформы.
+   Цифры — решение владельца после сравнения 10 типичных маршрутов в inDrive, Яндекс Go и Wolt (`docs/pricing-research.md`).
+2. Колонки `orders`: `price_kzt`, `courier_payout_kzt`, `platform_fee_kzt`, `distance_m`, `price_source ('route'|'estimate'|'manual')`,
+   `payer ('SENDER'|'RECIPIENT')`, `payment_method ('KASPI_TRANSFER'|'CASH')`. Цена считается на сервере;
+   предпросмотр — `POST /api/orders/quote`. Без маршрута — оценка или «по согласованию» с пометкой.
+3. Телефон клиента: `qadam.user_profiles(user_id PRIMARY KEY, phone, phone_verified, updated_at)`, номер через `requestContact`.
+4. После принятия курьер видит телефон отправителя, клиент — телефон курьера; кнопки «Позвонить».
+5. До принятия курьер видит выплату, дистанцию, кто и как платит.
+
+### Этап 6. Для магазинов
+
+1. `qadam.business_profiles(user_id PRIMARY KEY, name, pickup_address, pickup_latitude, pickup_longitude, phone, updated_at)`;
+   новый заказ подставляет адрес и точку магазина.
+2. Время: `orders.deliver_after`, `deliver_before`, `urgent`. Окно ≥ 30 минут, в будущем, не дальше 14 дней.
+   У курьера сортировка по ближайшему окну.
+3. `orders.parcel_type ('FLOWERS','CAKE','GIFT','DOCUMENTS','OTHER')`, `fragile`, `surprise`, `card_text` (≤ 300).
+   Сейчас тип хранится в `notes` — новые заказы пишут в колонки, старые не трогаем.
+4. «Повторить заказ» из истории; подсказки курьеру по типу посылки.
+
+### Этап 7. Доверие и управление
+
+1. Фото вручения: камера при «Завершить доставку», сжатие на клиенте (≤ 1600 px, ≤ 1 МБ), `POST /api/orders/[id]/photo`
+   (свой лимит тела) → фото загружается в служебный приватный канал бота (`TELEGRAM_STORAGE_CHAT_ID`), `file_id` —
+   в `qadam.order_photos`; клиенту — то же фото в Telegram; показ в приложении через серверный прокси без раскрытия токена.
+2. Код получателя (по желанию клиента): 4 цифры, не больше 5 попыток; без кода нельзя завершить.
+3. Отказ курьера до забора: `POST /api/orders/[id]/release {reason}` → заказ снова `SEARCHING_FOR_COURIER`;
+   в `order_events` добавить колонку `reason`.
+4. Админ: назначить или сменить курьера, отменить заказ, заблокировать курьера (`qadam.courier_blocks`, учитывать
+   при вычислении роли в `auth.ts`). Всё пишется в историю заказа.
+5. Оценка после доставки: `qadam.order_ratings(order_id PRIMARY KEY, score 1–5, comment ≤ 500)`; видит только админ.
+
+### Этап 8. Получатель и WhatsApp
+
+1. `orders.tracking_token` (32 случайных байта, base64url, UNIQUE).
+2. Публичная страница `/t/[token]`: статус, имя курьера, последняя точка (если свежая), окно доставки.
+   Без телефонов и адреса отправителя; в режиме «сюрприз» — без названия магазина. `no-store`, лимит запросов.
+3. Кнопка «Отправить получателю в WhatsApp»: `https://wa.me/<цифры номера>?text=<текст со ссылкой>` — платный API не нужен.
+4. Тест: ответ страницы не содержит телефонов и внутренних ID.
+
+### Этап 9. Удобство в Telegram
+
+1. `BackButton` и `BottomButton` Telegram вместо своих кнопок; `HapticFeedback` на ключевых действиях.
+2. Цвета из `themeParams`, событие `themeChanged`, тёмная тема.
+3. `showConfirm` вместо `window.confirm`.
+4. Навигация: 2ГИС (`https://2gis.kz/almaty/directions/points/<lonA>,<latA>|<lonB>,<latB>` — порядок lon,lat, проверить
+   на телефоне), Яндекс Карты (`https://yandex.kz/maps/?rtext=<latA>,<lonA>~<latB>,<lonB>&rtt=auto`), Google Maps.
+5. Курьеру: расстояние от него до точки забора, сортировка, для пеших — маршруты до ~4 км.
+6. `addToHomeScreen` для курьеров (проверять `isVersionAtLeast('8.0')`).
+
+### Этап 10. Фишки
+
+1. Заказ из пересланного сообщения: магазин пересылает боту текст или скриншот заказа из WhatsApp → LLM возвращает JSON
+   (адреса, получатель, телефон, окно, тип, комментарий) → геокодинг → черновик `qadam.order_drafts` → бот присылает карточку
+   с кнопками «Опубликовать» (через `createOrder`) и «Изменить в приложении». Ключ API (Claude или OpenAI) только на сервере,
+   лимит на пользователя, содержимое не логировать. Решение и бюджет — за владельцем.
+2. Прототип фонового отслеживания: курьер включает трансляцию геопозиции в чате с ботом; обновления должны приходить
+   как `edited_message` с `location`. Сначала проверить на Android и iPhone, потом писать точку активного заказа через `locations.ts`.
+3. Бронь курьеров на праздник: `qadam.capacity_requests` (магазин, дата, сколько курьеров, статус, назначенные курьеры),
+   экраны у магазина и админа. Первый случай — Новый год, 20–31 декабря.
+
+### Этап 11. Инфраструктура (по мере роста)
+
+- Vercel Pro до первых платежей: бесплатный Hobby — только некоммерческое использование и 1 млн вызовов функций в месяц.
+- Supabase Realtime или поток событий вместо опроса, когда одновременно активных пользователей станут десятки.
+- Перенос базы в дата-центр в Казахстане перед масштабом: закон о персональных данных требует хранить базы на территории РК.
+- Казахский язык: вынести строки в словарь, начать с экранов курьера.
+- Резервные копии базы и мониторинг ошибок.
+- Онлайн-оплата и счета для магазинов — после пилота.
+
+## 6. Пилот с магазинами (параллельно)
+
+- Сценарий интервью по The Mom Test (прошлые доставки, без «купили бы вы»), список 30–40 цветочных, кондитерских и
+  подарочных магазинов Алматы, одностраничное предложение (первые 20 доставок бесплатно).
+- 10–15 интервью до 6 ноября; мягкий пилот с 1–2 знакомыми магазинами после этапа 4 (с 4 ноября), цена вручную.
+- Полный пилот с 16 ноября: 5 магазинов, 4 недели, 50 доставок. Метрики: платят ли, повторные заказы,
+  время на координацию, доля доставок вовремя.
+- Новый год: предложить магазинам бронь курьеров на 20–31 декабря.
+
+## 7. Решения владельца
+
+| Решение | Срок | Предложение | Статус |
+| --- | --- | --- | --- |
+| Способ работы с кодом | 26.10 | Ветка на этап, пуш и Pull Request из WebStorm | Решено |
+| Комиссия для курьеров на пилоте | 28.10 | 0% до конца пилота | Открыто |
+| Цифры тарифа | 04.11 | По сравнению 10 маршрутов | Открыто |
+| ИИ-разбор сообщений: ключ и бюджет | 16.11 | Claude API с лимитом расходов | Открыто |
+| Vercel Pro | до первых платежей | $20 в месяц | Открыто |
+
+## 8. Как начать новую сессию с ИИ-ассистентом
+
+Вставить в первое сообщение:
+
+```text
+Ты продолжаешь проект Qadam Delivery в этой папке.
+1. Прочитай AGENTS.md, docs/ROADMAP.md, README.md и PROJECT_BRIEF.md. ROADMAP главнее старых приоритетов.
+2. Этап 0 сделан. Следующий — этап 1. Не начинай без моего «ок».
+3. Перед каждым этапом коротко напиши план: файлы, миграции, тесты, мои ручные шаги. Жди «ок».
+4. Работай в ветке stage-N-<slug>. Перед сдачей прогони npm run typecheck, npm test, npm run build,
+   npm run check:build, npm run test:e2e.
+5. Не читай и не выводи секреты из .env-файлов. Для Supabase давай готовый SQL, для Telegram — команды,
+   которые я запущу сам.
+6. После этапа обнови таблицу статуса в docs/ROADMAP.md.
+```
+
+## 9. Источники
+
+- [inDrive.Курьеры: цена, безопасность, бизнес — Informburo, авг. 2026](https://informburo.kz/novosti/kak-rabotaet-indrive-kurery-cena-bezopasnost-i-vozmoznosti-dlia-biznesa)
+- [Бизнес-режим inDrive.Курьеры — Finratings, июль 2025](https://finratings.kz/news/4824-kurery-indrive-teper-rabotaiut-po-novym-pravilam/)
+- [Wolt Packages в Казахстане — Wolt, сент. 2025](https://wolt.com/en/kaz/almaty/article/KAZ_Packages-terms-Sep25_launch)
+- [Яндекс.Такси запустил доставку посылок в Алматы — Informburo, 2019](https://informburo.kz/novosti/yandekstaksi-zapustil-v-almaty-uslugu-dostavki-posylok-po-gorodu-99936.html)
+- [Сколько казахстанцы тратят на доставку — Finratings, янв. 2026](https://finratings.kz/news/11208-skolko-kazakhstantsy-tratiat-na-dostavku-i-chto-zhdet-pochtu/)
+- [Какими мессенджерами пользуется молодёжь Казахстана — Kapital.kz, окт. 2025](https://kapital.kz/tehnology/141342/kakimi-socsetyami-i-messendzherami-polzuetsya-molodezh-v-kazahstane.html)
+- [Vercel Hobby: лимиты и условия](https://vercel.com/docs/plans/hobby)
+- [Telegram Mini Apps: документация](https://core.telegram.org/bots/webapps)
+- [Telegram Bot API](https://core.telegram.org/bots/api)
+- [Локализация персональных данных в РК — Zakon.kz](https://www.zakon.kz/stati/4799760-problemnye-voprosy-lokalizatsii.html)

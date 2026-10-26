@@ -1,5 +1,12 @@
 # Qadam Delivery — Design and Frontend Rules
 
+## Current plan (read first)
+
+The current roadmap, stage status and working rules are in `docs/ROADMAP.md`.
+It takes priority over the "Deadline priority" section below and over `PROJECT_BRIEF.md`:
+the October 21 academic deadline has passed and the goal now is real use.
+Work stage by stage and wait for the repository owner's approval before starting each stage.
+
 ## Product
 
 Qadam Delivery is a Kazakhstan-focused delivery platform built primarily as a Telegram Mini App.

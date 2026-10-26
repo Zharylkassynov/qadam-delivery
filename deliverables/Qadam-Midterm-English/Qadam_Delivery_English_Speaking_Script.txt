@@ -1,0 +1,89 @@
+QADAM DELIVERY
+
+Midterm Defense / English Speaking Script
+
+Approximate duration: 6–7 minutes at a steady pace.
+
+The speech follows the ten slides in order.
+
+
+
+SLIDE 1: Qadam Delivery
+
+Good afternoon. We are presenting Qadam Delivery, a local delivery platform designed mainly as a Telegram Mini App. Our initial business focus is small shops in Almaty. Our primary research so far has focused on couriers. We interviewed approximately eight to ten couriers and registered couriers on our platform. Today, we will explain what this early evidence shows, introduce our market assumptions, and describe the next tests needed before scaling.
+
+
+
+SLIDE 2: Our first customer: a small shop in Almaty
+
+Our target paying customer is a small shop owner or administrator who arranges delivery to a buyer. We initially consider flower shops, gift shops, and small sellers using social media. Our hypothesis is that coordinating deliveries takes time. For example, forty monthly deliveries at ten minutes of coordination each would require about six point seven hours. These are working assumptions. We still need customer interviews and measurements to establish how serious this problem is for businesses.
+
+
+
+SLIDE 3: Primary research: courier interviews
+
+We started with the courier side of the platform. We interviewed approximately eight to ten couriers and registered couriers on Qadam. This gave us direct contact with potential delivery partners and an initial group to involve in testing. Our sample size is approximate. For the next research round, we will apply The Mom Test principles by asking about specific past deliveries, actual payouts, travel costs, and rejected orders. These follow-up questions will help us turn conversations into more detailed evidence.
+
+
+
+SLIDE 4: Early evidence from the courier side
+
+Our strongest evidence at this stage is that courier interviews took place and that we registered couriers on the platform. Registration gives us an initial group to invite into operational testing. Our next task is to observe actual behavior: when couriers are available, whether they accept suitable orders, and whether they return after their first delivery. Customer demand also needs separate research. We have not interviewed businesses yet, so willingness to pay and order frequency remain open questions.
+
+
+
+SLIDE 5: Kazakhstan’s e-commerce market is growing
+
+For market context, we used official data from Kazakhstan’s Bureau of National Statistics. Retail e-commerce turnover increased from approximately one point nine six trillion tenge in 2022 to three point seven seven trillion in 2025. The compound annual growth rate is about twenty-four point three percent over three years. This calculation measures nominal goods turnover. It provides context for delivery needs, while the growth rate of courier services and demand for Qadam require separate analysis.
+
+
+
+SLIDE 6: The current Qadam Delivery MVP
+
+Our MVP provides a practical workflow for the next tests. A customer creates a delivery request, a courier accepts it, and the courier updates its status through completion. The platform stores orders and restores their history after reopening. The current interface uses Russian, which suits our initial local demo. The business pilot can use the existing customer workflow. Location updates require an open application and permission, so the map shows the courier’s last reported position and its update time.
+
+
+
+SLIDE 7: Digital alternatives and market penetration
+
+Market penetration describes how many target customers already use digital delivery alternatives. The official fourteen point three percent figure measures online sales within national retail turnover. We need a different measure for Qadam: the share of eligible businesses using a digital delivery service. We would divide that number by all surveyed businesses in the target segment. Since our interviews covered couriers only, we cannot calculate this business-side rate yet. Courier registration is a separate onboarding indicator.
+
+
+
+SLIDE 8: TAM / SAM / SOM: a working scenario
+
+We estimated the opportunity with a bottom-up scenario. We assume ten thousand eligible businesses across Kazakhstan, fifteen hundred accessible businesses in Almaty, and an initial target of fifty active businesses within one to two years. We also assume forty deliveries per business per month and three hundred tenge in platform revenue per delivery. This gives a TAM of one point four four billion tenge, a SAM of two hundred sixteen million, and a SOM of seven point two million per year. These are assumptions about annual platform revenue before expenses.
+
+
+
+SLIDE 9: Revenue sensitivity and the path to SOM
+
+We also checked how sensitive the model is to activity and pricing. With fifty businesses, the conservative scenario gives three million tenge annually, the base scenario gives seven point two million, and the high scenario gives twelve point six million. The base case requires two thousand deliveries per month. Reaching this volume will depend on customer acquisition, retention, and reliable courier availability. Our registrations provide a starting point, and operational testing will establish how much delivery capacity that group can actually provide.
+
+
+
+SLIDE 10: Next step: a pilot with real deliveries
+
+Our next proposed step is a four-week pilot with five businesses and registered couriers, aiming for fifty completed deliveries. We will track paid participation, repeat orders, coordination time, and deliveries completed within an agreed window. We will also calculate contribution after variable costs. Our early progress is direct contact with couriers and registration on Qadam. The next stage will connect that supply to real customer orders and test whether the service creates enough value for both sides. Thank you. We are ready for your questions.
+
+
+
+POSSIBLE PANEL QUESTIONS
+
+How many couriers did you interview?
+Approximately eight to ten. This is a qualitative sample, and the count is approximate.
+
+Did you interview business customers?
+Our interviews so far covered couriers only. Business demand and willingness to pay are the next research step.
+
+What does registration prove?
+It shows initial participation in onboarding. Availability, completed orders and repeat activity still need measurement.
+
+Are the market estimates official?
+The national e-commerce data comes from official statistics. Our business counts, delivery frequency and platform fees are assumptions used for a scenario.
+
+What interview conclusions can you support?
+We can confirm the interviews and platform registration. We do not present reconstructed quotations or numerical findings that we cannot substantiate. The next round will record specific past examples and comparable measures.
+
+Does location tracking continue after the Mini App closes?
+We show the last reported position and timestamp. New updates require the application to remain open and location permission.
