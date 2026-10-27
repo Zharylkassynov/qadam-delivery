@@ -4,6 +4,8 @@ import { validateDeployment } from './src/lib/deployment-config';
 validateDeployment();
 
 const config: NextConfig = {
+  // Enabled only for Linux container builds; keep existing Vercel/Windows builds.
+  output: process.env.QADAM_STANDALONE === 'true' ? 'standalone' : undefined,
   distDir: process.env.QADAM_NEXT_DIST_DIR ?? '.next',
   poweredByHeader: false,
   devIndicators: false,

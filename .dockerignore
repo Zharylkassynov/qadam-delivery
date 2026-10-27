@@ -1,0 +1,26 @@
+# Only these sources may enter the build context. Local credentials, Git history,
+# editor settings, reports and host node_modules must never reach the image.
+**
+!package.json
+!package-lock.json
+!next.config.ts
+!tsconfig.json
+!postcss.config.mjs
+!src/
+!src/**
+!public/
+!public/**
+!config/
+!config/certs/
+!config/certs/supabase-root.crt
+!db/
+!db/migrations/
+!db/migrations/*.sql
+!scripts/
+!scripts/migrate.ts
+!scripts/seed.ts
+!scripts/prepare-docker.ts
+!scripts/docker-smoke.ts
+!scripts/check-build-traces.mjs
+**/.env*
+**/.secrets/**
