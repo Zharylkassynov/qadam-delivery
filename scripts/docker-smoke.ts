@@ -8,7 +8,7 @@ if (process.env.QADAM_LOCAL_DOCKER !== 'true' || target.hostname !== 'db' || tar
 }
 const mode = process.argv[2];
 assert.ok(mode === 'create' || mode === 'verify', 'Choose create or verify');
-const base = 'http://app:3000';
+const base = 'http://api:3000';
 const requestKey = '892cb588-d04c-4856-b773-2f6bdb7ab1ab';
 let cookie = '';
 
@@ -27,6 +27,7 @@ async function api<T>(path: string, body?: unknown): Promise<T> {
 }
 
 try {
+  assert.equal((await fetch('http://app:3000/api/session')).status, 404, 'Frontend must not expose API handlers');
   const login = await api<{ user: User }>('/api/auth/login', {
     email: 'customer1@qadam.demo', password: process.env.DEMO_PASSWORD,
   });

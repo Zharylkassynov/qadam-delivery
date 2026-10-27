@@ -8,9 +8,14 @@
 !postcss.config.mjs
 !src/
 !src/**
+!backend/
+!backend/**
+!frontend/
+!frontend/**
 !public/
 !public/**
 !config/
+!config/next-base.ts
 !config/certs/
 !config/certs/supabase-root.crt
 !db/
@@ -22,5 +27,12 @@
 !scripts/prepare-docker.ts
 !scripts/docker-smoke.ts
 !scripts/check-build-traces.mjs
+!scripts/apps.mjs
+!scripts/build.mjs
+**/.next/**
+frontend/public/**
+**/next-env.d.ts
+**/*.tsbuildinfo
+**/node_modules/**
 **/.env*
 **/.secrets/**

@@ -32,21 +32,21 @@ if (action === 'up') {
   } catch (error) {
     if (error.code !== 'EEXIST') throw error;
   }
-  compose('build', 'app', 'tools');
+  compose('build', 'api', 'app', 'tools');
   compose('up', '-d', '--wait', 'db');
   compose('run', '--rm', 'tools');
-  compose('up', '-d', '--wait', 'app');
+  compose('up', '-d', '--wait', 'api', 'app');
   console.log('Local Qadam is ready at http://127.0.0.1:3200. Run npm run docker:check to verify persistence.');
 } else if (action === 'check') {
   compose('run', '--rm', 'tools', 'node', '--import', 'tsx', 'scripts/docker-smoke.ts', 'create');
-  compose('restart', 'db', 'app');
-  compose('up', '-d', '--wait', 'db', 'app');
+  compose('restart', 'db', 'api', 'app');
+  compose('up', '-d', '--wait', 'db', 'api', 'app');
   compose('run', '--rm', 'tools', 'node', '--import', 'tsx', 'scripts/docker-smoke.ts', 'verify');
 } else if (action === 'down') {
   compose('down');
   console.log('Local containers stopped. The database volume and local credentials are preserved.');
 } else if (action === 'logs') {
-  compose('logs', '--tail', '60', 'app');
+  compose('logs', '--tail', '60', 'api', 'app');
 } else {
   compose('ps');
 }

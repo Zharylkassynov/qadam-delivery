@@ -1,4 +1,5 @@
 type Environment = Record<string, string | undefined>;
+import { apiOrigin } from './api-origin';
 
 export function appOrigin(env: Environment = process.env) {
   let value = env.APP_ORIGIN;
@@ -19,6 +20,20 @@ export function appOrigin(env: Environment = process.env) {
 }
 
 export function validateDeployment(env: Environment = process.env) {
+  if (env.QADAM_FRONTEND_ONLY && !['true', 'false'].includes(env.QADAM_FRONTEND_ONLY)) throw new Error('QADAM_FRONTEND_ONLY must be true or false');
+  if (env.VERCEL === '1' && env.QADAM_BACKEND === 'true') throw new Error('Standalone backend mode is forbidden on Vercel');
+  if (env.NEXT_PUBLIC_API_ORIGIN) apiOrigin(env.NEXT_PUBLIC_API_ORIGIN);
+  if (env.QADAM_FRONTEND_ONLY === 'true') {
+    const api = apiOrigin(env.NEXT_PUBLIC_API_ORIGIN);
+    if (!api) throw new Error('A separate API origin is required for frontend-only builds');
+    if (env.VERCEL === '1' && (new URL(api).protocol !== 'https:' || ['localhost', '127.0.0.1', '[::1]'].includes(new URL(api).hostname))) {
+      throw new Error('Public frontend deployments require a public HTTPS API origin');
+    }
+    if (env.DATABASE_URL || env.TEST_DATABASE_URL || env.TELEGRAM_BOT_TOKEN || env.TELEGRAM_WEBHOOK_SECRET || env.GEOAPIFY_API_KEY || env.DEMO_PASSWORD) {
+      throw new Error('Frontend-only deployments must not contain backend credentials');
+    }
+    return;
+  }
   if (env.VERCEL === '1' && env.QADAM_LOCAL_DOCKER && env.QADAM_LOCAL_DOCKER !== 'false') {
     throw new Error('Local Docker database mode is forbidden on Vercel');
   }

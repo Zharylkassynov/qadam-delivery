@@ -3,6 +3,7 @@ import { ZodError } from 'zod';
 import { AppError } from './errors';
 import { getSession, sessionCookie } from './auth';
 import { appOrigin } from './deployment-config';
+import { allowedAppOrigins } from './app-origins';
 
 export const json = (body: unknown, status = 200) => NextResponse.json(body, {
   status, headers: { 'Cache-Control': 'private, no-store', Vary: 'Cookie, Authorization' },
@@ -41,14 +42,7 @@ export async function requireUser(request: Request) {
 }
 
 export function checkMutation(request: Request) {
-  const configured = new URL(appOrigin());
-  const allowedOrigins = new Set([configured.origin]);
-  // Local development uses two names for this computer; keep the port and protocol fixed.
-  if (['localhost', '127.0.0.1'].includes(configured.hostname)) {
-    const alias = new URL(configured.origin);
-    alias.hostname = configured.hostname === 'localhost' ? '127.0.0.1' : 'localhost';
-    allowedOrigins.add(alias.origin);
-  }
+  const allowedOrigins = allowedAppOrigins();
   if (!allowedOrigins.has(request.headers.get('origin') ?? '')) throw new AppError(403, 'Недопустимый источник запроса.');
   if (!request.headers.get('content-type')?.toLowerCase().startsWith('application/json')) throw new AppError(415, 'Требуется application/json.');
 }
