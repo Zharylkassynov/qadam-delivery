@@ -10,5 +10,10 @@ for (const route of routes) {
   if (!trace.files.some((file) => resolve(dirname(manifest), file) === resolve('config/certs/supabase-root.crt'))) {
     throw new Error(`Supabase root CA missing from API bundle: ${route}`);
   }
+  const backendManifest = join('backend/.next/server/app/api', String(route).replace(/\.ts$/, '.js.nft.json'));
+  const backendTrace = JSON.parse(readFileSync(backendManifest, 'utf8'));
+  if (!backendTrace.files.some((file) => resolve(dirname(backendManifest), file) === resolve('config/certs/supabase-root.crt'))) {
+    throw new Error(`Supabase root CA missing from standalone API bundle: ${route}`);
+  }
 }
-console.log(`Verified Supabase root CA in all ${routes.length} API bundles`);
+console.log(`Verified Supabase root CA in all ${routes.length} combined and ${routes.length} standalone API bundles`);

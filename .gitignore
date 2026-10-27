@@ -18,6 +18,9 @@ node_modules/
 next-env.d.ts
 .next/
 .next-*/
+frontend/.next/
+backend/.next/
+frontend/public/
 out/
 coverage/
 playwright-report/

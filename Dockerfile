@@ -28,3 +28,31 @@ COPY --from=builder --chown=node:node /app/public ./public
 USER node
 EXPOSE 3000
 CMD ["node", "server.js"]
+
+FROM dependencies AS api-builder
+ENV QADAM_STANDALONE=true
+COPY . .
+RUN npm run build:backend
+
+FROM base AS api-runner
+ENV NODE_ENV=production HOSTNAME=0.0.0.0 PORT=3000 QADAM_BACKEND=true
+COPY --from=api-builder --chown=node:node /app/backend/.next/standalone ./
+COPY --from=api-builder --chown=node:node /app/backend/.next/static ./backend/.next/static
+USER node
+EXPOSE 3000
+CMD ["node", "backend/server.js"]
+
+FROM dependencies AS frontend-builder
+ARG NEXT_PUBLIC_API_ORIGIN=http://127.0.0.1:3210
+ENV QADAM_STANDALONE=true NEXT_PUBLIC_API_ORIGIN=${NEXT_PUBLIC_API_ORIGIN}
+COPY . .
+RUN npm run build:frontend
+
+FROM base AS frontend-runner
+ENV NODE_ENV=production HOSTNAME=0.0.0.0 PORT=3000 QADAM_FRONTEND_ONLY=true
+COPY --from=frontend-builder --chown=node:node /app/frontend/.next/standalone ./
+COPY --from=frontend-builder --chown=node:node /app/frontend/.next/static ./frontend/.next/static
+COPY --from=frontend-builder --chown=node:node /app/public ./frontend/public
+USER node
+EXPOSE 3000
+CMD ["node", "frontend/server.js"]

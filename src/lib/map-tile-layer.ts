@@ -1,7 +1,8 @@
 'use client';
 
 import type * as Leaflet from 'leaflet';
-import { sessionHeaders } from './client-api';
+import { sessionHeaders, sessionCredentials } from './client-api';
+import { apiPath } from './api-origin';
 
 // Bound requests per browser. Telegram Web can block cookies, so tiles use the
 // same in-memory bearer session as order requests; provider keys stay server-side.
@@ -21,7 +22,8 @@ export function sessionTileLayer(L: typeof Leaflet, url: string, options: Leafle
         const timeout = setTimeout(() => resource.controller.abort(), 12000);
         try {
           if (resource.removed) return;
-          const response = await fetch(this.getTileUrl(coords), { headers: sessionHeaders(), signal: resource.controller.signal, credentials: 'same-origin' });
+          const tile = this.getTileUrl(coords);
+          const response = await fetch(tile.startsWith('/api/') ? apiPath(tile) : tile, { headers: sessionHeaders(), signal: resource.controller.signal, credentials: sessionCredentials() });
           if (!response.ok || !response.headers.get('content-type')?.startsWith('image/')) throw new Error('Map tile unavailable');
           const blob = await response.blob(); if (resource.removed) return;
           resource.url = URL.createObjectURL(blob);

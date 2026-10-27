@@ -6,6 +6,8 @@ x-app-environment: &app-environment
   QADAM_LOCAL_DOCKER: "true"
   DATABASE_POOL_MAX: "5"
   APP_ORIGIN: http://127.0.0.1:3200
+  API_ORIGIN: http://127.0.0.1:3210
+  QADAM_BACKEND: "true"
   DEMO_AUTH_ENABLED: "true"
   DEMO_PASSWORD: ${QADAM_DOCKER_DEMO_PASSWORD:?Use npm run docker:up}
   TELEGRAM_AUTH_ENABLED: "false"
@@ -48,19 +50,43 @@ services:
         condition: service_healthy
     logging: *local-logging
 
-  app:
+  api:
     build:
       context: .
-      target: runner
+      target: api-runner
     restart: unless-stopped
     environment: *app-environment
     ports:
-      - "127.0.0.1:3200:3000"
+      - "127.0.0.1:3210:3000"
     depends_on:
       db:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/api/session').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 15s
+    stop_grace_period: 30s
+    logging: *local-logging
+
+  app:
+    build:
+      context: .
+      target: frontend-runner
+      args:
+        NEXT_PUBLIC_API_ORIGIN: http://127.0.0.1:3210
+    restart: unless-stopped
+    # The frontend receives no database, Telegram or Geoapify credentials.
+    environment:
+      NEXT_TELEMETRY_DISABLED: "1"
+    ports:
+      - "127.0.0.1:3200:3000"
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
       interval: 5s
       timeout: 5s
       retries: 20
