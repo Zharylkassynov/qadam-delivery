@@ -52,6 +52,12 @@ test('local development keeps explicit origins and does not need Vercel settings
   assert.equal(appOrigin({ APP_ORIGIN: 'http://127.0.0.1:3000/' }), 'http://127.0.0.1:3000');
 });
 
+test('Vercel rejects local Docker database mode before either Production or Preview can start', () => {
+  assert.throws(() => validateDeployment({ ...production, QADAM_LOCAL_DOCKER: 'true' }));
+  assert.throws(() => validateDeployment({ VERCEL: '1', VERCEL_ENV: 'preview', QADAM_LOCAL_DOCKER: 'true' }));
+  assert.doesNotThrow(() => validateDeployment({ ...production, QADAM_LOCAL_DOCKER: 'false' }));
+});
+
 test('Telegram requires a server token when enabled and stays disabled on Preview', () => {
   assert.throws(() => validateDeployment({ ...production, TELEGRAM_AUTH_ENABLED: 'true' }));
   assert.throws(() => validateDeployment({ ...production, TELEGRAM_AUTH_ENABLED: 'yes' }));

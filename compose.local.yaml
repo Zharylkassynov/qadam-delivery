@@ -1,0 +1,72 @@
+# Local preparation only. This does not replace compose.yaml or deploy to PS.kz.
+name: qadam-local
+
+x-app-environment: &app-environment
+  DATABASE_URL: postgresql://qadam:${QADAM_DOCKER_PASSWORD:?Use npm run docker:up}@db:5432/qadam_docker
+  QADAM_LOCAL_DOCKER: "true"
+  DATABASE_POOL_MAX: "5"
+  APP_ORIGIN: http://127.0.0.1:3200
+  DEMO_AUTH_ENABLED: "true"
+  DEMO_PASSWORD: ${QADAM_DOCKER_DEMO_PASSWORD:?Use npm run docker:up}
+  TELEGRAM_AUTH_ENABLED: "false"
+  GEOAPIFY_API_KEY: ""
+  NEXT_TELEMETRY_DISABLED: "1"
+
+x-logging: &local-logging
+  driver: json-file
+  options:
+    max-size: "5m"
+    max-file: "2"
+
+services:
+  db:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: qadam_docker
+      POSTGRES_USER: qadam
+      POSTGRES_PASSWORD: ${QADAM_DOCKER_PASSWORD:?Use npm run docker:up}
+    # No host port: only containers on the private Compose network can connect.
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U qadam -d qadam_docker"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    stop_grace_period: 30s
+    logging: *local-logging
+
+  tools:
+    profiles: ["tools"]
+    build:
+      context: .
+      target: tools
+    environment: *app-environment
+    depends_on:
+      db:
+        condition: service_healthy
+    logging: *local-logging
+
+  app:
+    build:
+      context: .
+      target: runner
+    restart: unless-stopped
+    environment: *app-environment
+    ports:
+      - "127.0.0.1:3200:3000"
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/api/session').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 15s
+    stop_grace_period: 30s
+    logging: *local-logging
+
+volumes:
+  postgres_data:

@@ -19,6 +19,9 @@ export function appOrigin(env: Environment = process.env) {
 }
 
 export function validateDeployment(env: Environment = process.env) {
+  if (env.VERCEL === '1' && env.QADAM_LOCAL_DOCKER && env.QADAM_LOCAL_DOCKER !== 'false') {
+    throw new Error('Local Docker database mode is forbidden on Vercel');
+  }
   if (env.VERCEL !== '1') return;
   appOrigin(env);
   if (env.QADAM_NEXT_DIST_DIR && env.QADAM_NEXT_DIST_DIR !== '.next') {

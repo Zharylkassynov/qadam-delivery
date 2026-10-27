@@ -27,3 +27,16 @@ test('Vercel keeps verified TLS with a short idle timeout and a reusable pool', 
   assert.equal(config.idleTimeoutMillis, 5000);
   assert.equal(config.max, 3);
 });
+
+test('only an explicit local Docker mode allows the private db:5432 connection without TLS', () => {
+  const url = 'postgresql://qadam:synthetic@db:5432/qadam_docker';
+  const config = databaseConfig(url, { QADAM_LOCAL_DOCKER: 'true' });
+  assert.equal(config.ssl, undefined);
+  assert.equal(config.max, 5);
+  assert.deepEqual(databaseConfig(url, {}).ssl, { rejectUnauthorized: true });
+  for (const connection of [url.replace('@db:', '@example.com:'), url.replace(':5432/', ':6543/'), `${url}?sslmode=disable`]) {
+    assert.throws(() => databaseConfig(connection, { QADAM_LOCAL_DOCKER: 'true' }));
+  }
+  assert.throws(() => databaseConfig(url, { QADAM_LOCAL_DOCKER: 'true', VERCEL: '1' }));
+  assert.throws(() => databaseConfig(url, { QADAM_LOCAL_DOCKER: 'yes' }));
+});
