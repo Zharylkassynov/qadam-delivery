@@ -11,6 +11,7 @@
     "start:backend": "node scripts/apps.mjs backend start",
     "start:frontend": "node scripts/apps.mjs frontend start",
     "check:build": "node scripts/check-build-traces.mjs",
+    "check:tomtom": "node scripts/check-tomtom.mjs",
     "docker:up": "node scripts/docker-local.mjs up",
     "docker:down": "node scripts/docker-local.mjs down",
     "docker:check": "node scripts/docker-local.mjs check",

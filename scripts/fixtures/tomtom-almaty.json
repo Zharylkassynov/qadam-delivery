@@ -1,0 +1,27 @@
+{
+  "description": "Public benchmark anchors selected near the listed addresses; not verified courier entrances. Coordinates are [longitude, latitude].",
+  "points": {
+    "arbat": { "label": "Арбат: Жибек Жолы, 73", "coordinates": [76.9449, 43.2623] },
+    "bazaar": { "label": "Зелёный базар: Жибек Жолы, 53", "coordinates": [76.9552, 43.2637] },
+    "dostyk": { "label": "Dostyk Plaza: Самал-2, 111", "coordinates": [76.9566, 43.2333] },
+    "atakent": { "label": "Атакент: Тимирязева, 42", "coordinates": [76.9048, 43.2244] },
+    "mega": { "label": "MEGA Alma-Ata: Розыбакиева, 247А", "coordinates": [76.8926, 43.2027] },
+    "adk": { "label": "ADK: Сатпаева, 90/5", "coordinates": [76.8801, 43.2324] },
+    "sairan": { "label": "Автовокзал Сайран: Толе би, 294", "coordinates": [76.8583, 43.2448] },
+    "station": { "label": "Алматы-2: Абылай Хана, 1", "coordinates": [76.9391, 43.2738] },
+    "park": { "label": "MEGA Park: Макатаева, 127/1", "coordinates": [76.9286, 43.2641] },
+    "medeu": { "label": "Медеу: восточный ориентир у Горной, 465", "coordinates": [77.0582, 43.1587] }
+  },
+  "routes": [
+    { "id": "R01", "from": "arbat", "to": "bazaar" },
+    { "id": "R02", "from": "bazaar", "to": "dostyk" },
+    { "id": "R03", "from": "dostyk", "to": "bazaar" },
+    { "id": "R04", "from": "atakent", "to": "dostyk" },
+    { "id": "R05", "from": "mega", "to": "atakent" },
+    { "id": "R06", "from": "adk", "to": "atakent" },
+    { "id": "R07", "from": "sairan", "to": "arbat" },
+    { "id": "R08", "from": "station", "to": "mega" },
+    { "id": "R09", "from": "park", "to": "adk" },
+    { "id": "R10", "from": "dostyk", "to": "medeu" }
+  ]
+}
