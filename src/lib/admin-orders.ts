@@ -4,6 +4,7 @@ import { AppError } from './errors';
 import { requireAdministrator } from './administrators';
 import { selectOrder } from './orders';
 import { adminOrderFilters, type AdminOrder, type AdminOrdersPage, type User } from './types';
+import { alertWaitingOrders } from './order-notifications';
 
 const querySchema = z.object({
   search: z.string().trim().max(100).default(''),
@@ -26,6 +27,7 @@ export async function listAdminOrders(actor: User, input: unknown = {}): Promise
   const db = database(); await requireAdministrator(db, actor);
   const parsed = querySchema.safeParse(input);
   if (!parsed.success) throw new AppError(400, 'Проверьте поиск, фильтр и страницу заказов.');
+  await alertWaitingOrders();
   const q = parsed.data;
   // Rows and counters share one statement snapshot. Parameters contain all user input.
   const result = await db.query(`WITH counts AS (

@@ -20,6 +20,8 @@ export function appOrigin(env: Environment = process.env) {
 }
 
 export function validateDeployment(env: Environment = process.env) {
+  if (env.TELEGRAM_WORKER_ENABLED && !['true','false'].includes(env.TELEGRAM_WORKER_ENABLED)) throw new Error('TELEGRAM_WORKER_ENABLED must be true or false');
+  if (env.VERCEL === '1' && env.VERCEL_ENV === 'production' && env.TELEGRAM_AUTH_ENABLED === 'true' && env.TELEGRAM_WORKER_ENABLED === 'false') throw new Error('Telegram worker must be enabled in Production');
   if (env.QADAM_FRONTEND_ONLY && !['true', 'false'].includes(env.QADAM_FRONTEND_ONLY)) throw new Error('QADAM_FRONTEND_ONLY must be true or false');
   if (env.VERCEL === '1' && env.QADAM_BACKEND === 'true') throw new Error('Standalone backend mode is forbidden on Vercel');
   if (env.NEXT_PUBLIC_API_ORIGIN) apiOrigin(env.NEXT_PUBLIC_API_ORIGIN);

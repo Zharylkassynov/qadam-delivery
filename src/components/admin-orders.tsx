@@ -12,11 +12,11 @@ const labels: Record<AdminOrderFilter, string> = { all: 'Все', unassigned: '�
 const message = (e: unknown) => e instanceof Error ? e.message : 'Не удалось обновить данные. Повторите.';
 const denied = (e: unknown) => e instanceof ApiError && (e.status === 401 || e.status === 403);
 
-export function AdminOrders({ user, onBack }: { user: User; onBack: () => void }) {
+export function AdminOrders({ user, onBack, initialOrderId }: { user: User; onBack: () => void; initialOrderId?: string }) {
   const [search, setSearch] = useState('');
   const [criteria, setCriteria] = useState({ search: '', filter: 'all' as AdminOrderFilter, take: 20 });
   const [page, setPage] = useState<AdminOrdersPage | null>(null);
-  const [selected, setSelected] = useState<string | null>(null);
+  const [selected, setSelected] = useState<string | null>(initialOrderId ?? null);
   const [order, setOrder] = useState<AdminOrder | null>(null);
   const [loading, setLoading] = useState(true), [detailLoading, setDetailLoading] = useState(false);
   const [error, setError] = useState(''), [blocked, setBlocked] = useState(false);
@@ -38,7 +38,7 @@ export function AdminOrders({ user, onBack }: { user: User; onBack: () => void }
     setLoading(true); setError(''); setBlocked(false);
     async function poll(first = false) {
       if (stopped) return;
-      if (document.hidden && !first) { timer = setTimeout(() => void poll(), 3000); return; }
+      if (document.hidden && !first) { timer = setTimeout(() => void poll(), 15000); return; }
       controller = new AbortController();
       let forbidden = false;
       try {
@@ -56,7 +56,7 @@ export function AdminOrders({ user, onBack }: { user: User; onBack: () => void }
         forbidden = denied(e); setBlocked(forbidden); setError(message(e));
         if (forbidden) { setPage(null); setOrder(null); }
       } finally { if (!stopped) setLoading(false); }
-      if (!stopped && !forbidden) timer = setTimeout(() => void poll(), 3000);
+      if (!stopped && !forbidden) timer = setTimeout(() => void poll(), 15000);
     }
     void poll(true);
     return () => { stopped = true; clearTimeout(timer); controller?.abort(); };
@@ -102,7 +102,7 @@ export function AdminOrders({ user, onBack }: { user: User; onBack: () => void }
         {error}{syncedAt && <p>Последнее обновление: {formatTime(syncedAt)}. Статусы могут быть устаревшими.</p>}
       </Feedback>}
       {selected ? detailLoading ? <Skeletons/> : order && <AdminOrderDetail order={order} user={user}/> : <>
-        <h1>Диспетчерская</h1><p className="admin-sync">{serviceCity} · обновление каждые 3 секунды</p>
+        <h1>Диспетчерская</h1><p className="admin-sync">{serviceCity} · список обновляется каждые 15 секунд</p>
         <div className="admin-toolbar">
           <div className="field"><label htmlFor="admin-order-search">Найти заказ</label><input id="admin-order-search" type="search" maxLength={100} value={search} onChange={e => setSearch(e.target.value)} placeholder="Номер или адрес" aria-describedby="admin-search-hint"/><small className="field-hint" id="admin-search-hint">Например, QD-0042 или Абая</small></div>
           <div className="admin-filters" role="group" aria-label="Фильтр всех заказов">{adminOrderFilters.map(value => <button type="button" className={`choice ${criteria.filter === value ? 'selected' : ''}`} aria-pressed={criteria.filter === value} key={value} onClick={() => filter(value)}>{labels[value]}{(value === 'unassigned' || value === 'active') && page ? ` · ${page.counts[value]}` : ''}</button>)}</div>

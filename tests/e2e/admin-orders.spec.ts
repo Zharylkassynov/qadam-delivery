@@ -105,7 +105,7 @@ test('Telegram administrator observes self-accepted delivery, history, search, p
     await admin.unroute('**/api/admin/orders?*'); await admin.getByRole('button', { name: 'Повторить', exact: true }).click();
     await expect(admin.getByRole('main').getByRole('alert')).toHaveCount(0);
     await db.query('DELETE FROM qadam.administrators WHERE user_id=$1', [adminAccount.user.id]);
-    await expect(admin.getByRole('main').getByRole('alert')).toContainText('Раздел недоступен');
+    await expect(admin.getByRole('main').getByRole('alert')).toContainText('Раздел недоступен', { timeout: 20000 });
     await expect(admin.locator('.admin-order-list .order-card')).toHaveCount(0);
     expect((await request.get(`/api/admin/orders/${order.id}`, { headers: headers(adminAccount.token) })).status()).toBe(403);
     expect((await request.get(`/api/orders/${order.id}/route`, { headers: headers(clientAccount.token) })).status()).toBe(503); // Own delivery is still authorized, provider disabled locally.

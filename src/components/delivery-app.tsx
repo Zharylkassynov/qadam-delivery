@@ -9,6 +9,7 @@ import { telegramApp } from '../lib/telegram-client';
 import { serviceCity } from '../lib/service-area';
 import { validSource } from '../lib/courier-options';
 import { api, ApiError, setTelegramSessionToken } from '../lib/client-api';
+import { orderReference } from '../lib/order-links';
 
 const message = (error: unknown) => error instanceof Error ? error.message : 'Произошла ошибка. Попробуйте ещё раз.';
 
@@ -18,7 +19,10 @@ export function DeliveryApp() {
   const [bootError, setBootError] = useState('');
   const [demo, setDemo] = useState(false);
   const [telegram, setTelegram] = useState(false);
-  const [entry, setEntry] = useState<{ screen?: 'courier' | 'adminApplications'; source?: string }>({});
+  const [entry, setEntry] = useState<{ screen?: 'courier' | 'adminApplications' | 'adminOrders'; source?: string; order?: string }>({});
+  const [linkedId, setLinkedId] = useState<string>();
+  const [detailOrder, setDetailOrder] = useState<Order | null>(null);
+  const [openDetailId, setOpenDetailId] = useState<string | null>(null);
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
   const [syncError, setSyncError] = useState('');
@@ -41,14 +45,16 @@ export function DeliveryApp() {
         const app = await telegramApp();
         setTelegram(Boolean(app));
         if (app) {
-          const data = await api<{ user: User; sessionToken: string; source?: string; startScreen?: 'courier' }>('/api/auth/telegram', { initData: app.initData });
+          const data = await api<{ user: User; sessionToken: string; source?: string; startScreen?: 'courier'; order?: string }>('/api/auth/telegram', { initData: app.initData });
           setTelegramSessionToken(data.sessionToken);
           const params = new URLSearchParams(window.location.search);
-          setEntry({ screen: data.startScreen ?? (params.get('screen') === 'courier' ? 'courier' : params.get('screen') === 'adminApplications' && data.user.isAdmin ? 'adminApplications' : undefined), source: data.source ?? validSource(params.get('src')) });
+          setEntry({ screen: data.startScreen ?? (params.get('screen') === 'courier' ? 'courier' : params.get('screen') === 'adminApplications' && data.user.isAdmin ? 'adminApplications' : params.get('screen') === 'adminOrders' && data.user.isAdmin ? 'adminOrders' : undefined), source: data.source ?? validSource(params.get('src')), order: data.order ?? orderReference(params.get('order')) });
           setUser(data.user); setOrders([]); setLoading(true); setSelected(null); setError(''); setSyncError(''); setSyncedAt(null);
         } else {
           setTelegramSessionToken(undefined);
           const data = await api<{ user: User | null; demo: boolean }>('/api/session');
+          const params = new URLSearchParams(window.location.search);
+          setEntry({ order: orderReference(params.get('order')), screen: params.get('screen') === 'adminOrders' && data.user?.isAdmin ? 'adminOrders' : undefined });
           setUser(data.user); setDemo(data.demo);
         }
       } catch (error) { setBootError(message(error)); }
@@ -83,17 +89,54 @@ export function DeliveryApp() {
       } finally { fetching = false; if (alive) setLoading(false); }
     }
     void load();
-    const timer = setInterval(() => { void load(); }, 3000);
+    const timer = setInterval(() => { void load(); }, 15000);
     const onFocus = () => { void load(); };
     document.addEventListener('visibilitychange', onFocus);
     window.addEventListener('focus', onFocus);
     return () => { alive = false; controller.abort(); clearInterval(timer); document.removeEventListener('visibilitychange', onFocus); window.removeEventListener('focus', onFocus); };
   }, [user, refresh]);
 
+  useEffect(() => {
+    if (!user || !entry.order) return;
+    let alive = true;
+    const controller = new AbortController();
+    void api<{ order: Order }>(`/api/orders/${encodeURIComponent(entry.order)}`, undefined, controller.signal).then(({ order }) => {
+      if (!alive) return;
+      if (user.isAdmin && order.customerId !== user.id && order.courierId !== user.id) setEntry(value => ({ ...value, screen: 'adminOrders' }));
+      setDetailOrder(order); setSelected(order.id); setLinkedId(order.id);
+    }).catch(e => { if (alive) setError(message(e)); });
+    return () => { alive = false; controller.abort(); };
+  }, [user, entry.order]);
+
+  useEffect(() => {
+    if (!user || !openDetailId) return;
+    let alive = true, fetching = false;
+    const controller = new AbortController();
+    async function load() {
+      if (fetching || busyRef.current || document.hidden) return;
+      fetching = true; const current = revision.current;
+      try {
+        const { order } = await api<{ order: Order }>(`/api/orders/${openDetailId}`, undefined, controller.signal);
+        if (alive && current === revision.current) { setDetailOrder(order); setSyncError(''); setSyncedAt(new Date().toISOString()); }
+      } catch (e) {
+        if (alive && current === revision.current) {
+          setSyncError(message(e));
+          if (e instanceof ApiError && [401,403,404].includes(e.status)) {
+            setDetailOrder(null); setOrders(previous => previous.filter(o => o.id !== openDetailId));
+            if (e.status === 401) { setUser(null); setOrders([]); }
+          }
+        }
+      } finally { fetching = false; }
+    }
+    void load(); const timer = setInterval(() => void load(), 3000);
+    window.addEventListener('focus', load); document.addEventListener('visibilitychange', load);
+    return () => { alive = false; controller.abort(); clearInterval(timer); window.removeEventListener('focus', load); document.removeEventListener('visibilitychange', load); };
+  }, [user, openDetailId, refresh]);
+
   async function signIn(email: string, password: string) {
     setTelegramSessionToken(undefined);
     const data = await api<{ user: User }>('/api/auth/login', { email, password });
-    setOrders([]); setLoading(true); setSelected(null); setError(''); setSyncedAt(null); setSyncError(''); setNotice(''); setUser(data.user);
+    setOrders([]); setDetailOrder(null); setLinkedId(undefined); setLoading(true); setSelected(null); setError(''); setSyncedAt(null); setSyncError(''); setNotice(''); setUser(data.user);
   }
 
   async function signOut() {
@@ -109,6 +152,7 @@ export function DeliveryApp() {
     try {
       const { order } = await api<{ order: Order }>(path, body);
       setOrders((previous) => [order, ...previous.filter((item) => item.id !== order.id)]);
+      setDetailOrder(order);
       setSelected(order.id); setNotice(success);
       return true;
     } catch (error) {
@@ -133,7 +177,7 @@ export function DeliveryApp() {
   if (!user && telegram) return <main className="boot-screen"><Brand/><p className="muted">Сессия завершена. Ваши заказы сохранены.</p><Button onClick={() => void boot()}>Войти через Telegram</Button></main>;
   if (!user) return demo ? <Login onLogin={signIn}/> : <TelegramEntry/>;
 
-  return <DeliveryWorkspace user={user} telegram={telegram} initialScreen={entry.screen} source={entry.source} orders={orders} loading={loading} busy={busy} error={error} notice={notice} syncError={syncError} syncedAt={syncedAt} selected={selected}
+  return <DeliveryWorkspace key={user.id} user={user} telegram={telegram} initialScreen={entry.screen} initialOrderId={linkedId} detailOrder={detailOrder} onDetailChange={setOpenDetailId} source={entry.source} orders={orders} loading={loading} busy={busy} error={error} notice={notice} syncError={syncError} syncedAt={syncedAt} selected={selected}
     onSelect={setSelected} onSignOut={signOut} onMutate={mutate} onCreate={create}
     onRefresh={() => setRefresh((value) => value + 1)} onClearMessages={() => { setError(''); setNotice(''); }}/>;
 }

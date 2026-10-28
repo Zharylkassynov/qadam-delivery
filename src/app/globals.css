@@ -37,6 +37,20 @@ fieldset { margin: 0; border: 0; padding: 0; min-width: 0; }
 .muted { color: var(--muted); }
 .wide { width: 100%; }
 .pre-wrap { white-space: pre-wrap; overflow-wrap: anywhere; }
+.courier-shift { padding-bottom: 20px; margin-bottom: 8px; border-bottom: 1px solid var(--line); }
+.availability-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.availability-row strong { font-size: 18px; line-height: 24px; font-weight: 600; }
+.availability-dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; background: #8a9bab; margin-right: 8px; }
+.is-online .availability-dot { background: var(--success); }
+.availability-switch { width: 52px; height: 32px; padding: 4px; border: 0; border-radius: 20px; background: #c9d4df; flex-shrink: 0; }
+.availability-switch span { display: block; width: 24px; height: 24px; border-radius: 50%; background: white; }
+.availability-switch[aria-checked=true] { background: var(--brand); }
+.availability-switch[aria-checked=true] span { margin-left: 20px; }
+.availability-hint, .availability-permission, .availability-error { font-size: 14px; line-height: 20px; color: var(--muted); margin-top: 10px; }
+.availability-hint { max-width: 310px; }
+.availability-permission { margin-top: 14px; }
+.availability-permission .text-button, .availability-error .text-button { margin-top: 8px; padding: 0; color: var(--brand); }
+.availability-error { color: var(--danger); margin-top: 12px; }
 .icon { display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; flex: 0 0 24px; vertical-align: middle; }
 .icon img { display: block; max-width: none; flex-shrink: 0; }
 .button { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 56px; padding: 16px; border: 1px solid transparent; border-radius: 10px; font-size: 16px; line-height: 24px; font-weight: 600; text-align: center; text-decoration: none; transition: background-color .15s; overflow-wrap: anywhere; }

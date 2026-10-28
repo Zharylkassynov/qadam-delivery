@@ -95,7 +95,7 @@ export async function loginTelegram(initData: string) {
     const token = randomBytes(32).toString('hex');
     await client.query("INSERT INTO qadam.sessions(token_hash,user_id,expires_at) VALUES($1,$2,now()+$3 * interval '1 second')", [hashToken(token), user.id, sessionMaxAge]);
     await client.query('DELETE FROM qadam.sessions WHERE expires_at < now()');
-    return { user, token, source: identity.source, startScreen: identity.source?.startsWith('courier') ? 'courier' as const : undefined };
+    return { user, token, source: identity.source, order: identity.order, startScreen: identity.source?.startsWith('courier') ? 'courier' as const : undefined };
   });
 }
 

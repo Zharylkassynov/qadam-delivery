@@ -33,6 +33,10 @@ const rejectsStatus = (work: Promise<unknown>, status: number) => assert.rejects
 
 before(async () => {
   await migrate();
+  // Browser tests deliberately disable delivery and may leave queued synthetic jobs.
+  // This suite owns the separate _test queue and exercises real worker ordering.
+  await database().query('TRUNCATE qadam.telegram_outbox,qadam.telegram_updates');
+  await database().query('DELETE FROM qadam.courier_status');
   const hash = await hashPassword(password);
   for (const role of ['CUSTOMER', 'CUSTOMER', 'COURIER', 'COURIER'] as const) {
     const email = `integration-${suffix}-${users.length}@qadam.demo`;
