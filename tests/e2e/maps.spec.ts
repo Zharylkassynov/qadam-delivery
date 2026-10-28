@@ -13,8 +13,18 @@ async function login(page: Page, email: string) {
 }
 
 test('map pins and simulated GPS persist through delivery, stop on hide and show stale data honestly', async ({ browser }, testInfo) => {
+  // Includes real 15-second publishing intervals plus the complete delivery flow.
+  test.setTimeout(90000);
   const customerContext = await browser.newContext({ viewport: { width: 390, height: 844 } });
   const courierContext = await browser.newContext({ viewport: { width: 360, height: 800 }, permissions: ['geolocation'], geolocation: { latitude: 43.241, longitude: 76.895, accuracy: 18 } });
+  // This scenario tests app pause/resume and persistence, using explicit fresh GPS
+  // samples. Chrome's background-tab geolocation emulator can retain one timestamp.
+  await courierContext.addInitScript(() => {
+    const fix=()=>({coords:{latitude:Number(document.documentElement.dataset.testGpsLatitude??43.241),longitude:Number(document.documentElement.dataset.testGpsLongitude??76.895),accuracy:18,altitude:null,altitudeAccuracy:null,heading:null,speed:null},timestamp:Date.now()} as GeolocationPosition);
+    navigator.geolocation.getCurrentPosition=success=>{queueMicrotask(()=>success(fix()));};
+    navigator.geolocation.watchPosition=success=>{queueMicrotask(()=>success(fix()));return window.setInterval(()=>success(fix()),1000);};
+    navigator.geolocation.clearWatch=id=>window.clearInterval(id);
+  });
   await mockMapTiles(customerContext); await mockMapTiles(courierContext);
   const customer = await customerContext.newPage(), courier = await courierContext.newPage();
   let locationPosts = 0;
@@ -68,8 +78,14 @@ test('map pins and simulated GPS persist through delivery, stop on hide and show
     const beforeHide=locationPosts;
     await courier.evaluate(() => { Object.defineProperty(document, 'hidden', { configurable: true, value: true }); document.dispatchEvent(new Event('visibilitychange')); });
     await expect(courier.getByText('Передача позиции приостановлена',{exact:true})).toBeVisible();
+    await courier.bringToFront();
     await courier.evaluate(() => { Object.defineProperty(document, 'hidden', { configurable: true, value: false }); document.dispatchEvent(new Event('visibilitychange')); });
+    await courier.evaluate(()=>{document.documentElement.dataset.testGpsLatitude='43.242';document.documentElement.dataset.testGpsLongitude='76.896';});
     await expect.poll(()=>locationPosts,{timeout:20000}).toBeGreaterThan(beforeHide);
+    await expect.poll(async()=>{
+      const orders=(await (await customer.request.get('/api/orders')).json()).orders;
+      return orders.find((value:{id:string})=>value.id===order.id).courierLocation?.latitude;
+    }).toBe(43.242);
     await customer.clock.install(); await customer.clock.fastForward(100000);
     await expect(customer.getByText('Позиция курьера устарела', { exact: true })).toBeVisible();
     for (const action of ['Посылка у меня', 'Начать доставку', 'Завершить доставку']) await courier.getByRole('button', { name: action, exact: true }).click();
