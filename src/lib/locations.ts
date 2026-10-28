@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import type { PoolClient } from 'pg';
 import { transaction } from './db';
 import { AppError } from './errors';
 import { pointSchema } from './orders';
@@ -8,6 +9,15 @@ export const locationSchema = pointSchema.extend({
   accuracy: z.number().min(0).max(100000).nullable(),
   capturedAt: z.iso.datetime(),
 }).strict();
+
+export async function persistOrderLocation(client: Pick<PoolClient,'query'>, id: string, courierId: string, data: z.infer<typeof locationSchema>) {
+  return client.query(`INSERT INTO qadam.courier_locations(order_id,courier_id,latitude,longitude,accuracy,captured_at)
+    VALUES($1,$2,$3,$4,$5,$6) ON CONFLICT(order_id) DO UPDATE SET courier_id=excluded.courier_id,
+    latitude=excluded.latitude,longitude=excluded.longitude,accuracy=excluded.accuracy,captured_at=excluded.captured_at,received_at=clock_timestamp()
+    WHERE qadam.courier_locations.captured_at<excluded.captured_at
+    RETURNING latitude,longitude,accuracy,captured_at AS "capturedAt",received_at AS "receivedAt"`,
+  [id,courierId,data.latitude,data.longitude,data.accuracy,data.capturedAt]);
+}
 
 export async function reportLocation(actor: User, id: string, input: z.infer<typeof locationSchema>): Promise<CourierLocation> {
   if (actor.role !== 'COURIER') throw new AppError(403, 'Передавать позицию может только назначенный курьер.');

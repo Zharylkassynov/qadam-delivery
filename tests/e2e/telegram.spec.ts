@@ -1,3 +1,4 @@
+import { enableShiftGps } from './courier-gps-fixture';
 import { expect, test, type Page } from '@playwright/test';
 import { randomUUID } from 'node:crypto';
 import { signedTelegramData } from '../telegram-fixture';
@@ -270,7 +271,7 @@ test('Telegram applicant is rejected, reapplies, gets admin approval and complet
     const card = reopened.getByRole('button', { name: /^Открыть заказ/ }).filter({ hasText: pickup });
     await card.click();
     await reopened.getByRole('button', { name: 'Принять заказ', exact: true }).click();
-    await reopened.getByRole('button', { name: 'Передавать геопозицию', exact: true }).click();
+    await enableShiftGps(reopened);
     await expect(reopened.getByText(/^Позиция сохранена:/)).toBeVisible();
     for (const action of ['Посылка у меня', 'Начать доставку', 'Завершить доставку']) await reopened.getByRole('button', { name: action, exact: true }).click();
     await expect(reopened.getByRole('heading', { name: 'Доставка завершена', exact: true })).toBeVisible();

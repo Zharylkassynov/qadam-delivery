@@ -1,3 +1,4 @@
+import { enableShiftGps } from './courier-gps-fixture';
 import { expect, test, type Page } from '@playwright/test';
 import { randomUUID } from 'node:crypto';
 import pg from 'pg';
@@ -75,11 +76,15 @@ test('Telegram administrator observes self-accepted delivery, history, search, p
     await expect(admin.getByText('Электромопед', { exact: true })).toBeVisible();
     await expect(admin.getByText('Автомаршрут · 4,3 км', { exact: true })).toBeVisible();
     await expect(admin.locator('path.qadam-route-line')).toHaveCount(1);
-    await courier.getByRole('button', { name: 'Передавать геопозицию', exact: true }).click();
+    await enableShiftGps(courier);
     await expect(courier.getByText(/^Позиция сохранена:/)).toBeVisible();
     await expect(admin.getByText('Последняя позиция курьера', { exact: true })).toBeVisible();
     await expect(admin.locator('.qadam-map-marker')).toHaveCount(3);
-    await courier.getByRole('button', { name: /^Остановить/ }).click();
+    await courier.getByRole('button',{name:'Назад',exact:true}).click();
+    await courier.getByRole('switch',{name:'Я на линии'}).click();
+    await expect(courier.getByRole('switch',{name:'Я на линии'})).toHaveAttribute('aria-checked','false');
+    await courier.getByRole('navigation',{name:'Мобильная навигация'}).getByRole('button',{name:'Мои заказы',exact:true}).click();
+    await courier.getByRole('button',{name:`Открыть заказ ${number}`,exact:true}).click();
     await db.query("UPDATE qadam.courier_locations SET captured_at=now()-interval '95 seconds' WHERE order_id=$1", [order.id]);
     await expect(admin.getByText('Позиция курьера устарела', { exact: true })).toBeVisible();
     await admin.screenshot({ path: info.outputPath('admin-order-stale-position.png') });

@@ -3,6 +3,23 @@
 import type { CourierLocation } from './types';
 
 export type DeviceFix = Omit<CourierLocation, 'receivedAt'>;
+export function nativeLocationManager() {
+  const app=window.Telegram?.WebApp;
+  return app?.initData && app.isVersionAtLeast?.('8.0') ? app.LocationManager : undefined;
+}
+export async function locationPermission(): Promise<'granted'|'prompt'|'denied'|'unavailable'> {
+  const manager=nativeLocationManager();
+  if(manager) {
+    if(!manager.isInited) await new Promise<void>((resolve,reject)=>{
+      const timer=setTimeout(()=>reject(new Error('Геолокация не отвечает. Повторите запрос.')),15000);
+      manager.init(()=>{clearTimeout(timer);resolve();});
+    });
+    return !manager.isLocationAvailable?'unavailable':manager.isAccessGranted?'granted':manager.isAccessRequested?'denied':'prompt';
+  }
+  if(!navigator.geolocation) return 'unavailable';
+  try { return (await navigator.permissions.query({name:'geolocation'})).state; }
+  catch { return 'prompt'; }
+}
 export async function currentLocation(): Promise<DeviceFix> {
   const app = window.Telegram?.WebApp;
   const manager = app?.initData && app.isVersionAtLeast?.('8.0') ? app.LocationManager : undefined;

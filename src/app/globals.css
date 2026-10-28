@@ -51,6 +51,17 @@ fieldset { margin: 0; border: 0; padding: 0; min-width: 0; }
 .availability-permission { margin-top: 14px; }
 .availability-permission .text-button, .availability-error .text-button { margin-top: 8px; padding: 0; color: var(--brand); }
 .availability-error { color: var(--danger); margin-top: 12px; }
+.courier-gps {margin-top:16px;font-size:14px;line-height:20px;}
+.courier-gps strong {display:block;font-weight:600;}
+.courier-gps p {color:var(--muted);margin-top:4px;}
+.courier-gps .text-button {padding:8px 0;color:var(--brand);margin-right:12px;}
+.courier-gps.gps-warning strong {color:var(--warning);}
+.courier-gps .gps-error {color:var(--danger);}
+.geo-consent {padding-top:16px;border-top:1px solid var(--line);}
+.geo-consent label {display:flex;align-items:flex-start;gap:10px;margin:14px 0;}
+.geo-consent input {width:20px;height:20px;flex-shrink:0;margin:0;accent-color:var(--brand);}
+.geo-consent .button {font-size:14px;}
+.qadam-map-marker.approximate {outline:14px solid #2455db16;}
 .icon { display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; flex: 0 0 24px; vertical-align: middle; }
 .icon img { display: block; max-width: none; flex-shrink: 0; }
 .button { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 56px; padding: 16px; border: 1px solid transparent; border-radius: 10px; font-size: 16px; line-height: 24px; font-weight: 600; text-align: center; text-decoration: none; transition: background-color .15s; overflow-wrap: anywhere; }

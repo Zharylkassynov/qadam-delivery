@@ -113,6 +113,12 @@ export async function acceptOrder(actor: User, id: string): Promise<Order> {
     if (order.status !== 'SEARCHING_FOR_COURIER' || order.courier_id) throw new AppError(409, 'Заказ уже принят другим курьером или больше недоступен.');
     await client.query("UPDATE qadam.orders SET courier_id=$1,status='ACCEPTED',updated_at=now() WHERE id=$2", [actor.id, id]);
     await event(client, id, actor, 'ACCEPTED');
+    await client.query(`INSERT INTO qadam.courier_locations(order_id,courier_id,latitude,longitude,accuracy,captured_at)
+      SELECT $1,p.user_id,p.latitude,p.longitude,p.accuracy,p.captured_at FROM qadam.courier_presence p
+      JOIN qadam.courier_status s ON s.user_id=p.user_id WHERE p.user_id=$2 AND p.sharing AND p.consent_at IS NOT NULL
+        AND s.online AND s.updated_at>now()-interval '8 hours' AND p.received_at>=s.updated_at
+        AND p.captured_at>now()-interval '90 seconds' AND p.received_at>now()-interval '90 seconds'
+      ON CONFLICT(order_id) DO NOTHING`,[id,actor.id]);
     await closeAvailableOrders(client, id, actor.id);
     await queueCustomerOrderStatus(client, id, 'ACCEPTED');
     return readOrder(client, id, actor);
