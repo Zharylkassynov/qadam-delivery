@@ -1,3 +1,4 @@
+import { enableShiftGps } from './courier-gps-fixture';
 import { expect, test, type Page } from '@playwright/test';
 import { randomUUID } from 'node:crypto';
 import { mockMapTiles } from './map-fixture';
@@ -56,19 +57,19 @@ test('map pins and simulated GPS persist through delivery, stop on hide and show
     await expect(customer.locator('.qadam-map-marker')).toHaveCount(2);
     const card = courier.getByRole('button', { name: /^Открыть заказ/ }).filter({ hasText: pickup }); await card.click();
     await courier.getByRole('button', { name: 'Принять заказ', exact: true }).click();
-    await courier.getByRole('button', { name: 'Передавать геопозицию', exact: true }).click();
+    await enableShiftGps(courier);
     await expect(courier.getByText(/^Позиция сохранена:/)).toBeVisible();
     await expect(customer.locator('.qadam-map-marker.courier')).toHaveCount(1);
     await expect(customer.getByText('Точность: около 18 м.', { exact: false })).toBeVisible();
     await customer.screenshot({ path: testInfo.outputPath('tracking-customer-mobile.png') });
     const location = (await (await customer.request.get('/api/orders')).json()).orders.find((value: { id: string }) => value.id === order.id).courierLocation;
     expect(location.latitude).toBe(43.241); expect(location.longitude).toBe(76.895);
-    // Simulate Mini App losing visibility. It must not silently restart on return.
+    // The shared shift feed pauses while hidden and resumes without another button.
+    const beforeHide=locationPosts;
     await courier.evaluate(() => { Object.defineProperty(document, 'hidden', { configurable: true, value: true }); document.dispatchEvent(new Event('visibilitychange')); });
-    await expect(courier.getByRole('button', { name: 'Передавать геопозицию', exact: true })).toBeVisible();
+    await expect(courier.getByText('Передача позиции приостановлена',{exact:true})).toBeVisible();
     await courier.evaluate(() => { Object.defineProperty(document, 'hidden', { configurable: true, value: false }); document.dispatchEvent(new Event('visibilitychange')); });
-    await courier.clock.install(); await courier.clock.fastForward(20000);
-    expect(locationPosts).toBe(1);
+    await expect.poll(()=>locationPosts,{timeout:20000}).toBeGreaterThan(beforeHide);
     await customer.clock.install(); await customer.clock.fastForward(100000);
     await expect(customer.getByText('Позиция курьера устарела', { exact: true })).toBeVisible();
     for (const action of ['Посылка у меня', 'Начать доставку', 'Завершить доставку']) await courier.getByRole('button', { name: action, exact: true }).click();
@@ -98,8 +99,8 @@ test('denied geolocation and tile outage preserve order actions', async ({ brows
     await page.getByRole('button', { name: /^Открыть заказ/ }).filter({ hasText: pickup }).click();
     await page.getByRole('button', { name: 'Принять заказ', exact: true }).click();
     await expect(page.getByText('Карта недоступна', { exact: true })).toBeVisible();
-    await page.getByRole('button', { name: 'Передавать геопозицию', exact: true }).click();
-    await expect(page.getByRole('main').getByRole('alert')).toContainText('Доступ к геолокации не предоставлен');
+    await enableShiftGps(page,false);
+    await expect(page.locator('.courier-gps')).toContainText('Геолокация не разрешена');
     for (const action of ['Посылка у меня', 'Начать доставку', 'Завершить доставку']) await page.getByRole('button', { name: action, exact: true }).click();
     await expect(page.getByRole('heading', { name: 'Доставка завершена', exact: true })).toBeVisible();
     const persisted = (await (await page.request.get('/api/orders')).json()).orders.find((value: { id: string }) => value.id === order.id);

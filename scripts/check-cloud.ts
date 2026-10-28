@@ -24,8 +24,10 @@ try {
     await client.query('UPDATE qadam.courier_status SET online=online WHERE false');
     await client.query('UPDATE qadam.order_notifications SET message_id=message_id,closed_at=closed_at WHERE false');
     await client.query('UPDATE qadam.orders SET alerted_at=alerted_at WHERE false');
+    await client.query('SELECT user_id,sharing,consent_at,latitude,longitude,captured_at,received_at FROM qadam.courier_presence LIMIT 0');
+    await client.query('UPDATE qadam.courier_presence SET sharing=sharing,latitude=latitude,received_at=received_at WHERE false');
   } finally { await client.query('ROLLBACK'); }
-  console.log(JSON.stringify({ project: target.ref, host: target.host, poolerMode: target.poolerMode, clientTlsVerified: stream.authorized, tlsProtocol: stream.getProtocol(), orderNotificationsReady: true, ...state }));
+  console.log(JSON.stringify({ project: target.ref, host: target.host, poolerMode: target.poolerMode, clientTlsVerified: stream.authorized, tlsProtocol: stream.getProtocol(), orderNotificationsReady: true, courierPresenceReady:true, ...state }));
   } finally { client.release(); }
 } catch (error) {
   // Deliberately omit stack/URL, which may contain secrets from parser errors.

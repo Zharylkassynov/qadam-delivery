@@ -6,16 +6,17 @@ import type { DeliveryRoute, MapPoint } from '../lib/types';
 import { Button, Feedback } from './delivery-ui';
 import { api } from '../lib/client-api';
 import { sessionTileLayer } from '../lib/map-tile-layer';
+import type {MapBounds} from '../lib/courier-map';
 
-export type MapMarker = MapPoint & { kind: 'pickup' | 'destination' | 'courier'; label: string; stale?: boolean };
+export type MapMarker = MapPoint & { kind: 'pickup' | 'destination' | 'courier'; label: string; stale?: boolean; approximate?:boolean };
 const almaty: [number, number] = [43.2389, 76.8897];
 
 // The library is imported only in the browser; the provider receives tile numbers,
 // never order IDs, recipient names, phone numbers or address text.
-export function DeliveryMap({ markers, onPick, focusCourier = false, center, route }: { markers: MapMarker[]; onPick?: (point: MapPoint) => void; focusCourier?: boolean; center?: MapPoint; route?: DeliveryRoute | null }) {
+export function DeliveryMap({ markers, onPick, focusCourier = false, center, route,onBoundsChange }: { markers: MapMarker[]; onPick?: (point: MapPoint) => void; focusCourier?: boolean; center?: MapPoint; route?: DeliveryRoute | null;onBoundsChange?:(bounds:MapBounds)=>void }) {
   const container = useRef<HTMLDivElement>(null);
   const state = useRef<{ L: typeof Leaflet; map: Leaflet.Map; layer: Leaflet.LayerGroup; routeLayer: Leaflet.LayerGroup } | null>(null);
-  const latest = useRef({ markers, onPick, center, route }); latest.current = { markers, onPick, center, route };
+  const latest = useRef({ markers, onPick, center, route,onBoundsChange }); latest.current = { markers, onPick, center, route,onBoundsChange };
   const courierShown = useRef(false);
   const routeShown = useRef(false);
   const [ready, setReady] = useState(false);
@@ -41,6 +42,8 @@ export function DeliveryMap({ markers, onPick, focusCourier = false, center, rou
       const routeLayer = L.layerGroup().addTo(map);
       state.current = { L, map, layer, routeLayer };
       map.on('click', (event: Leaflet.LeafletMouseEvent) => latest.current.onPick?.({ latitude: event.latlng.lat, longitude: event.latlng.lng }));
+      const boundsChanged=()=>{const b=map.getBounds();latest.current.onBoundsChange?.({south:b.getSouth(),north:b.getNorth(),west:b.getWest(),east:b.getEast()});};
+      map.on('moveend',boundsChanged);
       const points = latest.current.markers.filter((point) => point.kind !== 'courier');
       const bounds = (points.length ? points : latest.current.markers).map((point): [number, number] => [point.latitude, point.longitude]);
       if (bounds.length) map.fitBounds(L.latLngBounds(bounds), { padding: [48, 48], maxZoom: 16, animate: false });
@@ -59,7 +62,7 @@ export function DeliveryMap({ markers, onPick, focusCourier = false, center, rou
       const title = document.createElement('span'); title.textContent = marker.label;
       L.marker([marker.latitude, marker.longitude], {
         title: marker.label, alt: marker.label,
-        icon: L.divIcon({ className: `qadam-map-marker ${marker.kind} ${marker.stale ? 'stale' : ''}`, html: marker.kind === 'pickup' ? 'А' : marker.kind === 'destination' ? 'Б' : '<img src="/icons/person.svg" width="24" height="24" alt="Курьер"/>', iconSize: [44, 44], iconAnchor: [22, 22] }),
+        icon: L.divIcon({ className: `qadam-map-marker ${marker.kind} ${marker.stale ? 'stale' : ''} ${marker.approximate?'approximate':''}`, html: marker.kind === 'pickup' ? 'А' : marker.kind === 'destination' ? 'Б' : '<img src="/icons/person.svg" width="24" height="24" alt="Курьер"/>', iconSize: [44, 44], iconAnchor: [22, 22] }),
       }).bindTooltip(title).addTo(layer);
     }
     // Fit the first courier fix too, once; subsequent polling must not reset a

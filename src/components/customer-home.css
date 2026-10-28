@@ -11,6 +11,10 @@
 .customer-home-map .map-loading { top: 68px; }
 .customer-home-city { position: absolute; z-index: 500; top: 16px; left: 16px; display: flex; align-items: center; gap: 8px; min-height: 44px; padding: 10px 16px; border-radius: 10px; background: var(--surface); color: var(--ink); font-size: 14px; line-height: 20px; font-weight: 500; box-shadow: 0 2px 8px #122f4310; pointer-events: none; }
 .customer-home-panel { display: flex; flex-direction: column; gap: 16px; min-width: 0; padding: 24px 20px; background: var(--surface); align-self: stretch; }
+.customer-map-status { position:absolute;left:16px;bottom:16px;z-index:500;max-width:calc(100% - 32px);background:var(--surface);padding:12px 16px;border-radius:10px;font-size:14px;line-height:20px;box-shadow:0 2px 8px #122f4310; }
+.customer-map-status strong {font-weight:600;}
+.customer-map-status p {margin-top:4px;color:var(--muted);}
+.customer-map-status.map-status-stale {background:var(--warning-soft);}
 .customer-home-panel h1 { font-size: 22px; line-height: 28px; letter-spacing: 0; }
 .customer-home-panel h1:focus { outline: none; }
 .customer-home-addresses { display: flex; flex-direction: column; gap: 16px; }
@@ -26,6 +30,7 @@
 .screen-create .form-fields > .screen-heading h1 { font-size: 22px; line-height: 28px; }
 .screen-point .screen-content { max-width: 624px; }
 @media (max-width: 959px) {
+  .customer-map-status {position:relative;left:auto;bottom:auto;border-radius:0;max-width:none;box-shadow:none;padding:12px 20px;border-bottom:1px solid var(--line);}
   .customer-home { display: flex; flex-direction: column; min-height: 100%; }
   .customer-home-map { flex: 1; min-height: 260px; display: flex; flex-direction: column; }
   .customer-home-map .delivery-map-block { flex: 1; }

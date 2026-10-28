@@ -3,7 +3,7 @@
 import type { Order } from '../lib/types';
 import { serviceCity } from '../lib/service-area';
 import { AddressRow, Badge, Button, Icon, orderNumber } from './delivery-ui';
-import { DeliveryMap } from './delivery-map';
+import { CustomerCourierMap } from './customer-courier-map';
 import { ParcelChoice, type OrderDraft } from './order-form';
 import './customer-home.css';
 
@@ -27,7 +27,7 @@ export function CustomerHome({ draft, activeOrders, creatingNew, loading, busy, 
   const addressesReady = draft.pickupAddress.trim().length >= 5 && draft.destinationAddress.trim().length >= 5;
   return <div className={`customer-home ${active ? 'customer-home-active' : ''}`}>
     <section className="customer-home-map" aria-label="Адреса на карте">
-      <DeliveryMap key={active?.id ?? 'draft'} markers={[
+      <CustomerCourierMap key={active?.id ?? 'draft'} order={active} markers={[
         ...(route.pickupPoint ? [{ ...route.pickupPoint, kind: 'pickup' as const, label: `А · ${route.pickupAddress}` }] : []),
         ...(route.destinationPoint ? [{ ...route.destinationPoint, kind: 'destination' as const, label: `Б · ${route.destinationAddress}` }] : []),
       ]}/>

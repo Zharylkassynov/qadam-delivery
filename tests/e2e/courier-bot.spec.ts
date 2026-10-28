@@ -55,6 +55,7 @@ test('rules and privacy pages explain the actual operator, storage and deletion 
   await expect(page.getByRole('heading', { level: 1 })).toHaveText('Политика конфиденциальности');
   await expect(page.getByRole('main')).toContainText('Команда Qadam');
   await expect(page.getByRole('main')).toContainText('Франкфурт');
-  await expect(page.getByRole('main')).toContainText('фонового отслеживания нет');
+  await expect(page.getByRole('main')).toContainText('фоновое отслеживание не работает');
+  await expect(page.getByRole('main')).toContainText('округляются на сервере примерно до 300 метров');
   await expect(page.getByRole('link', { name: '@zharlkssnv', exact: true }).first()).toHaveAttribute('href', 'https://t.me/zharlkssnv');
 });

@@ -10,6 +10,7 @@ import { serviceCity } from '../lib/service-area';
 import { validSource } from '../lib/courier-options';
 import { api, ApiError, setTelegramSessionToken } from '../lib/client-api';
 import { orderReference } from '../lib/order-links';
+import { CourierPresenceProvider } from './courier-presence';
 
 const message = (error: unknown) => error instanceof Error ? error.message : 'Произошла ошибка. Попробуйте ещё раз.';
 
@@ -177,9 +178,9 @@ export function DeliveryApp() {
   if (!user && telegram) return <main className="boot-screen"><Brand/><p className="muted">Сессия завершена. Ваши заказы сохранены.</p><Button onClick={() => void boot()}>Войти через Telegram</Button></main>;
   if (!user) return demo ? <Login onLogin={signIn}/> : <TelegramEntry/>;
 
-  return <DeliveryWorkspace key={user.id} user={user} telegram={telegram} initialScreen={entry.screen} initialOrderId={linkedId} detailOrder={detailOrder} onDetailChange={setOpenDetailId} source={entry.source} orders={orders} loading={loading} busy={busy} error={error} notice={notice} syncError={syncError} syncedAt={syncedAt} selected={selected}
+  return <CourierPresenceProvider key={user.id} user={user}><DeliveryWorkspace user={user} telegram={telegram} initialScreen={entry.screen} initialOrderId={linkedId} detailOrder={detailOrder} onDetailChange={setOpenDetailId} source={entry.source} orders={orders} loading={loading} busy={busy} error={error} notice={notice} syncError={syncError} syncedAt={syncedAt} selected={selected}
     onSelect={setSelected} onSignOut={signOut} onMutate={mutate} onCreate={create}
-    onRefresh={() => setRefresh((value) => value + 1)} onClearMessages={() => { setError(''); setNotice(''); }}/>;
+    onRefresh={() => setRefresh((value) => value + 1)} onClearMessages={() => { setError(''); setNotice(''); }}/></CourierPresenceProvider>;
 }
 
 function TelegramEntry() {

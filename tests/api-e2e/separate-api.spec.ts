@@ -53,6 +53,8 @@ test('Mini App completes a delivery through a separate API without cookies and r
   try {
     expect((await courier.post('/api/auth/login', { data: { email: 'courier1@qadam.demo', password: process.env.DEMO_PASSWORD } })).status()).toBe(200);
     expect((await courier.post('/api/courier/status', { data: { online: true } })).status()).toBe(200);
+    expect((await courier.post('/api/courier/location', { data: { sharing:true,consent:true } })).status()).toBe(200);
+    expect((await courier.post('/api/courier/location', { data: { latitude:43.24,longitude:76.9,accuracy:22,capturedAt:new Date().toISOString() } })).status()).toBe(200);
     expect((await (await courier.get('/api/courier/status')).json()).status.online).toBe(true);
     expect((await (await courier.get(`/api/orders/${order.id}`)).json()).order.recipientPhone).toBeNull();
     expect((await courier.post(`/api/orders/${order.id}/accept`, { data: {} })).status()).toBe(200);
