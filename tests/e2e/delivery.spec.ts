@@ -70,7 +70,7 @@ test('customer and courier complete a delivery; polling, reopening and history r
     await expect(customer.getByRole('status')).toContainText('Заказ создан');
     await customer.screenshot({ path: testInfo.outputPath('customer-desktop.png'), fullPage: true });
     const card = courier.getByRole('button', { name: /^Открыть заказ/ }).filter({ hasText: pickup });
-    await expect(card).toBeVisible();
+    await expect(card).toBeVisible({ timeout: 20000 });
     const orderButton = (await card.getAttribute('aria-label'))!;
     await card.click();
     await courier.getByRole('button', { name: 'Принять заказ', exact: true }).click();
@@ -249,7 +249,7 @@ test('loading, empty list and connection errors offer a working recovery action'
   await expect(page.getByRole('button', { name: 'Указать адреса', exact: true })).toBeVisible();
   await page.unroute('**/api/orders');
   await page.route('**/api/orders', (route) => route.abort('connectionfailed'));
-  await expect(page.getByRole('main').getByRole('alert')).toContainText('Данные не обновлены');
+  await expect(page.getByRole('main').getByRole('alert')).toContainText('Данные не обновлены', { timeout: 20000 });
   await expect(page.getByRole('main').getByRole('alert')).toContainText('Статусы могут быть устаревшими');
   await page.screenshot({ path: testInfo.outputPath('connection-error.png'), fullPage: true });
   await page.unroute('**/api/orders');

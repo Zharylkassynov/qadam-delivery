@@ -3,6 +3,8 @@ import type { PoolClient } from 'pg';
 import { database, transaction } from './db';
 import { AppError } from './errors';
 import { nextStatus, statuses, type Order, type Status, type User } from './types';
+import { alertWaitingOrders, closeAvailableOrders, queueAvailableOrder, queueCustomerOrderStatus } from './order-notifications';
+import { orderReference } from './order-links';
 
 export const pointSchema = z.object({ latitude: z.number().min(-90).max(90), longitude: z.number().min(-180).max(180) }).strict();
 export const createOrderSchema = z.object({
@@ -50,11 +52,23 @@ async function event(client: PoolClient, id: string, actor: User, status: Status
 }
 
 export async function listOrders(actor: User): Promise<Order[]> {
+  await alertWaitingOrders();
   const where = actor.role === 'CUSTOMER'
     ? 'o.customer_id=$1'
     : "(o.courier_id=$1 OR (o.courier_id IS NULL AND o.status='SEARCHING_FOR_COURIER'))";
   const result = await database().query(`${selectOrder} WHERE ${where} ORDER BY o.created_at DESC LIMIT 100`, [actor.id]);
   return protectRecipientContacts(database(), actor, result.rows);
+}
+
+export async function getOrder(actor: User, reference: string): Promise<Order> {
+  const ref = orderReference(reference);
+  if (!ref) throw new AppError(404, 'Заказ не найден.');
+  const result = await database().query(`${selectOrder} WHERE ${ref.includes('-') ? 'o.id=$2::uuid' : 'o.number=$2::bigint'}
+    AND (o.customer_id=$1 OR ($3='COURIER' AND (o.courier_id=$1 OR (o.courier_id IS NULL AND o.status='SEARCHING_FOR_COURIER')))
+      OR EXISTS(SELECT 1 FROM qadam.administrators a JOIN qadam.users u ON u.id=a.user_id WHERE a.user_id=$1 AND u.active))`,
+  [actor.id, ref, actor.role]);
+  if (!result.rowCount) throw new AppError(404, 'Заказ не найден или больше недоступен.');
+  return (await protectRecipientContacts(database(), actor, result.rows))[0];
 }
 
 export async function createOrder(actor: User, input: CreateOrder): Promise<Order> {
@@ -82,6 +96,7 @@ export async function createOrder(actor: User, input: CreateOrder): Promise<Orde
     await event(client, id, actor, 'CREATED');
     await client.query("UPDATE qadam.orders SET status='SEARCHING_FOR_COURIER',updated_at=now() WHERE id=$1", [id]);
     await event(client, id, actor, 'SEARCHING_FOR_COURIER');
+    await queueAvailableOrder(client, id);
     return readOrder(client, id, actor);
   });
 }
@@ -98,6 +113,8 @@ export async function acceptOrder(actor: User, id: string): Promise<Order> {
     if (order.status !== 'SEARCHING_FOR_COURIER' || order.courier_id) throw new AppError(409, 'Заказ уже принят другим курьером или больше недоступен.');
     await client.query("UPDATE qadam.orders SET courier_id=$1,status='ACCEPTED',updated_at=now() WHERE id=$2", [actor.id, id]);
     await event(client, id, actor, 'ACCEPTED');
+    await closeAvailableOrders(client, id, actor.id);
+    await queueCustomerOrderStatus(client, id, 'ACCEPTED');
     return readOrder(client, id, actor);
   });
 }
@@ -121,6 +138,8 @@ export async function transitionOrder(actor: User, id: string, target: Status): 
     }
     await client.query('UPDATE qadam.orders SET status=$1,updated_at=now() WHERE id=$2', [target, id]);
     await event(client, id, actor, target);
+    if (target === 'CANCELLED') await closeAvailableOrders(client, id, null, true);
+    await queueCustomerOrderStatus(client, id, target);
     return readOrder(client, id, actor);
   });
 }

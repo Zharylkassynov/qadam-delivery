@@ -6,7 +6,7 @@ import { telegramApp } from '../lib/telegram-client';
 import { Button, Feedback } from './delivery-ui';
 
 type Profile = { phone: string | null; allowsWrite: boolean };
-export function useTelegramProfile(enabled: boolean) {
+export function useTelegramProfile(enabled: boolean, interval = 3000) {
   const [profile, setProfile] = useState<Profile>({ phone: null, allowsWrite: false });
   const [contactBusy, setContactBusy] = useState(false), [writeBusy, setWriteBusy] = useState(false);
   const [notice, setNotice] = useState('');
@@ -23,9 +23,9 @@ export function useTelegramProfile(enabled: boolean) {
       catch { /* Permissions are optional; a failed check must not block the application. */ }
       finally { fetching = false; }
     };
-    void load(); const timer = setInterval(() => void load(), 3000);
+    void load(); const timer = setInterval(() => void load(), interval);
     return () => { alive.current = false; controller.abort(); clearInterval(timer); };
-  }, [enabled]);
+  }, [enabled, interval]);
 
   async function poll(check: (data: Profile) => boolean) {
     for (let i = 0; i < 10 && alive.current; i++) {

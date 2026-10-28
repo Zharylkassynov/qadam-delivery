@@ -1,14 +1,12 @@
 import type { PoolClient } from 'pg';
-import { database } from './db';
+import { database, transaction } from './db';
 import { appOrigin } from './deployment-config';
 import { botApi, BotApiError, type BotTransport } from './telegram-bot-api';
 import type { CourierApplication } from './types';
-
+import { enqueueBotMessage, type BotJob } from './telegram-outbox';
+import { recordOrderDelivery, shouldSendOrderJob } from './order-notifications';
+export { enqueueBotMessage } from './telegram-outbox';
 type Db = Pick<PoolClient, 'query'>;
-export async function enqueueBotMessage(db: Db, key: string, telegramId: string, body: Record<string, unknown>, method = 'sendMessage') {
-  await db.query(`INSERT INTO qadam.telegram_outbox(dedupe_key,telegram_user_id,method,body)
-    VALUES($1,$2,$3,$4) ON CONFLICT(dedupe_key) DO NOTHING`, [key, telegramId, method, JSON.stringify(body)]);
-}
 
 export async function queueApplicationSubmitted(db: Db, application: CourierApplication) {
   const admins = await db.query(`SELECT t.telegram_user_id::text AS id FROM qadam.administrators a
@@ -33,14 +31,29 @@ export async function queueApplicationDecision(db: Db, application: CourierAppli
 export async function drainBotOutbox(transport: BotTransport = botApi, limit = 15) {
   const db = database();
   for (let i = 0; i < limit; i++) {
-    const job = (await db.query(`UPDATE qadam.telegram_outbox SET locked_until=now()+interval '60 seconds',attempts=attempts+1
-      WHERE id=(SELECT id FROM qadam.telegram_outbox WHERE sent_at IS NULL AND NOT failed AND available_at<=now()
-        AND (locked_until IS NULL OR locked_until<now()) ORDER BY id FOR UPDATE SKIP LOCKED LIMIT 1)
-      RETURNING id,telegram_user_id::text AS "telegramId",method,body,attempts`)).rows[0];
+    const job: BotJob | undefined = (await db.query(`UPDATE qadam.telegram_outbox SET locked_until=now()+interval '60 seconds',attempts=attempts+1
+      WHERE id=(SELECT j.id FROM qadam.telegram_outbox j WHERE j.sent_at IS NULL AND NOT j.failed AND j.available_at<=now()
+        AND (j.locked_until IS NULL OR j.locked_until<now())
+        AND (j.order_id IS NULL OR NOT EXISTS(SELECT 1 FROM qadam.telegram_outbox earlier
+          WHERE earlier.order_id=j.order_id AND earlier.telegram_user_id=j.telegram_user_id AND earlier.id<j.id
+            AND earlier.sent_at IS NULL AND NOT earlier.failed))
+        ORDER BY j.id FOR UPDATE SKIP LOCKED LIMIT 1)
+      RETURNING id::text,telegram_user_id::text AS "telegramId",method,body,attempts,order_id AS "orderId",order_notification_id::text AS "notificationId"`)).rows[0];
     if (!job) return;
     try {
-      await transport(job.method, job.body);
-      await db.query("UPDATE qadam.telegram_outbox SET sent_at=now(),body='{}',locked_until=NULL WHERE id=$1", [job.id]);
+      if (!await shouldSendOrderJob(job)) {
+        await db.query("UPDATE qadam.telegram_outbox SET failed=true,body='{}',locked_until=NULL WHERE id=$1 AND attempts=$2", [job.id,job.attempts]);
+        continue;
+      }
+      const result = await transport(job.method, job.body);
+      await transaction(async client => {
+        // Mutations lock the order before notification rows; preserve the same order here.
+        if (job.orderId) await client.query('SELECT id FROM qadam.orders WHERE id=$1 FOR UPDATE',[job.orderId]);
+        const owned = await client.query('SELECT id FROM qadam.telegram_outbox WHERE id=$1 AND attempts=$2 AND sent_at IS NULL FOR UPDATE',[job.id,job.attempts]);
+        if (!owned.rowCount) return;
+        await recordOrderDelivery(client,job,result);
+        await client.query("UPDATE qadam.telegram_outbox SET sent_at=now(),body='{}',locked_until=NULL WHERE id=$1", [job.id]);
+      });
     } catch (error) {
       const code = error instanceof BotApiError ? error.code : 503;
       if (code === 403) {

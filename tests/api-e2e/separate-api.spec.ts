@@ -52,10 +52,15 @@ test('Mini App completes a delivery through a separate API without cookies and r
   const courier = await playwright.request.newContext({ baseURL: api, extraHTTPHeaders: { Origin: frontend } });
   try {
     expect((await courier.post('/api/auth/login', { data: { email: 'courier1@qadam.demo', password: process.env.DEMO_PASSWORD } })).status()).toBe(200);
+    expect((await courier.post('/api/courier/status', { data: { online: true } })).status()).toBe(200);
+    expect((await (await courier.get('/api/courier/status')).json()).status.online).toBe(true);
+    expect((await (await courier.get(`/api/orders/${order.id}`)).json()).order.recipientPhone).toBeNull();
     expect((await courier.post(`/api/orders/${order.id}/accept`, { data: {} })).status()).toBe(200);
     for (const status of ['PICKED_UP', 'IN_TRANSIT', 'DELIVERED']) {
       expect((await courier.post(`/api/orders/${order.id}/status`, { data: { status } })).status()).toBe(200);
     }
+    expect((await (await courier.get(`/api/orders/${order.number}`)).json()).order.status).toBe('DELIVERED');
+    expect((await courier.post('/api/courier/status', { data: { online: false } })).status()).toBe(200);
     await expect(page.getByRole('heading', { name: 'Посылка у получателя', exact: true })).toBeVisible();
     await page.screenshot({ path: testInfo.outputPath('separate-api-delivered.png'), fullPage: true });
     await page.reload();

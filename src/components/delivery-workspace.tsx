@@ -11,13 +11,15 @@ import { AddressPicker, type AddressPickerMode } from './address-picker';
 import { CustomerHome } from './customer-home';
 import { OrderTracking } from './order-tracking';
 import { AdminOrders } from './admin-orders';
+import { CourierAvailability } from './courier-availability';
 
 type View = 'home' | 'orders' | 'profile' | 'create' | 'review' | 'detail' | 'point' | 'courierApplication' | 'adminApplications' | 'adminOrders' | 'couriers';
 type Filter = 'all' | 'active' | 'history';
 type Props = {
   user: User; telegram: boolean; orders: Order[]; loading: boolean; busy: boolean; error: string; notice: string;
   syncError: string; syncedAt: string | null; selected: string | null;
-  initialScreen?: 'courier' | 'adminApplications'; source?: string;
+  initialScreen?: 'courier' | 'adminApplications' | 'adminOrders'; source?: string;
+  initialOrderId?: string; detailOrder?: Order | null; onDetailChange: (id: string | null) => void;
   onSelect: (id: string) => void; onSignOut: () => Promise<void>; onRefresh: () => void; onClearMessages: () => void;
   onMutate: (path: string, body: unknown, success: string) => Promise<boolean>;
   onCreate: (input: ReturnType<typeof orderPayload>) => Promise<boolean>;
@@ -25,7 +27,7 @@ type Props = {
 
 export function DeliveryWorkspace(props: Props) {
   const { user, orders, loading, busy, error, notice, syncError, syncedAt, selected } = props;
-  const [view, setView] = useState<View>(props.initialScreen === 'courier' ? 'courierApplication' : props.initialScreen === 'adminApplications' && user.isAdmin ? 'adminApplications' : 'home');
+  const [view, setView] = useState<View>(props.initialScreen === 'courier' ? 'courierApplication' : props.initialScreen === 'adminApplications' && user.isAdmin ? 'adminApplications' : props.initialScreen === 'adminOrders' && user.isAdmin && props.initialOrderId ? 'adminOrders' : 'home');
   const [filter, setFilter] = useState<Filter>(user.role === 'CUSTOMER' ? 'all' : 'active');
   const [draft, setDraft] = useState<OrderDraft>({ ...emptyDraft });
   const [pointKind, setPointKind] = useState<'pickup' | 'destination'>('pickup');
@@ -43,7 +45,8 @@ export function DeliveryWorkspace(props: Props) {
   const completed = ownOrders.filter((order) => order.status === 'DELIVERED');
   const available = orders.filter((order) => order.status === 'SEARCHING_FOR_COURIER' && !order.courierId);
   const visible = ownOrders.filter((order) => filter === 'all' || (filter === 'history' ? finished(order) : !finished(order)));
-  const detail = orders.find((order) => order.id === selected);
+  const detail = props.detailOrder?.id === selected ? props.detailOrder : orders.find((order) => order.id === selected);
+  const openedLink = useRef<string | null>(null);
 
   useEffect(() => {
     bodyRef.current?.scrollTo({ top: 0 });
@@ -54,6 +57,13 @@ export function DeliveryWorkspace(props: Props) {
     setFilter(user.role === 'COURIER' ? 'active' : 'all');
     setView((current) => current === 'courierApplication' || current === 'adminApplications' || current === 'adminOrders' || current === 'couriers' ? current : 'home');
   }, [user.role]);
+
+  useEffect(() => {
+    if (!props.initialOrderId || openedLink.current === props.initialOrderId) return;
+    openedLink.current = props.initialOrderId;
+    setView(props.initialScreen === 'adminOrders' && user.isAdmin ? 'adminOrders' : 'detail');
+  }, [props.initialOrderId, props.initialScreen, user.isAdmin]);
+  useEffect(() => { props.onDetailChange(view === 'detail' ? selected : null); }, [view, selected, props.onDetailChange]);
 
   function navigate(target: View) {
     if (busy) return;
@@ -111,7 +121,7 @@ export function DeliveryWorkspace(props: Props) {
   if (view === 'courierApplication') return <CourierOnboarding user={user} source={props.source} onBack={() => navigate('profile')} onOrders={() => { props.onRefresh(); navigate('home'); }}/>;
   if (view === 'couriers') return <CourierDirectory user={user} onBack={() => navigate('profile')}/>;
   if (view === 'adminApplications') return <CourierApplicationAdmin user={user} onBack={() => navigate('profile')}/>;
-  if (view === 'adminOrders') return <AdminOrders user={user} onBack={() => navigate('profile')}/>;
+  if (view === 'adminOrders') return <AdminOrders user={user} initialOrderId={props.initialOrderId} onBack={() => navigate('profile')}/>;
 
   return <div className="app-shell">
     <aside className="sidebar"><Brand/><div className="sidebar-role">{customer ? 'Клиент' : 'Курьер'} · {serviceCity}</div>
@@ -129,7 +139,7 @@ export function DeliveryWorkspace(props: Props) {
 
           {view === 'home' && customer && <CustomerHome draft={draft} activeOrders={activeOrders} creatingNew={creatingNew} loading={loading} busy={busy} onAddress={(kind) => editAddress(kind, 'home')} onParcel={(parcelType) => setDraft((current) => ({ ...current, parcelType }))} onContinue={continueDraft} onNew={newDelivery} onOpen={open} onOrders={() => { setFilter('active'); navigate('orders'); }}/>}
 
-          {view === 'home' && !customer && <><div className="screen-heading"><h1 tabIndex={-1}>Можно принять</h1><p>Доступные заказы. Условия доставки уточняются до начала заказа.</p></div><p className="city-label"><Icon type="locate"/>{serviceCity}</p>
+          {view === 'home' && !customer && <><CourierAvailability telegram={props.telegram}/><div className="screen-heading"><h1 tabIndex={-1}>Можно принять</h1><p>Доступные заказы. Условия доставки уточняются до начала заказа.</p></div><p className="city-label"><Icon type="locate"/>{serviceCity}</p>
             {activeOrders.length > 0 && <Button variant="secondary" onClick={() => { setFilter('active'); navigate('orders'); }} disabled={busy}>Мои активные доставки · {activeOrders.length}</Button>}
             {loading ? <Skeletons/> : available.length ? <div className="order-list courier-list">{available.map((order) => <OrderCard key={order.id} order={order} onOpen={() => open(order)} onAccept={() => void accept(order)} busy={busy}/>)}</div> : <EmptyState title="Пока нет заказов" action={refresh}>Новые доставки появятся в этом списке. Можно обновить его вручную.</EmptyState>}
             <SyncTime value={syncedAt} offline={!!syncError}/></>}
