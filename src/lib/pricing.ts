@@ -14,7 +14,7 @@ export const tariffSchema = z.object({
     .refine(v=>v.south<v.north&&v.west<v.east),
 }).strict();
 export type Tariff = z.infer<typeof tariffSchema>;
-export type PriceBreakdown = { baseKzt: number; distanceKzt: number; timeKzt: number; minimumAdjustmentKzt: number; roundingKzt: number; totalKzt: number; platformFeeKzt: 0; courierPayoutKzt: number };
+export type PriceBreakdown = { baseKzt: number; distanceKzt: number; timeKzt: number; minimumAdjustmentKzt: number; roundingKzt: number; totalKzt: number; platformFeeKzt: 0; courierPayoutKzt: number; pilotTermsVersion?: string };
 
 export function calculatePrice(input: Tariff, distanceM: number, durationS: number): PriceBreakdown {
   const tariff=tariffSchema.parse(input);

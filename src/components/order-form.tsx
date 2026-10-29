@@ -4,6 +4,7 @@ import { useRef, useState, type FormEvent, type InputHTMLAttributes } from 'reac
 import { AddressRow, Button, Feedback, PriceNote, RouteCard } from './delivery-ui';
 import type { MapPoint } from '../lib/types';
 import { DeliveryMap } from './delivery-map';
+import { deliveryPilot } from '../lib/delivery-pilot';
 
 export const parcelTypes = ['Посылка', 'Документы', 'Товары'] as const;
 export type OrderDraft = {
@@ -11,8 +12,9 @@ export type OrderDraft = {
   parcelType: typeof parcelTypes[number]; parcelDescription: string; notes: string;
   pickupPoint: MapPoint | null; destinationPoint: MapPoint | null;
   payer: 'SENDER'|'RECIPIENT'; paymentMethod: 'KASPI_TRANSFER'|'CASH';
+  pilotParcelConfirmed: boolean;
 };
-export const emptyDraft: OrderDraft = { pickupAddress: '', destinationAddress: '', recipientName: '', recipientPhone: '', parcelType: 'Посылка', parcelDescription: '', notes: '', pickupPoint: null, destinationPoint: null, payer:'SENDER',paymentMethod:'KASPI_TRANSFER' };
+export const emptyDraft: OrderDraft = { pickupAddress: '', destinationAddress: '', recipientName: '', recipientPhone: '', parcelType: 'Посылка', parcelDescription: '', notes: '', pickupPoint: null, destinationPoint: null, payer:'SENDER',paymentMethod:'KASPI_TRANSFER',pilotParcelConfirmed:false };
 
 // Keep the existing API/database contract: parcel information is persisted in notes.
 export function orderPayload(draft: OrderDraft,quoteId?:string) {
@@ -20,6 +22,7 @@ export function orderPayload(draft: OrderDraft,quoteId?:string) {
     pickupAddress: draft.pickupAddress.trim(), destinationAddress: draft.destinationAddress.trim(),
     pickupPoint: draft.pickupPoint, destinationPoint: draft.destinationPoint,
     payer:draft.payer,paymentMethod:draft.paymentMethod,shareContact:true as const,...(quoteId?{quoteId,transport:'CAR' as const}:{}),
+    ...(quoteId&&draft.pilotParcelConfirmed?{pilotTermsVersion:deliveryPilot.termsVersion}:{}),
     recipientName: draft.recipientName.trim(), recipientPhone: draft.recipientPhone.trim(),
     notes: [`Тип отправления: ${draft.parcelType}`, draft.parcelDescription.trim() && `О посылке: ${draft.parcelDescription.trim()}`, draft.notes.trim() && `Комментарий: ${draft.notes.trim()}`].filter(Boolean).join('\n'),
   };
@@ -38,7 +41,7 @@ export function OrderForm({ draft, onChange, onReview, onPoint, busy }: { draft:
   const [errors, setErrors] = useState<Partial<Record<keyof OrderDraft, string>>>({});
   const formRef = useRef<HTMLFormElement>(null);
   function change(key: keyof OrderDraft, value: string) {
-    onChange({ ...draft, [key]: value, ...(key === 'pickupAddress' ? { pickupPoint: null } : key === 'destinationAddress' ? { destinationPoint: null } : {}) });
+    onChange({ ...draft, [key]: value, ...(key === 'parcelDescription' ? {pilotParcelConfirmed:false} : {}), ...(key === 'pickupAddress' ? { pickupPoint: null } : key === 'destinationAddress' ? { destinationPoint: null } : {}) });
     setErrors((previous) => ({ ...previous, [key]: undefined }));
   }
   function review(event: FormEvent<HTMLFormElement>) {
@@ -63,7 +66,7 @@ export function OrderForm({ draft, onChange, onReview, onPoint, busy }: { draft:
       <Field label="Имя получателя" name="recipientName" autoComplete="name" placeholder="Кому передать посылку" required minLength={2} maxLength={100} value={draft.recipientName} error={errors.recipientName} onChange={(e) => change('recipientName', e.target.value)}/>
       <Field label="Телефон получателя" name="recipientPhone" type="tel" autoComplete="tel" inputMode="tel" placeholder="+7 700 123 45 67" required minLength={7} maxLength={30} value={draft.recipientPhone} error={errors.recipientPhone} onChange={(e) => change('recipientPhone', e.target.value)} hint="Курьер позвонит, чтобы передать посылку."/>
       <h2>Что отправляем</h2>
-      <ParcelChoice value={draft.parcelType} onChange={(value) => onChange({ ...draft, parcelType: value })}/>
+      <ParcelChoice value={draft.parcelType} onChange={(value) => onChange({ ...draft, parcelType: value,pilotParcelConfirmed:false })}/>
       <Field label="О посылке" name="parcelDescription" placeholder="Например: книги, коробка до 5 кг" maxLength={200} value={draft.parcelDescription} onChange={(e) => change('parcelDescription', e.target.value)}/>
       <div className="field"><label htmlFor="draft-notes">Комментарий курьеру</label><textarea id="draft-notes" name="notes" maxLength={700} rows={3} placeholder="Как найти вход, домофон или другие детали" value={draft.notes} onChange={(e) => change('notes', e.target.value)}/><small className="field-hint">Необязательно</small></div>
       <PriceNote/>

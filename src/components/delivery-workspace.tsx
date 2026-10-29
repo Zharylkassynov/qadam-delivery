@@ -14,6 +14,7 @@ import { AdminOrders } from './admin-orders';
 import { CourierAvailability } from './courier-availability';
 import { PhoneProfilePanel,usePhoneProfile } from './phone-profile';
 import { OrderContacts,PaymentChoices,QuoteSummary,SavedOrderPrice,formatMoney } from './order-pricing';
+import { deliveryPilot } from '../lib/delivery-pilot';
 import { useOrderQuote } from './use-order-quote';
 import { PhoneLink } from './phone-link';
 
@@ -148,7 +149,7 @@ export function DeliveryWorkspace(props: Props) {
           {notice && <Feedback tone="success" title={notice} role="status"/>}
           {syncError && <Feedback tone="error" title="Данные не обновлены" role="alert" action={<button type="button" className="text-button" onClick={props.onRefresh}>Повторить</button>}>{syncError}{syncedAt && <p>Последнее обновление: {formatTime(syncedAt)}. Статусы могут быть устаревшими.</p>}</Feedback>}
 
-          {view === 'home' && customer && <CustomerHome draft={draft} activeOrders={activeOrders} creatingNew={creatingNew} loading={loading} busy={busy} onAddress={(kind) => editAddress(kind, 'home')} onParcel={(parcelType) => setDraft((current) => ({ ...current, parcelType }))} onContinue={continueDraft} onNew={newDelivery} onOpen={open} onOrders={() => { setFilter('active'); navigate('orders'); }}/>}
+          {view === 'home' && customer && <CustomerHome draft={draft} activeOrders={activeOrders} creatingNew={creatingNew} loading={loading} busy={busy} onAddress={(kind) => editAddress(kind, 'home')} onParcel={(parcelType) => setDraft((current) => ({ ...current, parcelType,pilotParcelConfirmed:false }))} onContinue={continueDraft} onNew={newDelivery} onOpen={open} onOrders={() => { setFilter('active'); navigate('orders'); }}/>}
 
           {view === 'home' && !customer && <><CourierAvailability telegram={props.telegram}/><div className="screen-heading"><h1 tabIndex={-1}>Можно принять</h1><p>Доступные заказы. Условия доставки уточняются до начала заказа.</p></div><p className="city-label"><Icon type="locate"/>{serviceCity}</p>
             {activeOrders.length > 0 && <Button variant="secondary" onClick={() => { setFilter('active'); navigate('orders'); }} disabled={busy}>Мои активные доставки · {activeOrders.length}</Button>}
@@ -161,7 +162,7 @@ export function DeliveryWorkspace(props: Props) {
           {view === 'create' && customer && <OrderForm draft={draft} onChange={setDraft} onReview={() => navigate('review')} onPoint={(kind) => editAddress(kind, 'create')} busy={busy}/>}
           {view === 'point' && customer && <AddressPicker key={pointSession} kind={pointKind} address={draft[`${pointKind}Address`]} pickupAddress={draft.pickupAddress} point={point} onChange={setPoint} onAddress={setPointAddress} mode={pointMode} onModeChange={setPointMode}/>}
           {view === 'review' && customer && <OrderReview draft={draft} onEdit={() => navigate('create')} busy={busy} pricing={<>
-            {pricing.enabled===false?<PriceNote/>:<><p className="muted">Автомобиль</p><QuoteSummary quote={pricing.quote} previousPrice={pricing.previousPrice} busy={pricing.busy} error={pricing.error} onRetry={pricing.retry} onExpired={pricing.expire}/></>}
+            {pricing.enabled===false?<PriceNote/>:<><p className="muted">Автомобиль</p>{pricing.enabled===true&&<section className="review-section"><h2>Условия посылки</h2><label className="courier-consent"><input type="checkbox" checked={draft.pilotParcelConfirmed} disabled={busy} onChange={event=>setDraft(current=>({...current,pilotParcelConfirmed:event.target.checked}))}/><span>{deliveryPilot.parcelStatement}</span></label><p className="muted payment-hint">Доставка до двери в зоне сервиса. Включено по 5 минут на получение и вручение. Автоматических доплат нет. <a href="/rules" target="_blank" rel="noopener noreferrer">Правила доставки</a></p></section>}{pricing.enabled!==true||draft.pilotParcelConfirmed?<QuoteSummary quote={pricing.quote} previousPrice={pricing.previousPrice} busy={pricing.busy} error={pricing.error} onRetry={pricing.retry} onExpired={pricing.expire}/>:<p className="muted">Подтвердите условия посылки, чтобы рассчитать стоимость.</p>}</>}
             <PaymentChoices payer={draft.payer} paymentMethod={draft.paymentMethod} disabled={busy} onChange={(field,value)=>setDraft(current=>({...current,[field]:value}))}/>
             <p className="muted">Подтверждённый номер из Telegram будет доступен курьеру после принятия заказа.{pricing.enabled&&!phone.profile.phoneVerified?' Перед созданием подтвердите свой номер для связи.':''}</p>
           </>}/>}

@@ -3,6 +3,7 @@ import { useEffect,useState } from 'react';
 import type { Order,OrderQuote } from '../lib/types';
 import { Button,Feedback } from './delivery-ui';
 import { PhoneLink } from './phone-link';
+import { deliveryPilot } from '../lib/delivery-pilot';
 
 export const formatMoney=(value:number)=>`${new Intl.NumberFormat('ru-KZ',{maximumFractionDigits:2}).format(value)} ₸`;
 export function PaymentChoices({payer,paymentMethod,onChange,disabled}:{payer:'SENDER'|'RECIPIENT';paymentMethod:'CASH'|'KASPI_TRANSFER';onChange:(field:'payer'|'paymentMethod',value:string)=>void;disabled:boolean}){
@@ -24,7 +25,7 @@ export function QuoteSummary({quote,previousPrice,busy,error,onRetry,onExpired}:
 }
 export function SavedOrderPrice({order,courier=false}:{order:Order;courier?:boolean}){
   if(!order.pricing)return <><div className="price-row"><span>Стоимость доставки</span><strong>По согласованию</strong></div>{order.payer&&order.paymentMethod&&<p className="muted payment-hint">{order.payer==='RECIPIENT'?'Платит получатель':'Платит отправитель'} · {order.paymentMethod==='CASH'?'наличными':'переводом Kaspi'}. Сумму и момент расчёта согласуйте с курьером.</p>}</>;
-  return <section className="quote-price"><div className="quote-price-row"><span>{courier?'Вам за доставку':'Стоимость доставки'}</span><strong>{formatMoney(courier?order.pricing.courierPayoutKzt:order.pricing.priceKzt)}</strong></div><p className="muted payment-hint">Цена зафиксирована. Комиссия Qadam — 0 ₸.</p><p className="muted payment-hint">{order.payer==='RECIPIENT'?'Платит получатель':'Платит отправитель'} · {order.paymentMethod==='CASH'?'наличными':'переводом Kaspi'}.</p><p className="muted payment-hint">Оплата напрямую курьеру. Приложение не подтверждает получение денег.</p></section>;
+  return <section className="quote-price"><div className="quote-price-row"><span>{courier?'Вам за доставку':'Стоимость доставки'}</span><strong>{formatMoney(courier?order.pricing.courierPayoutKzt:order.pricing.priceKzt)}</strong></div><p className="muted payment-hint">Цена зафиксирована. Комиссия Qadam — 0 ₸.</p><p className="muted payment-hint">{order.payer==='RECIPIENT'?'Платит получатель':'Платит отправитель'} · {order.paymentMethod==='CASH'?'наличными':'переводом Kaspi'}.</p><p className="muted payment-hint">Оплата напрямую курьеру. Приложение не подтверждает получение денег.</p>{order.pricing.breakdown.pilotTermsVersion===deliveryPilot.termsVersion&&<p className="muted payment-hint">До двери · до 5 кг · каждая сторона до 40 см. По 5 минут на получение и вручение включено. Автоматических доплат нет.</p>}</section>;
 }
 export function OrderContacts({order,customer}:{order:Order;customer:boolean}){
   const contacts=customer?[['Ваш курьер',order.courierName,order.courierPhone]]:[['Отправитель',order.customerName,order.senderPhone]];
