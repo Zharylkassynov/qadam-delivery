@@ -5,6 +5,7 @@ import { signedTelegramData } from '../telegram-fixture';
 import pg from 'pg';
 import { mockMapTiles } from './map-fixture';
 import { miniApp, fillCourierDetails } from './telegram-browser-fixture';
+import { expectPhoneCall } from './phone-link-fixture';
 
 // Local test bot key and a mocked Telegram SDK; never forge production identities.
 test.skip(Boolean(process.env.E2E_ORIGIN), 'Synthetic Telegram login runs only against the separate local test database');
@@ -56,6 +57,7 @@ test('Mini App customer completes a delivery with browser courier and restores h
     await courier.getByRole('button', { name: 'Принять заказ', exact: true }).click();
     await expect(courier.locator('.recipient-section').filter({has:courier.getByRole('heading',{name:'Получатель',exact:true})})).toContainText('Айдана');
     await expect(courier.getByRole('link', { name: '+7 700 123 45 67' })).toBeVisible();
+    await expectPhoneCall(courier,courier.getByRole('link',{name:'+7 700 123 45 67',exact:true}),'tel:+77001234567');
     const { orders: assignedOrders } = await (await courier.request.get('/api/orders')).json();
     expect(assignedOrders.find((order: { id: string }) => order.id === availableOrder.id).recipientPhone).toBe('+7 700 123 45 67');
     await expect(customer.locator('body')).not.toContainText(/демонстрац|учебн|тестов/i);
@@ -251,26 +253,32 @@ test('Telegram applicant is rejected, reapplies, gets admin approval and complet
     await admin.getByRole('button', { name: 'Курьеры', exact: true }).click();
     const directory=await (await directoryResponse).json();
     expect(directory.total).toBeGreaterThan(0);
-    await expect(admin.getByRole('status')).toHaveText(`Всего курьеров: ${directory.total.toLocaleString('ru-KZ')}`);
+    const stats=admin.getByRole('region',{name:'Статистика курьеров',exact:true});
+    await expect(stats.getByRole('heading',{name:'Всего курьеров',exact:true})).toBeVisible();
+    await expect(stats.getByRole('status')).toHaveText(directory.total.toLocaleString('ru-KZ'));
+    await expect(stats).toBeInViewport();
     const courierRow = admin.locator('.courier-directory-row').filter({ hasText: applicantName });
     await expect(courierRow).toContainText('Алмалинский');
     await expect(courierRow).toContainText('Вечером');
     await admin.screenshot({ path: testInfo.outputPath('courier-directory-mobile.png') });
+    await admin.setViewportSize({width:320,height:844});
+    await expect(stats).toBeInViewport();
+    await admin.screenshot({path:testInfo.outputPath('courier-directory-320.png')});
     await admin.setViewportSize({ width: 1440, height: 1000 });
     await admin.screenshot({ path: testInfo.outputPath('courier-directory-desktop.png') });
     // Empty and failed refreshes must not turn an unavailable count into zero.
     await admin.route('**/api/admin/couriers',route=>route.fulfill({json:{couriers:[],total:0}}));
     await admin.getByRole('button',{name:'Обновить список',exact:true}).click();
-    await expect(admin.getByRole('status')).toHaveText('Всего курьеров: 0');
+    await expect(stats.getByRole('status')).toHaveText('0');
     await expect(admin.getByText('Одобренных курьеров пока нет',{exact:true})).toBeVisible();
     await admin.unroute('**/api/admin/couriers');
     await admin.route('**/api/admin/couriers',route=>route.fulfill({status:503,json:{error:'Не удалось обновить список курьеров.'}}));
     await admin.getByRole('button',{name:'Обновить список',exact:true}).click();
     await expect(admin.getByRole('main').getByRole('alert')).toContainText('Не удалось обновить список курьеров.');
-    await expect(admin.getByText(/^Всего курьеров:/)).toHaveCount(0);
+    await expect(stats.getByRole('status')).toHaveText('—');
     await admin.unroute('**/api/admin/couriers');
     await admin.getByRole('button',{name:'Обновить список',exact:true}).click();
-    await expect(admin.getByRole('status')).toHaveText(`Всего курьеров: ${directory.total.toLocaleString('ru-KZ')}`);
+    await expect(stats.getByRole('status')).toHaveText(directory.total.toLocaleString('ru-KZ'));
     await reopened.screenshot({ path: testInfo.outputPath('courier-application-approved.png'), fullPage: true });
     await reopened.getByRole('button', { name: 'К доступным заказам', exact: true }).click();
     await expect(reopened.getByRole('heading', { name: 'Можно принять', exact: true })).toBeVisible();

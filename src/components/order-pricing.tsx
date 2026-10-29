@@ -2,6 +2,7 @@
 import { useEffect,useState } from 'react';
 import type { Order,OrderQuote } from '../lib/types';
 import { Button,Feedback } from './delivery-ui';
+import { PhoneLink } from './phone-link';
 
 export const formatMoney=(value:number)=>`${new Intl.NumberFormat('ru-KZ',{maximumFractionDigits:2}).format(value)} ₸`;
 export function PaymentChoices({payer,paymentMethod,onChange,disabled}:{payer:'SENDER'|'RECIPIENT';paymentMethod:'CASH'|'KASPI_TRANSFER';onChange:(field:'payer'|'paymentMethod',value:string)=>void;disabled:boolean}){
@@ -27,5 +28,5 @@ export function SavedOrderPrice({order,courier=false}:{order:Order;courier?:bool
 }
 export function OrderContacts({order,customer}:{order:Order;customer:boolean}){
   const contacts=customer?[['Ваш курьер',order.courierName,order.courierPhone]]:[['Отправитель',order.customerName,order.senderPhone]];
-  return <>{contacts.map(([title,name,phone])=><section className="recipient-section" key={title}><h2>{title}</h2>{order.courierId&&phone?<><p>{name}</p><a className="button secondary" href={`tel:${phone.replace(/[^+\d]/g,'')}`}>Позвонить: {phone}</a></>:<p className="muted">{order.courierId?'Номер пока не подтверждён в Telegram.':'Контакт откроется после назначения курьера.'}</p>}</section>)}</>;
+  return <>{contacts.map(([title,name,phone])=><section className="recipient-section" key={title}><h2>{title}</h2>{order.courierId&&phone?<><p>{name}</p><PhoneLink className="button secondary" phone={phone}>Позвонить: {phone}</PhoneLink></>:<p className="muted">{order.courierId?'Номер пока не подтверждён в Telegram.':'Контакт откроется после назначения курьера.'}</p>}</section>)}</>;
 }

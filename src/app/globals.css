@@ -237,6 +237,10 @@ html[data-telegram="true"] .app-shell { height: var(--tg-viewport-stable-height,
 .courier-details dt { color: var(--muted); }
 .courier-details dd { margin: 0; overflow-wrap: anywhere; }
 .feedback-description .button { margin-top: 12px; width: 100%; }
+.courier-total { display: grid; gap: 10px; padding: 20px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--brand-soft); }
+.courier-total h2 { font-size: 16px; line-height: 24px; }
+.courier-total .courier-total-value { font-size: 48px; line-height: 56px; font-weight: 600; letter-spacing: -1px; color: var(--ink); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.courier-total > .muted { font-size: 13px; line-height: 20px; }
 .courier-directory-row { display: flex; flex-direction: column; gap: 8px; padding: 20px 0; border-top: 1px solid var(--line); font-size: 14px; }
 .courier-access-label { align-self: flex-start; background: var(--success-soft); color: var(--success); font-size: 12px; padding: 2px 8px; border-radius: 5px; }
 .legal-page { max-width: 780px; padding: 32px 24px 64px; margin: 0 auto; background: var(--surface); min-height: 100dvh; }

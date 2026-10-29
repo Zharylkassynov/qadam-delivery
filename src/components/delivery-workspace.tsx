@@ -15,6 +15,7 @@ import { CourierAvailability } from './courier-availability';
 import { PhoneProfilePanel,usePhoneProfile } from './phone-profile';
 import { OrderContacts,PaymentChoices,QuoteSummary,SavedOrderPrice,formatMoney } from './order-pricing';
 import { useOrderQuote } from './use-order-quote';
+import { PhoneLink } from './phone-link';
 
 type View = 'home' | 'orders' | 'profile' | 'create' | 'review' | 'detail' | 'point' | 'courierApplication' | 'adminApplications' | 'adminOrders' | 'couriers' | 'phone';
 type Filter = 'all' | 'active' | 'history';
@@ -211,5 +212,5 @@ function OrderDetail({ order, user, busy, onCancel }: { order: Order; user: User
 }
 
 function Recipient({ order }: { order: Order }) {
-  return <><section className="recipient-section"><h2>Получатель</h2>{order.recipientName && order.recipientPhone ? <><p>{order.recipientName}</p><a className="recipient-phone" href={`tel:${order.recipientPhone.replace(/[^+\d]/g, '')}`}><Icon type="phone"/>{order.recipientPhone}</a></> : <p className="muted">Контакты получателя откроются после принятия заказа</p>}</section>{order.notes && <section className="parcel-note"><h2>О доставке</h2><p className="pre-wrap">{order.notes}</p></section>}</>;
+  return <><section className="recipient-section"><h2>Получатель</h2>{order.recipientName && order.recipientPhone ? <><p>{order.recipientName}</p><PhoneLink className="recipient-phone" phone={order.recipientPhone}><Icon type="phone"/>{order.recipientPhone}</PhoneLink></> : <p className="muted">Контакты получателя откроются после принятия заказа</p>}</section>{order.notes && <section className="parcel-note"><h2>О доставке</h2><p className="pre-wrap">{order.notes}</p></section>}</>;
 }

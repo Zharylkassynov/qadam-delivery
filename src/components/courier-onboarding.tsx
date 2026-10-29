@@ -7,6 +7,7 @@ import { serviceCity } from '../lib/service-area';
 import { Button, EmptyState, Feedback, Icon, formatTime } from './delivery-ui';
 import { availabilityOptions, availabilityLabels, districts, districtLabels, type Availability, type District } from '../lib/courier-options';
 import { TelegramNotifications, useTelegramProfile } from './telegram-permissions';
+import { PhoneLink } from './phone-link';
 
 const errorText = (e: unknown) => e instanceof Error ? e.message : 'Не удалось выполнить запрос. Повторите.';
 export function ApplicationScreen({ title, children, actions, onBack, busy, wide = false, backLabel = 'Назад в профиль', courier = false, scrollKey }: { title: string; children: ReactNode; actions: ReactNode; onBack: () => void; busy: boolean; wide?: boolean; backLabel?: string; courier?: boolean; scrollKey?: string }) {
@@ -127,7 +128,7 @@ export function CourierApplicationAdmin({ user, onBack }: { user: User; onBack: 
     {!user.isAdmin ? <Feedback title="Этот раздел доступен только администратору." tone="error" role="alert"/> : <>
       {(error || loadError) && <Feedback title={error || loadError} tone="error" role="alert"/>}{notice && <Feedback title={notice} tone="success" role="status"/>}
       {loading && <p role="status">Загружаем заявки…</p>}
-      {application ? <><h1>{application.name}</h1><p className="muted">Telegram ID: {application.telegramId}</p><h2>{serviceCity} · {transportLabels[application.transport]}</h2><a href={`tel:${application.phone.replace(/[^+\d]/g, '')}`}>{application.phone}</a><p className="muted pre-wrap">{application.notes}</p><p className="muted">Подана {formatTime(application.submittedAt)}</p>
+      {application ? <><h1>{application.name}</h1><p className="muted">Telegram ID: {application.telegramId}</p><h2>{serviceCity} · {transportLabels[application.transport]}</h2><PhoneLink phone={application.phone}/><p className="muted pre-wrap">{application.notes}</p><p className="muted">Подана {formatTime(application.submittedAt)}</p>
         <ApplicationDetails application={application}/><p className="muted">Источник: {application.source ?? 'не указан'}</p><p className="muted">{application.consentAt ? `Согласие получено ${formatTime(application.consentAt)}` : 'Старая заявка: подтверждение согласия не записано.'}</p>
         {!application.applicantActive && <Feedback title="Аккаунт заявителя отключён." tone="warning"/>}
         {application.status === 'PENDING' ? <><div className="field"><label htmlFor="courier-decision-reason">Причина отклонения</label><textarea id="courier-decision-reason" rows={3} maxLength={500} value={reason} disabled={busy} onChange={(e) => { setReason(e.target.value); if (e.target.value.trim().length >= 5) setError(''); }} aria-describedby="courier-reason-hint"/><small className="field-hint" id="courier-reason-hint">Обязательно только при отклонении.</small></div><Feedback title="Проверь данные перед решением">Одобрение откроет пользователю заказы курьера.</Feedback></> : <Feedback title={application.status === 'APPROVED' ? 'Заявка одобрена' : 'Заявка отклонена'} tone={application.status === 'APPROVED' ? 'success' : 'error'}>{application.decisionReason || 'Пользователю открыт доступ курьера.'}{application.reviewedAt && <p>{application.reviewer} · {formatTime(application.reviewedAt)}</p>}</Feedback>}
