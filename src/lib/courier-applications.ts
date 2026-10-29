@@ -3,7 +3,7 @@ import type { PoolClient } from 'pg';
 import { database, transaction } from './db';
 import { AppError } from './errors';
 import { requireAdministrator } from './administrators';
-import { courierTransports, type CourierApplication, type User } from './types';
+import { courierTransports, type CourierApplication, type CourierDirectoryData, type User } from './types';
 import { availabilityOptions, districts } from './courier-options';
 import { queueApplicationDecision, queueApplicationSubmitted } from './telegram-notifications';
 
@@ -85,6 +85,12 @@ export async function reviewApplication(actor: User, id: string, input: Decision
 }
 
 export async function listCouriers(actor: User): Promise<CourierApplication[]> {
+  return (await courierDirectory(actor)).couriers;
+}
+export async function courierDirectory(actor: User): Promise<CourierDirectoryData> {
   const db = database(); await requireAdministrator(db, actor);
-  return (await db.query(`SELECT ${fields} ${from} WHERE a.status='APPROVED' AND u.active ORDER BY a.reviewed_at DESC,a.id DESC LIMIT 300`)).rows;
+  // Count the full matching set in the same snapshot, before limiting the list.
+  const { rows } = await db.query<CourierApplication & { directoryTotal: number }>(`SELECT ${fields},count(*) OVER()::int AS "directoryTotal"
+    ${from} WHERE a.status='APPROVED' AND u.active ORDER BY a.reviewed_at DESC,a.id DESC LIMIT 300`);
+  return { couriers: rows.map(({directoryTotal: _total,...courier}) => courier), total: rows[0]?.directoryTotal ?? 0 };
 }
