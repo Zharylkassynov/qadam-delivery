@@ -55,8 +55,11 @@ export function OrderCard({ order, onOpen, onAccept, busy, meta }: { order: Orde
       <div className="order-card-heading"><strong>{orderNumber(order)}</strong><Badge status={order.status}/></div>
       <AddressRow kind="pickup" address={order.pickupAddress}/><AddressRow kind="destination" address={order.destinationAddress}/>
       <p className="card-meta">{meta ?? `${formatTime(order.createdAt)}${order.courierName ? ` · ${order.courierName}` : ''}`}</p>
+      {order.pricing&&<div className="price-row"><span>{onAccept?'Выплата':'Стоимость доставки'}</span><strong>{new Intl.NumberFormat('ru-KZ').format(order.pricing.priceKzt)} ₸</strong></div>}
     </button>
-    {onAccept && <div className="available-card-action">{order.recipientPhone === null && <p className="card-meta">Контакты получателя откроются после принятия заказа</p>}<Feedback title="Оплата по согласованию">Условия доставки уточняются до начала заказа.</Feedback><Button onClick={onAccept} disabled={busy} className="wide">{busy ? 'Принимаем…' : 'Принять заказ'}</Button></div>}
+    {onAccept&&<p className="card-meta">Принимая заказ, вы разрешаете показать свой подтверждённый номер клиенту для связи по доставке.</p>}
+    {onAccept&&!order.pricing&&order.payer&&order.paymentMethod&&<p className="card-meta">{order.payer==='RECIPIENT'?'Платит получатель':'Платит отправитель'} · {order.paymentMethod==='CASH'?'наличными':'переводом Kaspi'}. Сумму согласуйте со сторонами.</p>}
+    {onAccept && <div className="available-card-action">{order.recipientPhone === null && <p className="card-meta">Контакты получателя откроются после принятия заказа</p>}{order.pricing?<Feedback title="Комиссия Qadam — 0 ₸">{order.payer==='RECIPIENT'?'Платит получатель':'Платит отправитель'} · {order.paymentMethod==='CASH'?'наличные':'перевод Kaspi'}. Дорога А → Б: {(order.pricing.distanceM/1000).toLocaleString('ru-KZ',{maximumFractionDigits:1})} км.</Feedback>:<Feedback title="Оплата по согласованию">Условия доставки уточняются до начала заказа.</Feedback>}<Button onClick={onAccept} disabled={busy} className="wide">{busy ? 'Принимаем…' : 'Принять заказ'}</Button></div>}
   </article>;
 }
 

@@ -28,6 +28,8 @@ export type OrderEvent = { id: number; status: Status; at: string; actor: string
 export type MapPoint = { latitude: number; longitude: number };
 // Route paths use Leaflet's [latitude, longitude] order, unlike provider GeoJSON.
 export type DeliveryRoute = { mode: 'drive'; distanceMeters: number; paths: [number, number][][] };
+export type OrderQuote = { id: string; expiresAt: string; priceKzt: number; breakdown: import('./pricing').PriceBreakdown; distanceM: number; durationS: number; tariffVersion: string };
+export type OrderPricing = { priceKzt: number; courierPayoutKzt: number; platformFeeKzt: number; distanceM: number; durationS: number; tariffVersion: string; breakdown: import('./pricing').PriceBreakdown };
 export type CourierLocation = MapPoint & { accuracy: number | null; capturedAt: string; receivedAt: string };
 export type Order = {
   id: string; number: string; customerId: string; customerName: string;
@@ -35,6 +37,9 @@ export type Order = {
   pickupAddress: string; destinationAddress: string; recipientName: string | null; recipientPhone: string | null;
   notes: string; status: Status; createdAt: string; updatedAt: string; events: OrderEvent[];
   pickupPoint: MapPoint | null; destinationPoint: MapPoint | null; courierLocation: CourierLocation | null;
+  pricing?: OrderPricing | null; quoteId?: string | null;
+  payer?: 'SENDER' | 'RECIPIENT' | null; paymentMethod?: 'KASPI_TRANSFER' | 'CASH' | null;
+  senderPhone?: string | null; courierPhone?: string | null;
 };
 
 export const adminOrderFilters = ['all', 'unassigned', 'active', 'history'] as const;

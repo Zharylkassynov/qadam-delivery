@@ -16,7 +16,7 @@ export default defineConfig({
     env: { DATABASE_URL: testUrl, TEST_DATABASE_URL: testUrl, APP_ORIGIN: 'http://127.0.0.1:3103', API_ORIGIN: 'http://127.0.0.1:3102',
       PORT: '3102', DEMO_AUTH_ENABLED: 'true', TELEGRAM_AUTH_ENABLED: 'true', TELEGRAM_BOT_TOKEN: testBotToken,
       TELEGRAM_WEBHOOK_SECRET: 'synthetic_test_webhook_secret_abcdefghijklmnopqrstuvwxyz',
-      TELEGRAM_WORKER_ENABLED: 'false', GEOAPIFY_API_KEY: '', QADAM_NEXT_DIST_DIR: '.next', NEXT_TELEMETRY_DISABLED: '1' },
+      TELEGRAM_WORKER_ENABLED: 'false', GEOAPIFY_API_KEY: '', TOMTOM_API_KEY:'',QADAM_NEXT_DIST_DIR: '.next', NEXT_TELEMETRY_DISABLED: '1' },
   }, {
     command: 'node scripts/apps.mjs frontend start', url: 'http://127.0.0.1:3103/',
     reuseExistingServer: false, timeout: 120000,

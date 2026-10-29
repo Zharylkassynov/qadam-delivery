@@ -8,6 +8,7 @@ import { requireAdministrator } from './administrators';
 import { enqueueBotMessage, drainBotOutbox } from './telegram-notifications';
 import type { BotTransport } from './telegram-bot-api';
 import type { User } from './types';
+import { saveTelegramContact } from './user-profiles';
 
 const id = z.number().int().positive().max(2 ** 52 - 1);
 const sender = z.object({ id, first_name: z.string().max(200).optional() });
@@ -45,7 +46,10 @@ async function handleUpdate(update: TelegramUpdate) {
     const telegramId = String(m.from.id);
     if (m.contact?.user_id === m.from.id) {
       const phone = m.contact.phone_number.replace(/[^+\d]/g, '');
-      if (/^\+?\d{7,15}$/.test(phone)) await permitMessages(telegramId, phone);
+      if (/^\+?\d{7,15}$/.test(phone)) {
+        await permitMessages(telegramId, phone);
+        await saveTelegramContact(telegramId,phone,update.update_id);
+      }
     }
     if (m.write_access_allowed) await permitMessages(telegramId);
     const start = /^\/start(?:@[A-Za-z0-9_]+)?(?:\s+([^\s]+))?\s*$/.exec(m.text ?? '');

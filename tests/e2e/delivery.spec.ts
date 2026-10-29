@@ -66,13 +66,17 @@ test('customer and courier complete a delivery; polling, reopening and history r
     await customer.getByRole('button', { name: 'Проверить заказ', exact: true }).click();
     await expect(customer.getByRole('heading', { name: 'Всё верно?', exact: true })).toBeVisible();
     await expect(customer.getByRole('main')).toContainText(pickup);
+    await customer.getByRole('radio', { name: 'Получатель', exact: true }).check();
+    await customer.getByRole('radio', { name: /Наличные/ }).check();
     await customer.getByRole('button', { name: 'Подтвердить заказ', exact: true }).click();
     await expect(customer.getByRole('status')).toContainText('Заказ создан');
+    await expect(customer.getByText(/Платит получатель · наличными/)).toBeVisible();
     await customer.screenshot({ path: testInfo.outputPath('customer-desktop.png'), fullPage: true });
     const card = courier.getByRole('button', { name: /^Открыть заказ/ }).filter({ hasText: pickup });
     await expect(card).toBeVisible({ timeout: 20000 });
     const orderButton = (await card.getAttribute('aria-label'))!;
     await card.click();
+    await expect(courier.getByText(/Платит получатель · наличными/)).toBeVisible();
     await courier.getByRole('button', { name: 'Принять заказ', exact: true }).click();
     await expect(courier.getByRole('button', { name: 'Посылка у меня', exact: true })).toBeInViewport();
     await courier.screenshot({ path: testInfo.outputPath('courier-mobile-accepted.png'), fullPage: true });
@@ -96,6 +100,7 @@ test('customer and courier complete a delivery; polling, reopening and history r
     const history = reopened.getByRole('region', { name: 'Детали заказа' });
     await expect(history.getByRole('heading', { name: 'Посылка у получателя', exact: true })).toBeVisible();
     await expect(history.locator('.timeline li')).toHaveCount(6);
+    await expect(history.getByText(/Платит получатель · наличными/)).toBeVisible();
     // A fresh login also reconstructs history from the database.
     await reopened.getByRole('button', { name: 'Выйти', exact: true }).click();
     await expect(reopened.getByLabel('Логин', { exact: true })).toBeVisible();

@@ -35,7 +35,8 @@ export function DeliveryApp() {
   const [refresh, setRefresh] = useState(0);
   const revision = useRef(0);
   const busyRef = useRef(false);
-  const pendingCreate = useRef<{ payload: string; key: string } | null>(null);
+  const pendingCreate = useRef<{ payload: string; key: string; uncertain?:boolean } | null>(null);
+  const lastMutationStatus=useRef<number|null>(null);
   const bootTask = useRef<Promise<void> | null>(null);
 
   const boot = useCallback(async () => {
@@ -149,7 +150,7 @@ export function DeliveryApp() {
 
   async function mutate(path: string, body: unknown, success: string) {
     if (busyRef.current) return false;
-    setBusy(true); busyRef.current = true; revision.current++; setError(''); setNotice('');
+    setBusy(true); busyRef.current = true; revision.current++; setError(''); setNotice('');lastMutationStatus.current=null;
     try {
       const { order } = await api<{ order: Order }>(path, body);
       setOrders((previous) => [order, ...previous.filter((item) => item.id !== order.id)]);
@@ -157,6 +158,7 @@ export function DeliveryApp() {
       setSelected(order.id); setNotice(success);
       return true;
     } catch (error) {
+      lastMutationStatus.current=error instanceof ApiError?error.status:0;
       setError(message(error));
       if (error instanceof ApiError && error.status === 401) { setUser(null); setOrders([]); }
       return false;
@@ -165,11 +167,19 @@ export function DeliveryApp() {
 
   async function create(fields: ReturnType<typeof orderPayload>) {
     const payload = JSON.stringify(fields);
+    // Resolve an ambiguous previous create before using a new quote/request key.
+    // A lost response may have committed the old order at its confirmed price.
+    if(pendingCreate.current?.uncertain&&pendingCreate.current.payload!==payload){
+      const previous=pendingCreate.current;
+      if(await mutate('/api/orders',{...JSON.parse(previous.payload),requestKey:previous.key},'Заказ создан. Он уже доступен курьерам.')){pendingCreate.current=null;return true;}
+      if(lastMutationStatus.current!==409)return false;
+    }
     if (pendingCreate.current?.payload !== payload) pendingCreate.current = { payload, key: crypto.randomUUID() };
     if (await mutate('/api/orders', { ...fields, requestKey: pendingCreate.current.key }, 'Заказ создан. Он уже доступен курьерам.')) {
       pendingCreate.current = null;
       return true;
     }
+    pendingCreate.current.uncertain=lastMutationStatus.current===0||lastMutationStatus.current===503;
     return false;
   }
 

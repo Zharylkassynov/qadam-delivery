@@ -14,6 +14,14 @@ test('production accepts the restricted transaction pooler and exact HTTPS origi
   assert.equal(appOrigin(production), production.APP_ORIGIN);
 });
 
+test('routing candidate key stays server-only, including frontend builds and Preview',()=>{
+  const key='synthetic-tomtom-key-12345678';
+  assert.doesNotThrow(()=>validateDeployment({...production,TOMTOM_API_KEY:key}));
+  assert.throws(()=>validateDeployment({...production,TOMTOM_API_KEY:'malformed key'}));
+  assert.throws(()=>validateDeployment({QADAM_FRONTEND_ONLY:'true',NEXT_PUBLIC_API_ORIGIN:'https://api.example.test',TOMTOM_API_KEY:key}));
+  assert.throws(()=>validateDeployment({VERCEL:'1',VERCEL_ENV:'preview',VERCEL_URL:'test.vercel.app',TOMTOM_API_KEY:key}));
+});
+
 test('public deployments reject localhost, insecure URLs and non-origin URLs', () => {
   for (const APP_ORIGIN of ['http://qadam.example', 'http://localhost:3000', 'https://127.0.0.1', 'https://example.com/path', 'https://user:password@example.com', 'https://example.com?key=value', 'https://example.com#fragment']) {
     assert.throws(() => validateDeployment({ ...production, APP_ORIGIN }));

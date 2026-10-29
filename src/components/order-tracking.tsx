@@ -52,7 +52,7 @@ function OrderRoute({ order, markers }: { order: Order; markers: MapMarker[] }) 
   return <>
     <DeliveryMap markers={markers} route={route} focusCourier/>
     {busy && <Feedback role="status" title="Строим маршрут…">Адреса и действия с заказом доступны во время расчёта.</Feedback>}
-    {route && <Feedback role="status" title={`Автомаршрут · ${distance}`}>По дорогам от А к Б. Без учёта пробок.</Feedback>}
+    {route && <Feedback role="status" title={`Автомаршрут · ${distance}`}>{order.pricing?'Текущий план дороги А → Б. Он может отличаться от первоначального; сохранённая цена заказа не меняется.':'По дорогам от А к Б. Без учёта пробок.'}</Feedback>}
     {error && <Feedback tone="warning" role="alert" title="Не удалось построить маршрут">{error} Точки А и Б сохранены.<Button variant="secondary" className="wide" onClick={() => setAttempt(value => value + 1)}>Повторить маршрут</Button></Feedback>}
     {!hasPoints && <p className="muted">Для маршрута нужны обе точки: отправление и доставка. Можно открыть навигацию по адресам.</p>}
   </>;
