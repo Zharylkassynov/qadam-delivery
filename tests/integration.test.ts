@@ -7,7 +7,7 @@ import { database, closeDatabase, transaction } from '../src/lib/db';
 import { migrate } from '../scripts/migrate';
 import { hashPassword, login, loginTelegram, logout, getSession } from '../src/lib/auth';
 import { signedTelegramData, testBotToken } from './telegram-fixture';
-import { applicationSchema, decisionSchema, listApplications, listCouriers, ownApplication, reviewApplication, submitApplication } from '../src/lib/courier-applications';
+import { applicationSchema, courierDirectory, decisionSchema, listApplications, listCouriers, ownApplication, reviewApplication, submitApplication } from '../src/lib/courier-applications';
 import { acceptOrder, createOrder, createOrderSchema, listOrders, transitionOrder, type CreateOrder } from '../src/lib/orders';
 import { AppError } from '../src/lib/errors';
 import type { User } from '../src/lib/types';
@@ -126,6 +126,38 @@ test('bot start, verified contact, application notices and admin callbacks are p
     const telegramIds = users.flatMap(u => u.telegramId ? [u.telegramId] : []);
     await database().query('DELETE FROM qadam.telegram_outbox WHERE telegram_user_id=ANY($1::bigint[])', [telegramIds]);
     await database().query('DELETE FROM qadam.telegram_bot_chats WHERE telegram_user_id=ANY($1::bigint[])', [telegramIds]);
+  }
+});
+
+test('admin courier total counts approved active accounts beyond the 300-row list and checks live membership', async () => {
+  const admin=await telegramAccount('Счётчик — администратор');
+  await database().query('INSERT INTO qadam.administrators(user_id) VALUES($1)',[admin.user.id]);
+  const fixtureIds=Array.from({length:304},()=>randomUUID());
+  const telegramBase=4200000000000+Math.floor(Math.random()*1000000000);
+  try {
+    await rejectsStatus(courierDirectory({...customer,isAdmin:true}),403);
+    const baseline=await courierDirectory(admin.user);
+    await database().query(`INSERT INTO qadam.users(id,email,name,role,password_hash,active)
+      SELECT id,'directory-'||id::text||'@qadam.demo','Счётчик '||n,'CUSTOMER','unused-test-hash',n<>302
+      FROM unnest($1::uuid[]) WITH ORDINALITY fixture(id,n)`,[fixtureIds]);
+    await database().query(`INSERT INTO qadam.telegram_identities(telegram_user_id,user_id)
+      SELECT $2::bigint+n,id FROM unnest($1::uuid[]) WITH ORDINALITY fixture(id,n)`,[fixtureIds,telegramBase]);
+    await database().query(`INSERT INTO qadam.courier_applications(user_id,phone,transport,status,reviewed_at,reviewed_by,decision_reason)
+      SELECT id,'+77000000000','FOOT',CASE WHEN n=303 THEN 'PENDING' WHEN n=304 THEN 'REJECTED' ELSE 'APPROVED' END,
+        CASE WHEN n<>303 THEN now() END,CASE WHEN n<>303 THEN $2::uuid END,CASE WHEN n=304 THEN 'Нужны уточнения' ELSE '' END
+      FROM unnest($1::uuid[]) WITH ORDINALITY fixture(id,n)`,[fixtureIds,admin.user.id]);
+    const directory=await courierDirectory(admin.user);
+    assert.equal(directory.total,baseline.total+301);
+    assert.equal(directory.couriers.length,300);
+    assert.equal(new Set(directory.couriers.map(c=>c.userId)).size,300);
+    assert.ok(directory.couriers.every(c=>c.status==='APPROVED'&&c.applicantActive&&!('directoryTotal' in c)));
+    await database().query('UPDATE qadam.users SET active=false WHERE id=$1',[fixtureIds[0]]);
+    assert.equal((await courierDirectory(admin.user)).total,baseline.total+300);
+    await database().query('DELETE FROM qadam.administrators WHERE user_id=$1',[admin.user.id]);
+    await rejectsStatus(courierDirectory({...admin.user,isAdmin:true}),403);
+  } finally {
+    await database().query('DELETE FROM qadam.users WHERE id=ANY($1::uuid[])',[fixtureIds]);
+    await database().query('DELETE FROM qadam.administrators WHERE user_id=$1',[admin.user.id]);
   }
 });
 

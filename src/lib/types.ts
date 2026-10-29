@@ -44,5 +44,6 @@ export type Order = {
 
 export const adminOrderFilters = ['all', 'unassigned', 'active', 'history'] as const;
 export type AdminOrderFilter = typeof adminOrderFilters[number];
+export type CourierDirectoryData = { couriers: CourierApplication[]; total: number };
 export type AdminOrder = Order & { courierTransport: CourierApplication['transport'] | null };
 export type AdminOrdersPage = { orders: Order[]; total: number; counts: Record<AdminOrderFilter, number> };
