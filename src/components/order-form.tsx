@@ -10,14 +10,16 @@ export type OrderDraft = {
   pickupAddress: string; destinationAddress: string; recipientName: string; recipientPhone: string;
   parcelType: typeof parcelTypes[number]; parcelDescription: string; notes: string;
   pickupPoint: MapPoint | null; destinationPoint: MapPoint | null;
+  payer: 'SENDER'|'RECIPIENT'; paymentMethod: 'KASPI_TRANSFER'|'CASH';
 };
-export const emptyDraft: OrderDraft = { pickupAddress: '', destinationAddress: '', recipientName: '', recipientPhone: '', parcelType: 'Посылка', parcelDescription: '', notes: '', pickupPoint: null, destinationPoint: null };
+export const emptyDraft: OrderDraft = { pickupAddress: '', destinationAddress: '', recipientName: '', recipientPhone: '', parcelType: 'Посылка', parcelDescription: '', notes: '', pickupPoint: null, destinationPoint: null, payer:'SENDER',paymentMethod:'KASPI_TRANSFER' };
 
 // Keep the existing API/database contract: parcel information is persisted in notes.
-export function orderPayload(draft: OrderDraft) {
+export function orderPayload(draft: OrderDraft,quoteId?:string) {
   return {
     pickupAddress: draft.pickupAddress.trim(), destinationAddress: draft.destinationAddress.trim(),
     pickupPoint: draft.pickupPoint, destinationPoint: draft.destinationPoint,
+    payer:draft.payer,paymentMethod:draft.paymentMethod,shareContact:true as const,...(quoteId?{quoteId,transport:'CAR' as const}:{}),
     recipientName: draft.recipientName.trim(), recipientPhone: draft.recipientPhone.trim(),
     notes: [`Тип отправления: ${draft.parcelType}`, draft.parcelDescription.trim() && `О посылке: ${draft.parcelDescription.trim()}`, draft.notes.trim() && `Комментарий: ${draft.notes.trim()}`].filter(Boolean).join('\n'),
   };
@@ -70,7 +72,7 @@ export function OrderForm({ draft, onChange, onReview, onPoint, busy }: { draft:
   </form>;
 }
 
-export function OrderReview({ draft, onEdit, busy }: { draft: OrderDraft; onEdit: () => void; busy: boolean }) {
+export function OrderReview({ draft, onEdit, busy,pricing }: { draft: OrderDraft; onEdit: () => void; busy: boolean;pricing?:React.ReactNode }) {
   return <div className="form-fields"><div className="screen-heading"><h1 tabIndex={-1}>Всё верно?</h1><p>Шаг 3 из 3 · проверьте перед отправкой</p></div>
     <RouteCard pickup={draft.pickupAddress} destination={draft.destinationAddress}/>
     {(draft.pickupPoint || draft.destinationPoint) && <DeliveryMap markers={[
@@ -80,7 +82,7 @@ export function OrderReview({ draft, onEdit, busy }: { draft: OrderDraft; onEdit
     <section className="review-section"><h2>Получатель</h2><p>{draft.recipientName}<br/>{draft.recipientPhone}</p></section>
     <section className="review-section"><h2>{draft.parcelType}</h2>{draft.parcelDescription && <p>{draft.parcelDescription}</p>}</section>
     {draft.notes && <section className="review-section"><h2>Комментарий курьеру</h2><p className="pre-wrap">{draft.notes}</p></section>}
-    <PriceNote/><Feedback title="Заказ появится у курьеров">После подтверждения сохраним доставку. Стоимость согласовывается отдельно.</Feedback>
+    {pricing??<><PriceNote/><Feedback title="Заказ появится у курьеров">После подтверждения сохраним доставку. Стоимость согласовывается отдельно.</Feedback></>}
     <Button variant="secondary" className="wide" onClick={onEdit} disabled={busy}>Изменить данные</Button>
   </div>;
 }

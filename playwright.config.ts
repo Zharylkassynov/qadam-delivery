@@ -20,12 +20,12 @@ export default defineConfig({
     url: 'http://127.0.0.1:3100/api/session',
     reuseExistingServer: false,
     timeout: 120000,
-    env: { DATABASE_URL: testUrl, TELEGRAM_WORKER_ENABLED: 'false', DEMO_AUTH_ENABLED: 'true', TELEGRAM_AUTH_ENABLED: 'true', TELEGRAM_BOT_TOKEN: testBotToken, GEOAPIFY_API_KEY: '', APP_ORIGIN: 'http://127.0.0.1:3100', QADAM_NEXT_DIST_DIR: '.next', NEXT_TELEMETRY_DISABLED: '1' },
+    env: { DATABASE_URL: testUrl, TELEGRAM_WORKER_ENABLED: 'false', DEMO_AUTH_ENABLED: 'true', TELEGRAM_AUTH_ENABLED: 'true', TELEGRAM_BOT_TOKEN: testBotToken, GEOAPIFY_API_KEY: '', TOMTOM_API_KEY:'',APP_ORIGIN: 'http://127.0.0.1:3100', QADAM_NEXT_DIST_DIR: '.next', NEXT_TELEMETRY_DISABLED: '1' },
   }, {
     command: 'npm run start -- --port 3101',
     url: 'http://127.0.0.1:3101/api/session',
     reuseExistingServer: false,
     timeout: 120000,
-    env: { DATABASE_URL: testUrl, TELEGRAM_WORKER_ENABLED: 'false', DEMO_AUTH_ENABLED: 'false', TELEGRAM_AUTH_ENABLED: 'true', TELEGRAM_BOT_TOKEN: testBotToken, GEOAPIFY_API_KEY: '', APP_ORIGIN: 'http://127.0.0.1:3101', QADAM_NEXT_DIST_DIR: '.next', NEXT_TELEMETRY_DISABLED: '1' },
+    env: { DATABASE_URL: testUrl, TELEGRAM_WORKER_ENABLED: 'false', DEMO_AUTH_ENABLED: 'false', TELEGRAM_AUTH_ENABLED: 'true', TELEGRAM_BOT_TOKEN: testBotToken, GEOAPIFY_API_KEY: '', TOMTOM_API_KEY:'',APP_ORIGIN: 'http://127.0.0.1:3101', QADAM_NEXT_DIST_DIR: '.next', NEXT_TELEMETRY_DISABLED: '1' },
   }],
 });

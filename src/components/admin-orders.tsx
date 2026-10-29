@@ -7,6 +7,7 @@ import { serviceCity } from '../lib/service-area';
 import { ApplicationScreen } from './courier-onboarding';
 import { Badge, Button, EmptyState, Feedback, OrderCard, RouteCard, Skeletons, Timeline, formatTime, orderNumber } from './delivery-ui';
 import { OrderTracking } from './order-tracking';
+import { SavedOrderPrice } from './order-pricing';
 
 const labels: Record<AdminOrderFilter, string> = { all: 'Все', unassigned: 'Без курьера', active: 'Активные', history: 'История' };
 const message = (e: unknown) => e instanceof Error ? e.message : 'Не удалось обновить данные. Повторите.';
@@ -127,6 +128,8 @@ function AdminOrderDetail({ order, user }: { order: AdminOrder; user: User }) {
     {order.courierName && <div className="admin-contact"><h2>{order.courierName}</h2><p className="muted">{order.courierTransport ? transportLabels[order.courierTransport] : 'Курьер'}</p></div>}
     {activeCourier && <OrderTracking order={order} user={user} readOnly/>}
     <RouteCard pickup={order.pickupAddress} destination={order.destinationAddress}/>
+      <SavedOrderPrice order={order}/>
+      {(order.senderPhone||order.courierPhone)&&<section className="admin-contact"><h2>Контакты доставки</h2>{order.senderPhone&&<p>Отправитель: <a href={`tel:${order.senderPhone.replace(/[^+\d]/g,'')}`}>{order.senderPhone}</a></p>}{order.courierPhone&&<p>Курьер: <a href={`tel:${order.courierPhone.replace(/[^+\d]/g,'')}`}>{order.courierPhone}</a></p>}</section>}
     <div className="admin-contact"><small>Клиент</small><p>{order.customerName}</p><small>Получатель</small><p>{order.recipientName}{order.recipientPhone && <> · <a href={`tel:${order.recipientPhone.replace(/[^+\d]/g, '')}`}>{order.recipientPhone}</a></>}</p></div>
     {order.notes && <p className="muted pre-wrap">{order.notes}</p>}
     {order.status === 'SEARCHING_FOR_COURIER' && <Feedback title="Заказ доступен курьерам">Одобренный курьер сам выбирает доставку и нажимает «Принять заказ».</Feedback>}

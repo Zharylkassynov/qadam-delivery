@@ -156,7 +156,9 @@ test('waiting-order alerts atomically claim ten-minute orders, retry when no adm
   const young = await createOrder(customer,payload()); await alertWaitingOrders(); assert.equal((await jobs(young.id)).length,0);
   await acceptOrder(courier,a.id);
   const sentToAdmin: unknown[]=[];
-  await drainBotOutbox(async (_m,b) => { if(String(b.chat_id)===admin.telegramId) sentToAdmin.push(b); return {message_id:1}; },1000);
+  // Other old synthetic orders can legitimately alert this new administrator.
+  // Only the accepted order's stale notification must be suppressed.
+  await drainBotOutbox(async (_m,b) => { if(String(b.chat_id)===admin.telegramId&&JSON.stringify(b.reply_markup).includes(`order=${a.id}`)) sentToAdmin.push(b); return {message_id:1}; },1000);
   assert.equal(sentToAdmin.length,0);
 });
 

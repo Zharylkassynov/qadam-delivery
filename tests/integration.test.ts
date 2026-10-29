@@ -94,8 +94,9 @@ test('bot start, verified contact, application notices and admin callbacks are p
     assert.deepEqual(await telegramProfile(candidate.user), { phone: '+77010000000', allowsWrite: true });
     const application = await submitApplication(candidate.user, { ...applicationInput(), source: 'courier_kaspi' });
     await submitApplication(candidate.user, { ...applicationInput(), source: 'courier_kaspi' });
-    await drainBotOutbox(transport);
-    assert.equal(messages.filter(m => String(m.body.text).startsWith('Новая заявка')).length, 1);
+    // A worker batch is bounded; unrelated synthetic jobs may precede this one.
+    await drainBotOutbox(transport,1000);
+    assert.equal(messages.filter(m => String(m.body.text).startsWith('Новая заявка')&&JSON.stringify(m.body.reply_markup).includes(application.id)).length, 1);
     const callback = (telegramId: string) => ({ update_id: ++updateId, callback_query: { id: `query-${updateId}`, from: { id: Number(telegramId) }, data: `app:approve:${application.id}`, message: { message_id: 20, chat: { id: Number(telegramId), type: 'private' } } } });
     const denied = callback(candidate.user.telegramId!); updateIds.push(denied.update_id);
     await receiveTelegramUpdate(denied); await processTelegramJobs(transport);

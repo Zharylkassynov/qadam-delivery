@@ -18,6 +18,19 @@
   --danger-soft: #fff0f1;
   --radius: 14px;
 }
+.quote-price{border-top:2px solid var(--ink);padding-top:18px;display:grid;gap:12px;min-width:0}
+.quote-price-row{display:flex;align-items:baseline;justify-content:space-between;gap:12px}
+.quote-price-row strong{font-size:30px;line-height:38px;letter-spacing:-.5px;white-space:nowrap;font-weight:600;font-variant-numeric:tabular-nums}
+.payment-hint{font-size:13px;line-height:20px}
+.price-breakdown{border-top:1px solid var(--line);padding-top:12px;font-size:14px}
+.price-breakdown summary{cursor:pointer;color:var(--brand);padding:8px 0;min-height:40px}
+.price-breakdown summary:focus-visible{outline:3px solid var(--brand);outline-offset:3px}
+.price-breakdown dl{display:grid;gap:10px;margin:12px 0 0}.price-breakdown dl>div{display:flex;justify-content:space-between;gap:12px}.price-breakdown dd{margin:0;white-space:nowrap}
+.payment-choices{border:0;margin:0;padding:0;min-width:0}.payment-choices legend{font-size:18px;line-height:26px;font-weight:600;margin-bottom:12px}
+.payment-choice{display:flex;align-items:center;gap:10px;min-height:54px;padding:12px;border:1px solid #b7c7d6;border-radius:10px;margin-bottom:8px;font-size:14px;cursor:pointer;flex:1}
+.payment-choice:has(input:checked){background:var(--brand-soft);border-color:var(--brand)}.payment-choice input{width:18px;height:18px;accent-color:var(--brand);margin:0;flex-shrink:0}.payment-choice input:focus-visible{outline:3px solid var(--brand);outline-offset:3px}.payment-choice small{display:block;color:var(--muted)}
+.phone-number{font-size:20px;line-height:28px;font-variant-numeric:tabular-nums}
+@media(max-width:375px){.quote-price-row{align-items:flex-start;flex-wrap:wrap}.quote-price-row strong{font-size:28px}.payment-choice{padding:10px 8px;font-size:13px}}
 * { box-sizing: border-box; }
 html, body { margin: 0; min-width: 320px; }
 body { background: var(--canvas); color: var(--ink); font-family: var(--font-onest), Arial, sans-serif; font-size: 16px; line-height: 24px; -webkit-font-smoothing: antialiased; }

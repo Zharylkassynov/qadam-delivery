@@ -12,8 +12,11 @@ import { CustomerHome } from './customer-home';
 import { OrderTracking } from './order-tracking';
 import { AdminOrders } from './admin-orders';
 import { CourierAvailability } from './courier-availability';
+import { PhoneProfilePanel,usePhoneProfile } from './phone-profile';
+import { OrderContacts,PaymentChoices,QuoteSummary,SavedOrderPrice,formatMoney } from './order-pricing';
+import { useOrderQuote } from './use-order-quote';
 
-type View = 'home' | 'orders' | 'profile' | 'create' | 'review' | 'detail' | 'point' | 'courierApplication' | 'adminApplications' | 'adminOrders' | 'couriers';
+type View = 'home' | 'orders' | 'profile' | 'create' | 'review' | 'detail' | 'point' | 'courierApplication' | 'adminApplications' | 'adminOrders' | 'couriers' | 'phone';
 type Filter = 'all' | 'active' | 'history';
 type Props = {
   user: User; telegram: boolean; orders: Order[]; loading: boolean; busy: boolean; error: string; notice: string;
@@ -38,6 +41,9 @@ export function DeliveryWorkspace(props: Props) {
   const [pointSequence, setPointSequence] = useState(false);
   const [pointSession, setPointSession] = useState(0);
   const [creatingNew, setCreatingNew] = useState(false);
+  const [phoneReturn,setPhoneReturn]=useState<View>('profile');
+  const phone=usePhoneProfile(!!user.telegramId);
+  const pricing=useOrderQuote(view==='review',draft);
   const bodyRef = useRef<HTMLElement>(null);
   const customer = user.role === 'CUSTOMER';
   const ownOrders = customer ? orders : orders.filter((order) => order.courierId === user.id);
@@ -92,24 +98,28 @@ export function DeliveryWorkspace(props: Props) {
     else navigate(pointOrigin);
   }
   function back() {
+    if(view==='phone'){navigate(phoneReturn);return;}
     if (view === 'point' && pointMode === 'map') { setPointMode('search'); return; }
     navigate(view === 'point' ? pointOrigin : view === 'review' ? 'create' : 'home');
   }
   async function accept(order: Order) {
-    if (await props.onMutate(`/api/orders/${order.id}/accept`, {}, 'Заказ принят. Заберите посылку у отправителя.')) setView('detail');
+    if(order.pricing&&!phone.profile.phoneVerified){props.onSelect(order.id);setPhoneReturn('detail');navigate('phone');return;}
+    if (await props.onMutate(`/api/orders/${order.id}/accept`, {shareContact:true}, 'Заказ принят. Заберите посылку у отправителя.')) setView('detail');
   }
   async function advance(order: Order) {
     const target = nextStatus[order.status];
     if (target) await props.onMutate(`/api/orders/${order.id}/status`, { status: target }, target === 'DELIVERED' ? 'Доставка завершена. Заказ сохранён в истории.' : 'Статус обновлён. Клиент увидит изменение автоматически.');
   }
   async function confirmOrder() {
-    if (await props.onCreate(orderPayload(draft))) { setDraft({ ...emptyDraft }); setCreatingNew(false); setView('detail'); }
+    if(!pricing.ready)return;
+    if(pricing.enabled&&!phone.profile.phoneVerified){setPhoneReturn('review');navigate('phone');return;}
+    if (await props.onCreate(orderPayload(draft,pricing.enabled?pricing.quote?.id:undefined))) { setDraft({ ...emptyDraft }); setCreatingNew(false); setView('detail'); }
   }
   const actionable = view === 'detail' && detail && !customer && (detail.status === 'SEARCHING_FOR_COURIER' || (detail.courierId === user.id && nextStatus[detail.status]));
   const completedDetail = view === 'detail' && detail && finished(detail);
-  const hasFooter = view === 'create' || view === 'review' || view === 'point' || !!actionable || !!completedDetail;
+  const hasFooter = view === 'create' || view === 'review' || view === 'point' || view==='phone' || !!actionable || !!completedDetail;
   const showNav = view === 'home' || view === 'orders' || view === 'profile';
-  const title = view === 'point' ? pointMode === 'map' ? `Уточните точку ${pointKind === 'pickup' ? 'А' : 'Б'}` : pointKind === 'pickup' ? 'Откуда забрать?' : 'Куда доставить?' : view === 'home' ? customer ? serviceCity : 'Заказы рядом' : view === 'orders' ? 'Мои заказы' : view === 'profile' ? 'Профиль' : view === 'create' ? 'Получатель и посылка' : view === 'review' ? 'Проверка заказа' : detail ? `Заказ ${orderNumber(detail)}` : 'Заказ недоступен';
+  const title = view === 'phone' ? 'Телефон для связи' : view === 'point' ? pointMode === 'map' ? `Уточните точку ${pointKind === 'pickup' ? 'А' : 'Б'}` : pointKind === 'pickup' ? 'Откуда забрать?' : 'Куда доставить?' : view === 'home' ? customer ? serviceCity : 'Заказы рядом' : view === 'orders' ? 'Мои заказы' : view === 'profile' ? 'Профиль' : view === 'create' ? 'Получатель и посылка' : view === 'review' ? 'Проверка заказа' : detail ? `Заказ ${orderNumber(detail)}` : 'Заказ недоступен';
   const navItems: { view: View; label: string; icon: 'box' | 'clock' | 'person' }[] = [
     { view: 'home', label: customer ? 'Доставка' : 'Доступные', icon: 'box' },
     { view: 'orders', label: customer ? 'Заказы' : 'Мои заказы', icon: 'clock' },
@@ -149,15 +159,21 @@ export function DeliveryWorkspace(props: Props) {
 
           {view === 'create' && customer && <OrderForm draft={draft} onChange={setDraft} onReview={() => navigate('review')} onPoint={(kind) => editAddress(kind, 'create')} busy={busy}/>}
           {view === 'point' && customer && <AddressPicker key={pointSession} kind={pointKind} address={draft[`${pointKind}Address`]} pickupAddress={draft.pickupAddress} point={point} onChange={setPoint} onAddress={setPointAddress} mode={pointMode} onModeChange={setPointMode}/>}
-          {view === 'review' && customer && <OrderReview draft={draft} onEdit={() => navigate('create')} busy={busy}/>}
+          {view === 'review' && customer && <OrderReview draft={draft} onEdit={() => navigate('create')} busy={busy} pricing={<>
+            {pricing.enabled===false?<PriceNote/>:<><p className="muted">Автомобиль</p><QuoteSummary quote={pricing.quote} previousPrice={pricing.previousPrice} busy={pricing.busy} error={pricing.error} onRetry={pricing.retry} onExpired={pricing.expire}/></>}
+            <PaymentChoices payer={draft.payer} paymentMethod={draft.paymentMethod} disabled={busy} onChange={(field,value)=>setDraft(current=>({...current,[field]:value}))}/>
+            <p className="muted">Подтверждённый номер из Telegram будет доступен курьеру после принятия заказа.{pricing.enabled&&!phone.profile.phoneVerified?' Перед созданием подтвердите свой номер для связи.':''}</p>
+          </>}/>}
+          {view==='phone'&&<PhoneProfilePanel profile={phone.profile} busy={phone.busy} notice={phone.notice}/>}
           {view === 'detail' && (detail ? <OrderDetail order={detail} user={user} onCancel={async () => { if (window.confirm('Отменить этот заказ?')) await props.onMutate(`/api/orders/${detail.id}/status`, { status: 'CANCELLED' }, 'Заказ отменён и сохранён в истории.'); }} busy={busy}/> : <EmptyState title="Заказ больше недоступен" action={<Button variant="secondary" onClick={() => navigate('home')}>К списку заказов</Button>}>Возможно, его уже принял другой курьер. Обновите список и выберите другую доставку.</EmptyState>)}
           {view === 'profile' && <><h1 className="sr-only" tabIndex={-1}>Профиль</h1><div className="profile-card"><span className="avatar large">{initials(user.name)}</span><h2>{user.name}</h2><p className="muted">{customer ? 'Клиент' : 'Курьер'}{user.telegramId && ' · Telegram'}</p><p>{user.telegramId ? `Telegram ID: ${user.telegramId}` : user.email}</p></div><div className="profile-stats"><div><strong>{activeOrders.length}</strong><span>Активные</span></div><div><strong>{completed.length}</strong><span>Доставлены</span></div></div>
+            {user.telegramId&&<Button variant="secondary" onClick={()=>{setPhoneReturn('profile');navigate('phone');}}>Мой телефон</Button>}
             {user.telegramId && <><Feedback title={customer ? 'Доставляй с Qadam' : 'Доступ курьера открыт'}>{customer ? 'Подай заявку. Администратор проверит её и откроет доступ к заказам.' : 'Принимай заказы и отмечай каждый шаг доставки.'}</Feedback><Button onClick={() => navigate('courierApplication')} disabled={busy}>{customer ? 'Стать курьером' : 'Моя заявка курьера'}</Button></>}
             {user.isAdmin && <><h2>Администрирование</h2><Button variant="secondary" onClick={() => navigate('adminOrders')} disabled={busy}>Все заказы</Button><Button variant="secondary" onClick={() => navigate('adminApplications')} disabled={busy}>Заявки курьеров</Button><Button variant="secondary" onClick={() => navigate('couriers')} disabled={busy}>Курьеры</Button></>}
             {!props.telegram && <Button variant="secondary" onClick={() => void props.onSignOut()} disabled={busy}>Выйти из аккаунта</Button>}</>}
         </div>
       </main>
-      {hasFooter && <footer key={view} className={`sticky-action ${view === 'point' ? 'address-action' : ''}`}>{view === 'point' ? <Button className="wide" disabled={busy || pointAddress.trim().length < 5 || pointAddress.trim().length > 200 || (pointMode === 'map' && !point)} onClick={confirmAddress}>{pointMode === 'map' ? 'Подтвердить точку' : 'Выбрать адрес'}</Button> : view === 'create' ? <Button form="delivery-form" type="submit" className="wide" disabled={busy}>Проверить заказ</Button> : view === 'review' ? <Button className="wide" onClick={() => void confirmOrder()} disabled={busy}>{busy ? 'Сохраняем…' : 'Подтвердить заказ'}</Button> : completedDetail ? <Button className="wide" onClick={history} disabled={busy}>В историю заказов</Button> : actionable && detail ? <Button className="wide" disabled={busy} onClick={() => void (detail.status === 'SEARCHING_FOR_COURIER' ? accept(detail) : advance(detail))}>{busy ? 'Сохраняем…' : detail.status === 'SEARCHING_FOR_COURIER' ? 'Принять заказ' : actionLabels[detail.status]}</Button> : null}</footer>}
+      {hasFooter && <footer key={view} className={`sticky-action ${view === 'point' ? 'address-action' : ''}`}>{view==='phone'?<Button className="wide" disabled={phone.busy} onClick={()=>phone.profile.phoneVerified?navigate(phoneReturn):void phone.request()}>{phone.busy?'Проверяем номер…':phone.profile.phoneVerified?'Вернуться к заказу':'Поделиться номером'}</Button>:view === 'point' ? <Button className="wide" disabled={busy || pointAddress.trim().length < 5 || pointAddress.trim().length > 200 || (pointMode === 'map' && !point)} onClick={confirmAddress}>{pointMode === 'map' ? 'Подтвердить точку' : 'Выбрать адрес'}</Button> : view === 'create' ? <Button form="delivery-form" type="submit" className="wide" disabled={busy}>Проверить заказ</Button> : view === 'review' ? <Button className="wide" onClick={() => void confirmOrder()} disabled={busy||!pricing.ready}>{busy ? 'Сохраняем…' : pricing.enabled?phone.profile.phoneVerified?`Создать заказ за ${formatMoney(pricing.quote?.priceKzt??0)}`:'Подтвердить телефон':'Подтвердить заказ'}</Button> : completedDetail ? <Button className="wide" onClick={history} disabled={busy}>В историю заказов</Button> : actionable && detail ? <Button className="wide" disabled={busy} onClick={() => void (detail.status === 'SEARCHING_FOR_COURIER' ? accept(detail) : advance(detail))}>{busy ? 'Сохраняем…' : detail.status === 'SEARCHING_FOR_COURIER' ? detail.pricing?`Принять · ${formatMoney(detail.pricing.courierPayoutKzt)}`:'Принять заказ' : actionLabels[detail.status]}</Button> : null}</footer>}
       {showNav && <nav className="mobile-nav" aria-label="Мобильная навигация">{navItems.map((item) => <button type="button" key={item.view} className={view === item.view ? 'current' : ''} aria-current={view === item.view ? 'page' : undefined} disabled={busy} onClick={() => navigate(item.view)}><Icon type={item.icon}/><span>{item.label}</span></button>)}</nav>}
     </div>
   </div>;
@@ -182,8 +198,10 @@ function OrderDetail({ order, user, busy, onCancel }: { order: Order; user: User
     {customer && order.courierName && <div className="courier-contact"><span className="avatar">{initials(order.courierName)}</span><div><strong>{order.courierName}</strong><small>Ваш курьер</small></div></div>}
     <RouteCard pickup={order.pickupAddress} destination={order.destinationAddress}/>
     {!complete && <Recipient order={order}/>}
-    <PriceNote/>
-    {order.status === 'SEARCHING_FOR_COURIER' && <Feedback title={customer ? 'Можно закрыть приложение' : 'Оплата по согласованию'}>{customer ? 'Заказ сохранён. При следующем открытии загрузим актуальный статус с сервера.' : 'Уточните стоимость и условия до передачи посылки.'}</Feedback>}
+    <SavedOrderPrice order={order} courier={!customer}/>
+    <OrderContacts order={order} customer={customer}/>
+    {!customer&&order.status==='SEARCHING_FOR_COURIER'&&<p className="muted">Принимая заказ, вы разрешаете показать свой подтверждённый номер клиенту для связи по доставке.</p>}
+    {order.status === 'SEARCHING_FOR_COURIER' && <Feedback title={customer ? 'Можно закрыть приложение' : order.pricing?'Цена зафиксирована':'Оплата по согласованию'}>{customer ? 'Заказ сохранён. При следующем открытии загрузим актуальный статус с сервера.' : order.pricing?'Вся стоимость доставки причитается курьеру. Способ и момент расчёта уточните со сторонами.':'Уточните стоимость и условия до передачи посылки.'}</Feedback>}
     <Timeline order={order}/>
     {complete && <Recipient order={order}/>}
     {complete && <p className="muted">Все изменения сохранены. Заказ останется в истории после повторного открытия.</p>}

@@ -3,6 +3,8 @@ import { database } from './db';
 import { AppError } from './errors';
 import { geoapifyKey, takeMapBudget } from './map-services';
 import type { DeliveryRoute, MapPoint, User } from './types';
+import { quoteRoute } from './quote-routing';
+import { currentTariff } from './order-quotes';
 
 const coordinate = z.tuple([z.number().min(-180).max(180), z.number().min(-90).max(90)]);
 const resultSchema = z.object({ features: z.array(z.object({
@@ -30,15 +32,22 @@ export async function orderRoute(actor: User, orderId: string): Promise<Delivery
   // Match order visibility on every request, including cache hits. Never accept
   // coordinates, courier IDs or provider URLs supplied by the caller.
   const result = await database().query(`SELECT pickup_latitude AS "aLat",pickup_longitude AS "aLon",
-    destination_latitude AS "bLat",destination_longitude AS "bLon" FROM qadam.orders
+    destination_latitude AS "bLat",destination_longitude AS "bLon",price_kzt AS "priceKzt" FROM qadam.orders
     WHERE id=$1 AND (($3='CUSTOMER' AND customer_id=$2) OR
-      ($3='COURIER' AND (courier_id=$2 OR (courier_id IS NULL AND status='SEARCHING_FOR_COURIER'))) OR
+      ($3='COURIER' AND (courier_id=$2 OR (courier_id IS NULL AND status='SEARCHING_FOR_COURIER'
+        AND (price_kzt IS NULL OR EXISTS(SELECT 1 FROM qadam.courier_applications ca WHERE ca.user_id=$2 AND ca.status='APPROVED' AND ca.transport='CAR'))))) OR
       EXISTS(SELECT 1 FROM qadam.administrators a JOIN qadam.users u ON u.id=a.user_id
         WHERE a.user_id=$2 AND u.active=true))`, [orderId, actor.id, actor.role]);
   const row = result.rows[0];
   if (!row) throw new AppError(404, 'Заказ недоступен.');
   if (row.aLat === null || row.aLon === null || row.bLat === null || row.bLon === null) return null;
   const a = { latitude: row.aLat, longitude: row.aLon }, b = { latitude: row.bLat, longitude: row.bLon };
+  if(row.priceKzt!==null){
+    if(!await currentTariff())throw new AppError(503,'Маршрут сейчас недоступен. Цена заказа сохранена; можно открыть внешнюю навигацию.');
+    await takeMapBudget(actor.id,'quote');
+    const route=await quoteRoute(a,b);
+    return {mode:'drive',distanceMeters:route.distanceM,paths:route.paths};
+  }
   if (!inArea(a) || !inArea(b)) throw new AppError(422, 'Маршрут доступен для Алматы и окрестностей. Для других точек откройте навигацию.');
   if (!process.env.GEOAPIFY_API_KEY?.trim()) throw new AppError(503, 'Сервис маршрутов временно недоступен. Откройте навигацию.');
   const key = geoapifyKey();

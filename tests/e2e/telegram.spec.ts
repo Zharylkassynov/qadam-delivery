@@ -54,7 +54,7 @@ test('Mini App customer completes a delivery with browser courier and restores h
     await expect(courier.getByText('Контакты получателя откроются после принятия заказа', { exact: true })).toBeVisible();
     await expect(courier.locator('a[href^="tel:"]')).toHaveCount(0);
     await courier.getByRole('button', { name: 'Принять заказ', exact: true }).click();
-    await expect(courier.locator('.recipient-section')).toContainText('Айдана');
+    await expect(courier.locator('.recipient-section').filter({has:courier.getByRole('heading',{name:'Получатель',exact:true})})).toContainText('Айдана');
     await expect(courier.getByRole('link', { name: '+7 700 123 45 67' })).toBeVisible();
     const { orders: assignedOrders } = await (await courier.request.get('/api/orders')).json();
     expect(assignedOrders.find((order: { id: string }) => order.id === availableOrder.id).recipientPhone).toBe('+7 700 123 45 67');
