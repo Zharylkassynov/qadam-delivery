@@ -8,11 +8,12 @@ import { createQuote } from '../../src/lib/order-quotes';
 import { closeDatabase } from '../../src/lib/db';
 import { saveTelegramContact } from '../../src/lib/user-profiles';
 import type { Tariff } from '../../src/lib/pricing';
+import { deliveryPilot } from '../../src/lib/delivery-pilot';
 
 test.skip(Boolean(process.env.E2E_ORIGIN),'Synthetic local pricing only');
 test.use({viewport:{width:390,height:844}});
 const origin='http://127.0.0.1:3100';
-const tariff:Tariff={version:'e2e-only-car',minimumKzt:1200,baseKzt:800,perKmKzt:70,perMinuteKzt:12,roundToKzt:50,ttlSeconds:300,provider:'TOMTOM_V1',zone:{south:43,north:43.5,west:76.7,east:77.1}};
+const tariff:Tariff={version:'e2e-only-car',minimumKzt:1200,baseKzt:800,perKmKzt:70,perMinuteKzt:12,roundToKzt:50,ttlSeconds:120,provider:'TOMTOM_V1',zone:{...deliveryPilot.zone}};
 const a={id:'test-a',address:'Жибек Жолы, 53',detail:'Алматы',precision:'building',latitude:43.263,longitude:76.953};
 const b={...a,id:'test-b',address:'Самал-2, 111',latitude:43.234,longitude:76.957};
 
@@ -70,8 +71,19 @@ test('fixed price survives expiry, own phone verification, assignment and reopen
     await page.getByLabel('Имя получателя',{exact:true}).fill('Получатель цены');
     await page.getByLabel('Телефон получателя',{exact:true}).fill('+77000000011');
     await page.getByRole('button',{name:'Проверить заказ',exact:true}).click();
+    const parcelConfirmation=page.getByRole('checkbox',{name:deliveryPilot.parcelStatement,exact:true});
+    await expect(parcelConfirmation).not.toBeChecked();
+    await expect(page.getByRole('button',{name:'Подтвердить телефон',exact:true})).toBeDisabled();
+    expect(quoteCount).toBe(0);
+    for(const width of [320,390]){
+      await page.setViewportSize({width,height:844});
+      await page.getByRole('heading',{name:'Условия посылки',exact:true}).scrollIntoViewIfNeeded();
+      expect(await page.evaluate(()=>document.documentElement.scrollWidth<=document.documentElement.clientWidth)).toBe(true);
+      await page.screenshot({path:info.outputPath(`pilot-parcel-${width}.png`)});
+    }
     await page.getByRole('radio',{name:'Получатель',exact:true}).check();
     await page.getByRole('radio',{name:/Наличные/}).check();
+    await parcelConfirmation.check();
     await expect(page.getByText('Цена больше не действует',{exact:true})).toBeVisible();
     await expect(page.getByRole('button',{name:'Подтвердить телефон',exact:true})).toBeDisabled();
     await page.getByRole('button',{name:'Обновить цену',exact:true}).click();
@@ -92,6 +104,7 @@ test('fixed price survives expiry, own phone verification, assignment and reopen
     await page.getByRole('button',{name:/Создать заказ за 1\s?500/}).click();
     const response=await created;expect(response.status()).toBe(201);const {order}=await response.json();
     expect(order.pricing.priceKzt).toBe(1500);expect(order.payer).toBe('RECIPIENT');expect(order.paymentMethod).toBe('CASH');
+    expect(order.pricing.breakdown.pilotTermsVersion).toBe(deliveryPilot.termsVersion);
     const unavailable=await request.get(`/api/orders/${order.id}`,{headers:{Authorization:`Bearer ${courier.sessionToken}`}});
     expect(unavailable.status()).toBe(200);expect((await unavailable.json()).order.senderPhone).toBeNull();
     const courierContext=await browser.newContext({viewport:{width:360,height:800}});contexts.push(courierContext);

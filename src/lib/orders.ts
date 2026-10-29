@@ -7,6 +7,7 @@ import { alertWaitingOrders, closeAvailableOrders, queueAvailableOrder, queueCus
 import { orderReference } from './order-links';
 import { currentTariff,lockQuote,paymentSchema,quoteInputSchema } from './order-quotes';
 import { requirePhone,phoneProfile } from './user-profiles';
+import { deliveryPilot } from './delivery-pilot';
 
 export const pointSchema = z.object({ latitude: z.number().min(-90).max(90), longitude: z.number().min(-180).max(180) }).strict();
 export const createOrderSchema = z.object({
@@ -23,6 +24,7 @@ export const createOrderSchema = z.object({
   paymentMethod: paymentSchema.shape.paymentMethod.optional(),
   transport: z.literal('CAR').optional(),
   shareContact: z.boolean().optional(),
+  pilotTermsVersion: z.literal(deliveryPilot.termsVersion).optional(),
 }).strict();
 export const statusSchema = z.object({ status: z.enum(statuses) }).strict();
 export type CreateOrder = z.infer<typeof createOrderSchema>;
@@ -100,6 +102,7 @@ export async function createOrder(actor: User, input: CreateOrder): Promise<Orde
         if((order[key]??null)!==(data[key]??null))throw new AppError(409,'Этот запрос уже использован для другого заказа. Обновите страницу.');
       }
       for(const key of ['pickupPoint','destinationPoint'] as const)if((order[key]?.latitude??null)!==(data[key]?.latitude??null)||(order[key]?.longitude??null)!==(data[key]?.longitude??null))throw new AppError(409,'Этот запрос уже использован для других точек доставки. Обновите страницу.');
+      if(order.pricing&&(order.pricing.breakdown.pilotTermsVersion??null)!==(data.pilotTermsVersion??null))throw new AppError(409,'Условия посылки изменились. Обновите заказ.');
       return order;
     }
     const tariff=await currentTariff(client);
@@ -110,8 +113,9 @@ export async function createOrder(actor: User, input: CreateOrder): Promise<Orde
       // Build an explicit object: never forward server-only creation fields.
       const bound=quoteInputSchema.parse({pickupAddress:data.pickupAddress,destinationAddress:data.destinationAddress,
         recipientName:data.recipientName,recipientPhone:data.recipientPhone,notes:data.notes,pickupPoint:data.pickupPoint,
-        destinationPoint:data.destinationPoint,transport:data.transport,payer:data.payer,paymentMethod:data.paymentMethod,shareContact:data.shareContact});
+        destinationPoint:data.destinationPoint,transport:data.transport,payer:data.payer,paymentMethod:data.paymentMethod,shareContact:data.shareContact,pilotTermsVersion:data.pilotTermsVersion});
       senderPhone=await requirePhone(actor,client);quote=await lockQuote(client,actor,data.quoteId,bound);
+      if(quote.breakdown.pilotTermsVersion!==data.pilotTermsVersion)throw new AppError(409,'Условия предложения изменились. Рассчитайте стоимость заново.');
     }else if(data.shareContact)senderPhone=(await phoneProfile(actor,client)).phone;
     const result = await client.query(`INSERT INTO qadam.orders(customer_id,request_key,pickup_address,destination_address,recipient_name,recipient_phone,notes,status,
       pickup_latitude,pickup_longitude,destination_latitude,destination_longitude,quote_id,price_kzt,courier_payout_kzt,platform_fee_kzt,
@@ -147,12 +151,17 @@ export async function acceptOrder(actor: User, id: string,shareContact=false): P
   if (actor.role !== 'COURIER') throw new AppError(403, 'Принимать заказы может только курьер.');
   z.uuid().parse(id);
   return transaction(async (client) => {
+    // Serialize assignments to this courier, including different orders and legacy orders.
+    await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))',[`courier-assignment:${actor.id}`]);
     // Lock this order until assignment and its audit event are committed together.
     const result = await client.query('SELECT status,courier_id,price_kzt FROM qadam.orders WHERE id=$1 FOR UPDATE', [id]);
     const order = result.rows[0];
     if (!order) throw new AppError(404, 'Заказ не найден.');
     if (order.courier_id === actor.id && order.status !== 'CANCELLED') return readOrder(client, id, actor);
     if (order.status !== 'SEARCHING_FOR_COURIER' || order.courier_id) throw new AppError(409, 'Заказ уже принят другим курьером или больше недоступен.');
+    const occupied=await client.query(`SELECT 1 FROM qadam.orders WHERE courier_id=$1
+      AND status IN ('ACCEPTED','PICKED_UP','IN_TRANSIT') AND ($2::boolean OR price_kzt IS NOT NULL) LIMIT 1`,[actor.id,order.price_kzt!==null]);
+    if(occupied.rowCount)throw new AppError(409,'Сначала завершите активную доставку. Заказ с фиксированной ценой выполняется отдельно.');
     let courierPhone=null;
     if(order.price_kzt!==null){
       if(!shareContact)throw new AppError(409,'Подтвердите передачу номера клиенту перед принятием заказа.');

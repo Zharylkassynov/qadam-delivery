@@ -3,13 +3,14 @@ import { useCallback,useEffect,useRef,useState } from 'react';
 import { api } from '../lib/client-api';
 import type { OrderQuote } from '../lib/types';
 import { orderPayload,type OrderDraft } from './order-form';
+import { deliveryPilot } from '../lib/delivery-pilot';
 
 export function useOrderQuote(active:boolean,draft:OrderDraft){
   const [enabled,setEnabled]=useState<boolean|null>(null),[quote,setQuote]=useState<OrderQuote|null>(null);
   const [busy,setBusy]=useState(false),[error,setError]=useState(''),[expired,setExpired]=useState(false),[attempt,setAttempt]=useState(0);
   const previousQuote=useRef<OrderQuote|null>(null);
   const [previousPrice,setPreviousPrice]=useState<number|null>(null);
-  const fingerprint=JSON.stringify(orderPayload(draft));
+  const fingerprint=JSON.stringify({...orderPayload(draft),...(draft.pilotParcelConfirmed?{pilotTermsVersion:deliveryPilot.termsVersion}:{})});
   useEffect(()=>{
     if(!active)return;
     const controller=new AbortController();let alive=true;
@@ -20,6 +21,7 @@ export function useOrderQuote(active:boolean,draft:OrderDraft){
         if(!alive)return;setEnabled(status.enabled);
         if(!status.enabled)return;
         const payload=JSON.parse(fingerprint);
+        if(!payload.pilotTermsVersion)return;
         if(!payload.pickupPoint||!payload.destinationPoint)throw new Error('Укажите обе точки на карте для расчёта стоимости.');
         const result=await api<{quote:OrderQuote}>('/api/orders/quote',{...payload,transport:'CAR'},controller.signal);
         if(alive){setPreviousPrice(previousQuote.current?.priceKzt??null);previousQuote.current=result.quote;setQuote(result.quote);}
@@ -30,5 +32,5 @@ export function useOrderQuote(active:boolean,draft:OrderDraft){
   },[active,fingerprint,attempt]);
   const retry=useCallback(()=>setAttempt(value=>value+1),[]);
   const expire=useCallback(()=>setExpired(true),[]);
-  return {enabled,quote,previousPrice,busy,error,expired,retry,expire,ready:enabled===false||enabled===true&&!!quote&&!busy&&!error&&!expired};
+  return {enabled,quote,previousPrice,busy,error,expired,retry,expire,ready:enabled===false||enabled===true&&draft.pilotParcelConfirmed&&!!quote&&!busy&&!error&&!expired};
 }

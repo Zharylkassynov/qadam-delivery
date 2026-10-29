@@ -5,7 +5,8 @@ import { calculatePrice,type Tariff } from '../src/lib/pricing';
 import { closeDatabase,database } from '../src/lib/db';
 import { migrate } from '../scripts/migrate';
 import { createQuote,quoteFingerprint,type QuoteInput } from '../src/lib/order-quotes';
-import { createOrder,acceptOrder,listOrders,getOrder,createOrderSchema } from '../src/lib/orders';
+import { createOrder,acceptOrder,listOrders,getOrder,createOrderSchema,transitionOrder } from '../src/lib/orders';
+import { deliveryPilot } from '../src/lib/delivery-pilot';
 import { quoteRoute } from '../src/lib/quote-routing';
 import { phoneProfile,saveTelegramContact } from '../src/lib/user-profiles';
 import { receiveTelegramUpdate,processTelegramJobs } from '../src/lib/telegram-bot';
@@ -16,9 +17,9 @@ const url=process.env.TEST_DATABASE_URL;
 if(!url||!new URL(url).pathname.endsWith('_test'))throw new Error('Pricing tests require an isolated _test database');
 process.env.DATABASE_URL=url;
 // Synthetic tariff: these amounts are test data, not an enabled business policy.
-const tariff:Tariff={version:'test-only-car',minimumKzt:1200,baseKzt:800,perKmKzt:70,perMinuteKzt:12,roundToKzt:50,ttlSeconds:300,provider:'TOMTOM_V1',zone:{south:43,north:43.5,west:76.7,east:77.1}};
+const tariff:Tariff={version:'test-only-car',minimumKzt:1200,baseKzt:800,perKmKzt:70,perMinuteKzt:12,roundToKzt:50,ttlSeconds:120,provider:'TOMTOM_V1',zone:{...deliveryPilot.zone}};
 const a={latitude:43.263,longitude:76.953},b={latitude:43.234,longitude:76.957};
-const input=():QuoteInput=>({pickupAddress:'Тест: Зелёный базар',destinationAddress:'Тест: Dostyk Plaza',recipientName:'Синтетический получатель',recipientPhone:'+77000000000',notes:'Не настоящая доставка',pickupPoint:a,destinationPoint:b,transport:'CAR',shareContact:true,payer:'RECIPIENT',paymentMethod:'CASH'});
+const input=():QuoteInput=>({pickupAddress:'Тест: Зелёный базар',destinationAddress:'Тест: Dostyk Plaza',recipientName:'Синтетический получатель',recipientPhone:'+77000000000',notes:'Не настоящая доставка',pickupPoint:a,destinationPoint:b,transport:'CAR',shareContact:true,pilotTermsVersion:deliveryPilot.termsVersion,payer:'RECIPIENT',paymentMethod:'CASH'});
 const metrics=async()=>({distanceM:4592,durationS:1163,provider:'TOMTOM_V1' as const,measuredAt:new Date(),paths:[[ [a.latitude,a.longitude],[b.latitude,b.longitude] ]as[number,number][]]});
 const rejected=(work:Promise<unknown>,code:number)=>assert.rejects(work,(e:unknown)=>e instanceof AppError&&e.status===code);
 const users:User[]=[];
@@ -42,6 +43,7 @@ before(async()=>{
 beforeEach(async()=>{
   mock.restoreAll();await database().query('UPDATE qadam.pricing_settings SET active=false,config=NULL');
   await database().query('DELETE FROM qadam.service_limits');
+  await database().query('DELETE FROM qadam.orders WHERE customer_id=ANY($1::uuid[])',[users.map(u=>u.id)]);
 });
 after(async()=>{
   mock.restoreAll();await database().query('UPDATE qadam.pricing_settings SET active=false,config=NULL');
@@ -80,6 +82,7 @@ test('quotes bind ownership and terms, prevent reuse and preserve idempotency af
   await rejected(createOrder(customer,{...request,notes:'Изменённый груз'}),409);
   const [first,retry]=await Promise.all([createOrder(customer,request),createOrder(customer,request)]);
   assert.equal(first.id,retry.id);assert.equal(first.pricing?.priceKzt,1400);assert.equal(first.senderPhone,'+77000000000');
+  assert.equal(first.pricing?.breakdown.pilotTermsVersion,deliveryPilot.termsVersion);
   await database().query("UPDATE qadam.order_quotes SET expires_at=created_at+interval '1 millisecond',created_at=created_at-interval '1 hour' WHERE id=$1",[quote.id]);
   assert.equal((await createOrder(customer,request)).id,first.id);
   await rejected(createOrder(customer,{...request,requestKey:randomUUID()}),409);
@@ -121,6 +124,56 @@ test('own Telegram contact is authoritative, old updates and wrong user contacts
   await send({user_id:telegramId,phone_number:'+77010000004'},{chat:{id:telegramId,type:'group'}});
   await saveTelegramContact(user.telegramId!,'+77010000005',updateId-100);
   assert.equal((await phoneProfile(user)).phone,'+77010000001');
+});
+
+test('paid pilot requires parcel confirmation, bounded zone/TTL and at most 15km or 60min',async()=>{
+  await enable();
+  const countBefore=(await database().query('SELECT count(*)::int AS count FROM qadam.order_quotes WHERE owner_id=$1',[customer.id])).rows[0].count;
+  const {pilotTermsVersion,...unconfirmed}=input();
+  await rejected(createQuote(customer,unconfirmed,metrics),400);
+  await rejected(createQuote(customer,{...input(),pilotTermsVersion:'unapproved-version'},metrics),400);
+  let called=false;
+  await rejected(createQuote(customer,{...input(),pickupPoint:{latitude:43.310001,longitude:76.95}},async()=>{called=true;return metrics();}),422);
+  assert.equal(called,false);
+  for(const config of [{...tariff,ttlSeconds:121},{...tariff,zone:{...tariff.zone,south:43}}]){
+    await database().query('UPDATE qadam.pricing_settings SET config=$1',[JSON.stringify(config)]);
+    await rejected(createQuote(customer,input(),metrics),503);
+  }
+  await enable();
+  for(const extra of [{distanceM:15001},{durationS:3601}]){
+    await rejected(createQuote(customer,input(),async()=>({...await metrics(),...extra})),422);
+  }
+  assert.equal((await database().query('SELECT count(*)::int AS count FROM qadam.order_quotes WHERE owner_id=$1',[customer.id])).rows[0].count,countBefore);
+  await database().query("DELETE FROM qadam.service_limits WHERE bucket LIKE 'quote:second:%'");
+  const boundary=await createQuote(customer,{...input(),pickupPoint:{latitude:43.18,longitude:76.80},destinationPoint:{latitude:43.31,longitude:77.05}},async()=>({...await metrics(),distanceM:15000,durationS:3600}));
+  assert.equal(boundary.distanceM,15000);assert.equal(boundary.durationS,3600);
+  assert.equal(boundary.breakdown.pilotTermsVersion,pilotTermsVersion);
+});
+
+test('a courier cannot concurrently take two priced deliveries or mix a priced and active legacy delivery',async()=>{
+  await enable();await phone(customer);await phone(courier);
+  const data=input(),orders=[];
+  for(let i=0;i<2;i++){
+    const quote=await createQuote(customer,data,metrics);
+    orders.push(await createOrder(customer,{...data,quoteId:quote.id,requestKey:randomUUID()}));
+  }
+  const results=await Promise.allSettled(orders.map(order=>acceptOrder(courier,order.id,true)));
+  const fulfilled=results.filter(result=>result.status==='fulfilled');
+  assert.equal(fulfilled.length,1);
+  const rejectedResult=results.find(result=>result.status==='rejected');
+  assert.equal(rejectedResult?.reason instanceof AppError&&rejectedResult.reason.status===409,true);
+  const assigned=fulfilled[0].value;
+  assert.equal((await acceptOrder(courier,assigned.id,true)).id,assigned.id);
+  const activeCount=await database().query("SELECT count(*)::int AS count FROM qadam.orders WHERE courier_id=$1 AND status IN ('ACCEPTED','PICKED_UP','IN_TRANSIT')",[courier.id]);
+  assert.equal(activeCount.rows[0].count,1);
+  await database().query('UPDATE qadam.pricing_settings SET active=false');
+  const {pilotTermsVersion:_,...legacyInput}=data;
+  const legacy=await createOrder(customer,{...legacyInput,requestKey:randomUUID()});
+  await rejected(acceptOrder(courier,legacy.id),409);
+  for(const status of ['PICKED_UP','IN_TRANSIT','DELIVERED'] as const)await transitionOrder(courier,assigned.id,status);
+  await acceptOrder(courier,legacy.id);
+  const pending=orders.find(order=>order.id!==assigned.id)!;
+  await rejected(acceptOrder(courier,pending.id,true),409);
 });
 test('routing adapter rejects missing traffic fields, bad endpoints, oversized responses and secret-bearing failures',async()=>{
   const old=process.env.TOMTOM_API_KEY;process.env.TOMTOM_API_KEY=key;
