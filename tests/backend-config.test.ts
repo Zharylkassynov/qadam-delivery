@@ -69,6 +69,10 @@ test('CORS preflights accept only exact frontend origins, safe methods and requi
     assert.equal(response.headers.get('Access-Control-Allow-Origin'), null);
   }
   const ordinary = proxy(new NextRequest(`${local.API_ORIGIN}/api/orders`, { headers: { Origin: local.APP_ORIGIN } }));
+  for(const method of ['PUT','DELETE']){
+    const business=proxy(new NextRequest(`${local.API_ORIGIN}/api/business-profile`,{method:'OPTIONS',headers:{Origin:local.APP_ORIGIN,'Access-Control-Request-Method':method,'Access-Control-Request-Headers':'authorization, content-type'}}));
+    assert.equal(business.status,204);assert.match(business.headers.get('Access-Control-Allow-Methods')!,new RegExp(method));
+  }
   assert.equal(ordinary.headers.get('x-middleware-next'), '1');
   assert.equal(ordinary.headers.get('Access-Control-Allow-Origin'), local.APP_ORIGIN);
   assert.match(ordinary.headers.get('Vary')!, /Origin/);

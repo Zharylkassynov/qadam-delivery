@@ -1,6 +1,7 @@
 import type { ButtonHTMLAttributes, ReactNode } from 'react';
 import { statusLabels, type Order, type Status } from '../lib/types';
 import { serviceTimezone } from '../lib/service-area';
+import { deliveryWindow,parcelLabels,windowExpired } from '../lib/order-details';
 
 type IconName = 'box' | 'clock' | 'person' | 'locate' | 'phone' | 'check' | 'pin' | 'back' | 'arrow' | 'logout' | 'refresh';
 const assetSizes = { box: [19.8, 20.8], clock: [19.8, 19.8], person: [17.8, 18.8], locate: [18.1667, 18.1667], phone: [19.8, 19.8], check: [18.4, 14.4] } as const;
@@ -49,17 +50,21 @@ export const finished = (order: Order) => order.status === 'DELIVERED' || order.
 export const formatTime = (at: string) => new Intl.DateTimeFormat('ru-KZ', { day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit', timeZone: serviceTimezone }).format(new Date(at));
 export const initials = (name: string) => name.trim().split(/\s+/).slice(0, 2).map((word) => word[0]).join('').toUpperCase();
 
-export function OrderCard({ order, onOpen, onAccept, busy, meta }: { order: Order; onOpen: () => void; onAccept?: () => void; busy?: boolean; meta?: string }) {
+export function OrderCard({ order, onOpen, onAccept,onRepeat, busy, meta }: { order: Order; onOpen: () => void; onAccept?: () => void;onRepeat?:()=>void; busy?: boolean; meta?: string }) {
   return <article className={`order-card ${onAccept ? 'available-card' : ''}`}>
     <button type="button" className="order-card-open" aria-label={`Открыть заказ ${orderNumber(order)}`} onClick={onOpen} disabled={busy}>
       <div className="order-card-heading"><strong>{orderNumber(order)}</strong><Badge status={order.status}/></div>
       <AddressRow kind="pickup" address={order.pickupAddress}/><AddressRow kind="destination" address={order.destinationAddress}/>
       <p className="card-meta">{meta ?? `${formatTime(order.createdAt)}${order.courierName ? ` · ${order.courierName}` : ''}`}</p>
+      {order.businessName&&<p className="card-meta">{order.businessName}</p>}
+      {deliveryWindow(order)&&<p className="card-window">{windowExpired(order)&&order.status==='SEARCHING_FOR_COURIER'?'Интервал истёк: ':'Ко времени: '}{deliveryWindow(order)} · Алматы</p>}
+      {(order.parcelType||order.fragile||order.surprise||order.urgent)&&<p className="card-meta">{[order.parcelType?parcelLabels[order.parcelType]:null,order.fragile?'Хрупкое':null,order.surprise?'Сюрприз':null,order.urgent?'Важно без задержки':null].filter(Boolean).join(' · ')}</p>}
       {order.pricing&&<div className="price-row"><span>{onAccept?'Выплата':'Стоимость доставки'}</span><strong>{new Intl.NumberFormat('ru-KZ').format(order.pricing.priceKzt)} ₸</strong></div>}
     </button>
     {onAccept&&<p className="card-meta">Принимая заказ, вы разрешаете показать свой подтверждённый номер клиенту для связи по доставке.</p>}
     {onAccept&&!order.pricing&&order.payer&&order.paymentMethod&&<p className="card-meta">{order.payer==='RECIPIENT'?'Платит получатель':'Платит отправитель'} · {order.paymentMethod==='CASH'?'наличными':'переводом Kaspi'}. Сумму согласуйте со сторонами.</p>}
-    {onAccept && <div className="available-card-action">{order.recipientPhone === null && <p className="card-meta">Контакты получателя откроются после принятия заказа</p>}{order.pricing?<Feedback title="Комиссия Qadam — 0 ₸">{order.payer==='RECIPIENT'?'Платит получатель':'Платит отправитель'} · {order.paymentMethod==='CASH'?'наличные':'перевод Kaspi'}. Дорога А → Б: {(order.pricing.distanceM/1000).toLocaleString('ru-KZ',{maximumFractionDigits:1})} км.</Feedback>:<Feedback title="Оплата по согласованию">Условия доставки уточняются до начала заказа.</Feedback>}<Button onClick={onAccept} disabled={busy} className="wide">{busy ? 'Принимаем…' : 'Принять заказ'}</Button></div>}
+    {onAccept && <div className="available-card-action">{order.recipientPhone === null && <p className="card-meta">Контакты получателя и открытка откроются после принятия заказа</p>}{order.pricing?<Feedback title="Комиссия Qadam — 0 ₸">{order.payer==='RECIPIENT'?'Платит получатель':'Платит отправитель'} · {order.paymentMethod==='CASH'?'наличные':'перевод Kaspi'}. Дорога А → Б: {(order.pricing.distanceM/1000).toLocaleString('ru-KZ',{maximumFractionDigits:1})} км.</Feedback>:<Feedback title="Оплата по согласованию">Условия доставки уточняются до начала заказа.</Feedback>}<Button onClick={onAccept} disabled={busy||windowExpired(order)} className="wide">{windowExpired(order)?'Интервал истёк':busy ? 'Принимаем…' : 'Принять заказ'}</Button></div>}
+    {onRepeat&&<Button variant="secondary" className="wide" onClick={onRepeat} disabled={busy}>Повторить заказ</Button>}
   </article>;
 }
 

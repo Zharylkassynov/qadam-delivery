@@ -9,6 +9,7 @@ import { Badge, Button, EmptyState, Feedback, OrderCard, RouteCard, Skeletons, T
 import { OrderTracking } from './order-tracking';
 import { SavedOrderPrice } from './order-pricing';
 import { PhoneLink } from './phone-link';
+import { OrderRequirements } from './order-requirements';
 
 const labels: Record<AdminOrderFilter, string> = { all: 'Все', unassigned: 'Без курьера', active: 'Активные', history: 'История' };
 const message = (e: unknown) => e instanceof Error ? e.message : 'Не удалось обновить данные. Повторите.';
@@ -129,6 +130,7 @@ function AdminOrderDetail({ order, user }: { order: AdminOrder; user: User }) {
     {order.courierName && <div className="admin-contact"><h2>{order.courierName}</h2><p className="muted">{order.courierTransport ? transportLabels[order.courierTransport] : 'Курьер'}</p></div>}
     {activeCourier && <OrderTracking order={order} user={user} readOnly/>}
     <RouteCard pickup={order.pickupAddress} destination={order.destinationAddress}/>
+    <OrderRequirements order={order}/>
       <SavedOrderPrice order={order}/>
       {(order.senderPhone||order.courierPhone)&&<section className="admin-contact"><h2>Контакты доставки</h2>{order.senderPhone&&<p>Отправитель: <PhoneLink phone={order.senderPhone}/></p>}{order.courierPhone&&<p>Курьер: <PhoneLink phone={order.courierPhone}/></p>}</section>}
     <div className="admin-contact"><small>Клиент</small><p>{order.customerName}</p><small>Получатель</small><p>{order.recipientName}{order.recipientPhone && <> · <PhoneLink phone={order.recipientPhone}/></>}</p></div>

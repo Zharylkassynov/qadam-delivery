@@ -8,6 +8,9 @@ import { quoteRoute,type QuoteRoute } from './quote-routing';
 import { takeMapBudget } from './map-services';
 import type { MapPoint,OrderQuote,User } from './types';
 import { deliveryPilot,insideDeliveryPilot } from './delivery-pilot';
+import { futurePriceMessage } from './order-details';
+import { orderDetailFields } from './order-detail-schema';
+import { checkBusinessSnapshot } from './business-profiles';
 
 export const paymentSchema=z.object({payer:z.enum(['SENDER','RECIPIENT']),paymentMethod:z.enum(['KASPI_TRANSFER','CASH'])});
 const point=z.object({latitude:z.number().min(-90).max(90),longitude:z.number().min(-180).max(180)}).strict();
@@ -16,6 +19,7 @@ export const quoteInputSchema=z.object({
   recipientName:z.string().trim().min(2).max(100),recipientPhone:z.string().trim().min(7).max(30).regex(/^[+\d\s()\-]+$/),
   notes:z.string().trim().max(1000).default(''),pickupPoint:point,destinationPoint:point,
   transport:z.literal('CAR'),shareContact:z.literal(true),pilotTermsVersion:z.literal(deliveryPilot.termsVersion),...paymentSchema.shape,
+  ...orderDetailFields,
 }).strict();
 export type QuoteInput=z.infer<typeof quoteInputSchema>;
 type Db=Pick<PoolClient,'query'>;
@@ -31,7 +35,8 @@ export async function currentTariff(db:Db=database()):Promise<Tariff|null>{
 export function quoteFingerprint(data:QuoteInput){
   const x=quoteInputSchema.parse(data);
   return createHash('sha256').update(JSON.stringify([x.pickupAddress,x.destinationAddress,x.recipientName,x.recipientPhone,x.notes,
-    x.pickupPoint.latitude,x.pickupPoint.longitude,x.destinationPoint.latitude,x.destinationPoint.longitude,x.transport,x.payer,x.paymentMethod,x.shareContact,x.pilotTermsVersion])).digest('hex');
+    x.pickupPoint.latitude,x.pickupPoint.longitude,x.destinationPoint.latitude,x.destinationPoint.longitude,x.transport,x.payer,x.paymentMethod,x.shareContact,x.pilotTermsVersion,
+    x.parcelType??null,x.fragile??false,x.surprise??false,x.urgent??false,x.cardText||null,x.businessName??null,x.pickupDetails||null,x.deliverAfter??null,x.deliverBefore??null])).digest('hex');
 }
 function inside(point:MapPoint,tariff:Tariff){const z=tariff.zone;return point.latitude>=z.south&&point.latitude<=z.north&&point.longitude>=z.west&&point.longitude<=z.east;}
 export async function createQuote(actor:User,input:unknown,calculate:(a:MapPoint,b:MapPoint)=>Promise<QuoteRoute>=quoteRoute):Promise<OrderQuote>{
@@ -39,6 +44,8 @@ export async function createQuote(actor:User,input:unknown,calculate:(a:MapPoint
   const parsed=quoteInputSchema.safeParse(input);if(!parsed.success)throw new AppError(400,'Проверьте адреса, точки, получателя и способ оплаты.');
   const data=parsed.data,tariff=await currentTariff();
   if(!tariff)throw new AppError(503,'Автоматическая цена пока не включена.');
+  if(data.deliverAfter||data.deliverBefore)throw new AppError(422,futurePriceMessage);
+  await checkBusinessSnapshot(actor,data.businessName);
   if(!inside(data.pickupPoint,tariff)||!inside(data.destinationPoint,tariff))throw new AppError(422,'Одна из точек находится за пределами зоны расчёта. Измените адрес.');
   await takeMapBudget(actor.id,'quote');
   const route=await calculate(data.pickupPoint,data.destinationPoint);

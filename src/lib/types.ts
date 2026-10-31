@@ -40,6 +40,9 @@ export type Order = {
   pricing?: OrderPricing | null; quoteId?: string | null;
   payer?: 'SENDER' | 'RECIPIENT' | null; paymentMethod?: 'KASPI_TRANSFER' | 'CASH' | null;
   senderPhone?: string | null; courierPhone?: string | null;
+  parcelType?:import('./order-details').ParcelType|null;fragile?:boolean;surprise?:boolean;urgent?:boolean;
+  cardText?:string|null;businessName?:string|null;pickupDetails?:string|null;
+  deliverAfter?:string|null;deliverBefore?:string|null;
 };
 
 export const adminOrderFilters = ['all', 'unassigned', 'active', 'history'] as const;

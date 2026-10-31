@@ -6,6 +6,7 @@ import { AddressRow, Badge, Button, Icon, orderNumber } from './delivery-ui';
 import { CustomerCourierMap } from './customer-courier-map';
 import { ParcelChoice, type OrderDraft } from './order-form';
 import './customer-home.css';
+import type { BusinessProfile } from '../lib/business-profiles';
 
 type Props = {
   draft: OrderDraft;
@@ -19,9 +20,10 @@ type Props = {
   onNew: () => void;
   onOpen: (order: Order) => void;
   onOrders: () => void;
+  business:BusinessProfile|null;onSource:(shop:boolean)=>void;
 };
 
-export function CustomerHome({ draft, activeOrders, creatingNew, loading, busy, onAddress, onParcel, onContinue, onNew, onOpen, onOrders }: Props) {
+export function CustomerHome({ draft, activeOrders, creatingNew, loading, busy, onAddress, onParcel, onContinue, onNew, onOpen, onOrders,business,onSource }: Props) {
   const active = creatingNew ? undefined : activeOrders[0];
   const route = active ?? draft;
   const addressesReady = draft.pickupAddress.trim().length >= 5 && draft.destinationAddress.trim().length >= 5;
@@ -35,6 +37,7 @@ export function CustomerHome({ draft, activeOrders, creatingNew, loading, busy, 
     </section>
     <section className="customer-home-panel" aria-label={active ? 'Текущая доставка' : 'Новая доставка'}>
       <h1 tabIndex={-1}>{active ? 'Текущая доставка' : 'Куда доставить?'}</h1>
+      {!active&&business&&<><div className="delivery-segments" role="group" aria-label="Адрес отправления"><button type="button" disabled={busy} aria-pressed={!!draft.businessName} onClick={()=>onSource(true)}>Из магазина</button><button type="button" disabled={busy} aria-pressed={!draft.businessName} onClick={()=>onSource(false)}>С другого адреса</button></div>{draft.businessName&&<p className="business-source-name">{draft.businessName}</p>}</>}
       {active && <div className="customer-home-order-meta"><Badge status={active.status}/><span>{orderNumber(active)}</span></div>}
       <div className="customer-home-addresses">
         {(['pickup', 'destination'] as const).map((kind, index) => <div key={kind}>
@@ -47,7 +50,7 @@ export function CustomerHome({ draft, activeOrders, creatingNew, loading, busy, 
         <Button variant="secondary" className="wide" onClick={onNew} disabled={busy}>Новая доставка</Button>
         {activeOrders.length > 1 && <button type="button" className="text-button" onClick={onOrders} disabled={busy}>Все активные доставки · {activeOrders.length}</button>}
       </> : <>
-        <ParcelChoice value={draft.parcelType} onChange={onParcel} disabled={busy}/>
+        <ParcelChoice compact value={draft.parcelType} onChange={onParcel} disabled={busy}/>
         <Button className="wide" onClick={onContinue} disabled={busy}>{addressesReady ? 'Далее — получатель' : 'Указать адреса'}</Button>
         <p className="customer-home-note" role={loading ? 'status' : undefined}>{loading ? 'Загружаем доставки…' : activeOrders.length ? 'Черновик новой доставки' : 'Пока нет доставок'}</p>
       </>}

@@ -62,7 +62,12 @@ test('fixed price survives expiry, own phone verification, assignment and reopen
       if(input.payer!=='RECIPIENT'||input.paymentMethod!=='CASH')return route.fulfill({status:503,json:{error:'Синтетический расчёт после выбора оплаты.'}});
       quoteCount++;
       const quote=await createQuote(customer.user,input,async()=>({distanceM:4592,durationS:quoteCount===1?1163:1763,provider:'TOMTOM_V1',measuredAt:new Date(),paths:[]}));
-      if(quoteCount===1){quote.expiresAt=new Date(Date.now()+1800).toISOString();await db.query('UPDATE qadam.order_quotes SET expires_at=$2 WHERE id=$1',[quote.id,quote.expiresAt]);}
+      if(quoteCount===1){
+        const now=Date.now();quote.expiresAt=new Date(now+1800).toISOString();
+        // The short synthetic expiry must stay after its synthetic creation time,
+        // even if the Docker VM clock differs slightly from the browser host.
+        await db.query('UPDATE qadam.order_quotes SET created_at=$3,expires_at=$2 WHERE id=$1',[quote.id,quote.expiresAt,new Date(now-10000).toISOString()]);
+      }
       await route.fulfill({status:201,json:{quote}});
     });
     await page.getByRole('button',{name:'Указать адреса',exact:true}).click();
@@ -70,6 +75,14 @@ test('fixed price survives expiry, own phone verification, assignment and reopen
     await page.getByRole('button',{name:'Далее — получатель',exact:true}).click();
     await page.getByLabel('Имя получателя',{exact:true}).fill('Получатель цены');
     await page.getByLabel('Телефон получателя',{exact:true}).fill('+77000000011');
+    await page.getByRole('button',{name:'Ко времени',exact:true}).click();
+    await page.getByLabel('Дата доставки',{exact:true}).fill(new Date(Date.now()+86400_000+5*3600_000).toISOString().slice(0,10));
+    await page.getByLabel('С',{exact:true}).fill('14:00');await page.getByLabel('До',{exact:true}).fill('15:00');
+    await page.getByRole('button',{name:'Проверить заказ',exact:true}).click();
+    await expect(page.getByText('Расчёт для будущей даты пока недоступен',{exact:true})).toBeVisible();
+    expect(quoteCount).toBe(0);
+    await page.getByRole('button',{name:'Изменить время',exact:true}).click();
+    await expect(page.getByRole('button',{name:'Как можно скорее',exact:true})).toHaveAttribute('aria-pressed','true');
     await page.getByRole('button',{name:'Проверить заказ',exact:true}).click();
     const parcelConfirmation=page.getByRole('checkbox',{name:deliveryPilot.parcelStatement,exact:true});
     await expect(parcelConfirmation).not.toBeChecked();
