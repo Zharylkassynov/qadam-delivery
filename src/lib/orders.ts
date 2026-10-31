@@ -8,6 +8,9 @@ import { orderReference } from './order-links';
 import { currentTariff,lockQuote,paymentSchema,quoteInputSchema } from './order-quotes';
 import { requirePhone,phoneProfile } from './user-profiles';
 import { deliveryPilot } from './delivery-pilot';
+import { scheduleError,futurePriceMessage } from './order-details';
+import { orderDetailFields } from './order-detail-schema';
+import { checkBusinessSnapshot } from './business-profiles';
 
 export const pointSchema = z.object({ latitude: z.number().min(-90).max(90), longitude: z.number().min(-180).max(180) }).strict();
 export const createOrderSchema = z.object({
@@ -25,6 +28,7 @@ export const createOrderSchema = z.object({
   transport: z.literal('CAR').optional(),
   shareContact: z.boolean().optional(),
   pilotTermsVersion: z.literal(deliveryPilot.termsVersion).optional(),
+  ...orderDetailFields,
 }).strict();
 export const statusSchema = z.object({ status: z.enum(statuses) }).strict();
 export type CreateOrder = z.infer<typeof createOrderSchema>;
@@ -35,6 +39,8 @@ export const selectOrder = `SELECT o.id,o.number::text,o.customer_id AS "custome
   o.recipient_phone AS "recipientPhone",o.notes,o.status,o.created_at AS "createdAt",o.updated_at AS "updatedAt",
   o.quote_id AS "quoteId",o.payer,o.payment_method AS "paymentMethod",
   o.sender_phone AS "senderPhone",o.courier_phone AS "courierPhone",
+  o.parcel_type AS "parcelType",o.fragile,o.surprise,o.urgent,o.card_text AS "cardText",
+  o.business_name AS "businessName",o.pickup_details AS "pickupDetails",o.deliver_after AS "deliverAfter",o.deliver_before AS "deliverBefore",
   CASE WHEN o.price_kzt IS NOT NULL THEN jsonb_build_object('priceKzt',o.price_kzt,'courierPayoutKzt',o.courier_payout_kzt,
     'platformFeeKzt',o.platform_fee_kzt,'distanceM',o.distance_m,'durationS',o.duration_s,
     'tariffVersion',o.tariff_version,'breakdown',o.pricing_details) END AS pricing,
@@ -55,7 +61,7 @@ async function protectRecipientContacts(client: Pick<PoolClient, 'query'>, actor
   const admin = await client.query(`SELECT 1 FROM qadam.administrators a
     JOIN qadam.users u ON u.id=a.user_id WHERE a.user_id=$1 AND u.active=true`, [actor.id]);
   if (admin.rowCount) return orders;
-  return orders.map(order => order.courierId === actor.id ? order : { ...order, recipientName: null, recipientPhone: null, senderPhone:null,courierPhone:null });
+  return orders.map(order => order.courierId === actor.id ? order : { ...order, recipientName: null, recipientPhone: null, senderPhone:null,courierPhone:null,cardText:null });
 }
 
 async function readOrder(client: PoolClient, id: string, actor: User): Promise<Order> {
@@ -72,7 +78,31 @@ export async function listOrders(actor: User): Promise<Order[]> {
   const where = actor.role === 'CUSTOMER'
     ? 'o.customer_id=$1'
     : `(o.courier_id=$1 OR (o.courier_id IS NULL AND o.status='SEARCHING_FOR_COURIER' AND (o.price_kzt IS NULL OR ${eligibleCar})))`;
-  const result = await database().query(`${selectOrder} WHERE ${where} ORDER BY o.created_at DESC LIMIT 100`, [actor.id]);
+  const sort=actor.role==='CUSTOMER'?'o.created_at DESC,o.id DESC':`CASE
+    WHEN o.courier_id=$1 AND o.status IN ('ACCEPTED','PICKED_UP','IN_TRANSIT') THEN 0
+    WHEN o.courier_id=$1 THEN 5
+    WHEN o.deliver_after<=now() AND o.deliver_before>now() THEN 1
+    WHEN o.deliver_after IS NULL THEN 2
+    WHEN o.deliver_before>now() THEN 3 ELSE 4 END,
+    CASE WHEN o.deliver_after IS NULL AND o.courier_id IS NULL AND o.urgent THEN 0 ELSE 1 END,
+    CASE WHEN o.deliver_after IS NULL THEN o.created_at END DESC,
+    CASE WHEN o.courier_id=$1 THEN o.created_at END DESC,
+    CASE WHEN o.deliver_after>now() THEN o.deliver_after ELSE coalesce(o.deliver_before,o.created_at) END,o.id`;
+  // Bound each queue independently: a backlog of immediate jobs must not hide the
+  // courier's own history or every scheduled delivery. Select before sorting the
+  // combined response, within one statement snapshot.
+  const query=actor.role==='CUSTOMER'?`${selectOrder} WHERE ${where} ORDER BY ${sort} LIMIT 100`:`
+    WITH visible AS (
+      (SELECT o.id FROM qadam.orders o WHERE o.courier_id=$1
+        ORDER BY CASE WHEN o.status IN ('ACCEPTED','PICKED_UP','IN_TRANSIT') THEN 0 ELSE 1 END,o.created_at DESC,o.id LIMIT 100)
+      UNION ALL
+      (SELECT o.id FROM qadam.orders o WHERE o.courier_id IS NULL AND o.status='SEARCHING_FOR_COURIER'
+        AND o.deliver_after IS NULL AND (o.price_kzt IS NULL OR ${eligibleCar}) ORDER BY o.urgent DESC,o.created_at DESC,o.id LIMIT 100)
+      UNION ALL
+      (SELECT o.id FROM qadam.orders o WHERE o.courier_id IS NULL AND o.status='SEARCHING_FOR_COURIER'
+        AND o.deliver_after IS NOT NULL AND (o.price_kzt IS NULL OR ${eligibleCar}) ORDER BY ${sort} LIMIT 100)
+    ) ${selectOrder} WHERE o.id IN (SELECT id FROM visible) ORDER BY ${sort}`;
+  const result = await database().query(query, [actor.id]);
   return protectRecipientContacts(database(), actor, result.rows);
 }
 
@@ -102,10 +132,16 @@ export async function createOrder(actor: User, input: CreateOrder): Promise<Orde
         if((order[key]??null)!==(data[key]??null))throw new AppError(409,'Этот запрос уже использован для другого заказа. Обновите страницу.');
       }
       for(const key of ['pickupPoint','destinationPoint'] as const)if((order[key]?.latitude??null)!==(data[key]?.latitude??null)||(order[key]?.longitude??null)!==(data[key]?.longitude??null))throw new AppError(409,'Этот запрос уже использован для других точек доставки. Обновите страницу.');
+      for(const key of ['parcelType','cardText','businessName','pickupDetails'] as const)if((order[key]||null)!==(data[key]||null))throw new AppError(409,'Этот запрос уже использован для других сведений о посылке. Обновите страницу.');
+      for(const key of ['fragile','surprise','urgent'] as const)if(!!order[key]!==!!data[key])throw new AppError(409,'Условия доставки изменились. Обновите страницу.');
+      for(const key of ['deliverAfter','deliverBefore'] as const)if((order[key]?new Date(order[key]).toISOString():null)!==(data[key]??null))throw new AppError(409,'Время доставки изменилось. Обновите страницу.');
       if(order.pricing&&(order.pricing.breakdown.pilotTermsVersion??null)!==(data.pilotTermsVersion??null))throw new AppError(409,'Условия посылки изменились. Обновите заказ.');
       return order;
     }
+    const timeError=scheduleError(data);if(timeError)throw new AppError(400,timeError);
+    await checkBusinessSnapshot(actor,data.businessName,client);
     const tariff=await currentTariff(client);
+    if(tariff&&(data.deliverAfter||data.deliverBefore))throw new AppError(422,futurePriceMessage);
     if(tariff&&!data.quoteId)throw new AppError(409,'Рассчитайте и подтвердите стоимость перед созданием заказа.');
     if(data.quoteId&&!tariff)throw new AppError(409,'Автоматическая цена отключена. Обновите условия доставки.');
     let quote=null,senderPhone=null;
@@ -113,19 +149,23 @@ export async function createOrder(actor: User, input: CreateOrder): Promise<Orde
       // Build an explicit object: never forward server-only creation fields.
       const bound=quoteInputSchema.parse({pickupAddress:data.pickupAddress,destinationAddress:data.destinationAddress,
         recipientName:data.recipientName,recipientPhone:data.recipientPhone,notes:data.notes,pickupPoint:data.pickupPoint,
-        destinationPoint:data.destinationPoint,transport:data.transport,payer:data.payer,paymentMethod:data.paymentMethod,shareContact:data.shareContact,pilotTermsVersion:data.pilotTermsVersion});
+        destinationPoint:data.destinationPoint,transport:data.transport,payer:data.payer,paymentMethod:data.paymentMethod,shareContact:data.shareContact,pilotTermsVersion:data.pilotTermsVersion,
+        ...Object.fromEntries(Object.keys(orderDetailFields).map(key=>[key,data[key as keyof typeof orderDetailFields]]))});
       senderPhone=await requirePhone(actor,client);quote=await lockQuote(client,actor,data.quoteId,bound);
       if(quote.breakdown.pilotTermsVersion!==data.pilotTermsVersion)throw new AppError(409,'Условия предложения изменились. Рассчитайте стоимость заново.');
     }else if(data.shareContact)senderPhone=(await phoneProfile(actor,client)).phone;
+    if(data.businessName||data.surprise){if(!data.shareContact)throw new AppError(409,'Разрешите передачу своего номера курьеру для отправления из магазина или сюрприза.');senderPhone=await requirePhone(actor,client);}
     const result = await client.query(`INSERT INTO qadam.orders(customer_id,request_key,pickup_address,destination_address,recipient_name,recipient_phone,notes,status,
       pickup_latitude,pickup_longitude,destination_latitude,destination_longitude,quote_id,price_kzt,courier_payout_kzt,platform_fee_kzt,
-      distance_m,duration_s,tariff_version,pricing_details,price_source,traffic_source,payer,payment_method,sender_phone)
-      VALUES($1,$2,$3,$4,$5,$6,$7,'CREATED',$8,$9,$10,$11,$12,$13,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23)
+      distance_m,duration_s,tariff_version,pricing_details,price_source,traffic_source,payer,payment_method,sender_phone,
+      parcel_type,fragile,surprise,urgent,card_text,business_name,pickup_details,deliver_after,deliver_before)
+      VALUES($1,$2,$3,$4,$5,$6,$7,'CREATED',$8,$9,$10,$11,$12,$13,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32)
       ON CONFLICT(customer_id,request_key) DO NOTHING RETURNING id`,
     [actor.id, data.requestKey, data.pickupAddress, data.destinationAddress, data.recipientName, data.recipientPhone, data.notes,
       data.pickupPoint?.latitude ?? null, data.pickupPoint?.longitude ?? null, data.destinationPoint?.latitude ?? null, data.destinationPoint?.longitude ?? null,
       quote?.id??null,quote?.price_kzt??null,quote?0:null,quote?.distance_m??null,quote?.duration_s??null,quote?.tariff_version??null,
-      quote?JSON.stringify(quote.breakdown):null,quote?'route':null,quote?.provider??null,data.payer??null,data.paymentMethod??null,senderPhone]);
+      quote?JSON.stringify(quote.breakdown):null,quote?'route':null,quote?.provider??null,data.payer??null,data.paymentMethod??null,senderPhone,
+      data.parcelType??null,data.fragile??false,data.surprise??false,data.urgent??false,data.cardText||null,data.businessName??null,data.pickupDetails||null,data.deliverAfter??null,data.deliverBefore??null]);
     if (!result.rowCount) {
       const existing = await client.query('SELECT id FROM qadam.orders WHERE customer_id=$1 AND request_key=$2', [actor.id, data.requestKey]);
       const order = await readOrder(client, existing.rows[0].id, actor);
@@ -154,11 +194,12 @@ export async function acceptOrder(actor: User, id: string,shareContact=false): P
     // Serialize assignments to this courier, including different orders and legacy orders.
     await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))',[`courier-assignment:${actor.id}`]);
     // Lock this order until assignment and its audit event are committed together.
-    const result = await client.query('SELECT status,courier_id,price_kzt FROM qadam.orders WHERE id=$1 FOR UPDATE', [id]);
+    const result = await client.query('SELECT status,courier_id,price_kzt,deliver_before FROM qadam.orders WHERE id=$1 FOR UPDATE', [id]);
     const order = result.rows[0];
     if (!order) throw new AppError(404, 'Заказ не найден.');
     if (order.courier_id === actor.id && order.status !== 'CANCELLED') return readOrder(client, id, actor);
     if (order.status !== 'SEARCHING_FOR_COURIER' || order.courier_id) throw new AppError(409, 'Заказ уже принят другим курьером или больше недоступен.');
+    if(order.deliver_before&&new Date(order.deliver_before).getTime()<=Date.now())throw new AppError(409,'Интервал доставки истёк. Клиенту нужно указать новое время в новом заказе.');
     const occupied=await client.query(`SELECT 1 FROM qadam.orders WHERE courier_id=$1
       AND status IN ('ACCEPTED','PICKED_UP','IN_TRANSIT') AND ($2::boolean OR price_kzt IS NOT NULL) LIMIT 1`,[actor.id,order.price_kzt!==null]);
     if(occupied.rowCount)throw new AppError(409,'Сначала завершите активную доставку. Заказ с фиксированной ценой выполняется отдельно.');

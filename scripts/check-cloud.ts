@@ -40,8 +40,14 @@ try {
     await client.query('DELETE FROM qadam.order_quotes WHERE false');
     await client.query('SELECT quote_id,price_kzt,courier_payout_kzt,platform_fee_kzt,distance_m,duration_s,tariff_version,pricing_details,price_source,traffic_source,payer,payment_method,sender_phone,courier_phone FROM qadam.orders LIMIT 0');
     await client.query('UPDATE qadam.orders SET quote_id=quote_id,price_kzt=price_kzt,courier_payout_kzt=courier_payout_kzt,platform_fee_kzt=platform_fee_kzt,distance_m=distance_m,duration_s=duration_s,tariff_version=tariff_version,pricing_details=pricing_details,price_source=price_source,traffic_source=traffic_source,payer=payer,payment_method=payment_method,sender_phone=sender_phone,courier_phone=courier_phone WHERE false');
+    await client.query('SELECT user_id,name,pickup_address,pickup_latitude,pickup_longitude,pickup_details,updated_at FROM qadam.business_profiles LIMIT 0');
+    await client.query("INSERT INTO qadam.business_profiles(user_id,name,pickup_address,pickup_latitude,pickup_longitude) SELECT gen_random_uuid(),'permissions-check','permissions-check',43.24,76.9 WHERE false");
+    await client.query('UPDATE qadam.business_profiles SET name=name,pickup_address=pickup_address,pickup_latitude=pickup_latitude,pickup_longitude=pickup_longitude,pickup_details=pickup_details,updated_at=updated_at WHERE false');
+    await client.query('DELETE FROM qadam.business_profiles WHERE false');
+    await client.query('SELECT parcel_type,fragile,surprise,urgent,card_text,business_name,pickup_details,deliver_after,deliver_before FROM qadam.orders LIMIT 0');
+    await client.query('UPDATE qadam.orders SET parcel_type=parcel_type,fragile=fragile,surprise=surprise,urgent=urgent,card_text=card_text,business_name=business_name,pickup_details=pickup_details,deliver_after=deliver_after,deliver_before=deliver_before WHERE false');
   } finally { await client.query('ROLLBACK'); }
-  console.log(JSON.stringify({ project: target.ref, host: target.host, poolerMode: target.poolerMode, clientTlsVerified: stream.authorized, tlsProtocol: stream.getProtocol(), orderNotificationsReady: true, courierPresenceReady:true, pricingContactsReady:true, ...pricingState, ...state }));
+  console.log(JSON.stringify({ project: target.ref, host: target.host, poolerMode: target.poolerMode, clientTlsVerified: stream.authorized, tlsProtocol: stream.getProtocol(), orderNotificationsReady: true, courierPresenceReady:true, pricingContactsReady:true,businessOrdersReady:true, ...pricingState, ...state }));
   } finally { client.release(); }
 } catch (error) {
   // Deliberately omit stack/URL, which may contain secrets from parser errors.

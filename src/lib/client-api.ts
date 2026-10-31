@@ -8,10 +8,10 @@ export const setTelegramSessionToken = (token: string | undefined) => { telegram
 export const sessionHeaders = (): Record<string, string> => telegramSessionToken ? { Authorization: `Bearer ${telegramSessionToken}` } : {};
 export const sessionCredentials = (): RequestCredentials => telegramSessionToken ? 'omit' : 'include';
 export class ApiError extends Error { constructor(message: string, public status: number) { super(message); } }
-export async function api<T>(path: string, body?: unknown, signal?: AbortSignal): Promise<T> {
+export async function api<T>(path: string, body?: unknown, signal?: AbortSignal, method?: 'PUT'|'DELETE'): Promise<T> {
   let response: Response;
   try {
-    response = await fetch(apiPath(path), { method: body === undefined ? 'GET' : 'POST',
+    response = await fetch(apiPath(path), { method: method??(body === undefined ? 'GET' : 'POST'),
       credentials: sessionCredentials(),
       headers: { ...(body === undefined ? {} : { 'Content-Type': 'application/json' }),
         ...sessionHeaders() },

@@ -10,10 +10,12 @@ import {createOrder,acceptOrder,transitionOrder,getOrder} from '../src/lib/order
 import {AppError} from '../src/lib/errors';
 import type {User} from '../src/lib/types';
 const url=process.env.TEST_DATABASE_URL;
-if(!url||!new URL(url).pathname.endsWith('_test'))throw new Error('Separate _test database required');
+if(!url||!new URL(url).pathname.endsWith('_test')||!['localhost','127.0.0.1'].includes(new URL(url).hostname))throw new Error('Separate local _test database required');
 process.env.DATABASE_URL=url;
 const people:User[]=[];let customer:User,courier:User,other:User;
-const fix=(offset=0)=>({latitude:43.241123,longitude:76.895678,accuracy:18,capturedAt:new Date(Date.now()+offset).toISOString()});
+// Use a separate map cell from the city-centre couriers left by browser fixtures.
+const fix=(offset=0)=>({latitude:43.181123,longitude:76.795678,accuracy:18,capturedAt:new Date(Date.now()+offset).toISOString()});
+const fixtureCell=(p:{latitude:number;longitude:number})=>Math.abs(p.latitude-fix().latitude)<.002&&Math.abs(p.longitude-fix().longitude)<.002;
 const reject=(p:Promise<unknown>,status:number)=>assert.rejects(p,e=>e instanceof AppError&&e.status===status);
 const input=()=>({requestKey:randomUUID(),pickupAddress:'Алматы, Абая 10',destinationAddress:'Алматы, Ауэзова 20',recipientName:'Получатель GPS',recipientPhone:'+77000000000',notes:''});
 const begin=async()=>{await setCourierStatus(courier,{online:true});await updateCourierPresence(courier,{sharing:true,consent:true});};
@@ -34,19 +36,19 @@ test('GPS needs an active approved courier, fresh shift and explicit consent, ne
 });
 test('public map rounds on the server, groups cells, exposes no identities, and applies bounds after rounding',async()=>{
   await begin();await updateCourierPresence(courier,fix());const rows=await nearbyCouriers(customer);
-  const p=rows.find(p=>Math.abs(p.latitude-fix().latitude)<.01)!;assert.ok(p);assert.notEqual(p.latitude,fix().latitude);assert.notEqual(p.longitude,fix().longitude);
+  const p=rows.find(fixtureCell)!;assert.ok(p);assert.notEqual(p.latitude,fix().latitude);assert.notEqual(p.longitude,fix().longitude);
   assert.deepEqual(Object.keys(p).sort(),['capturedAt','count','latitude','longitude']);
   const narrow=await nearbyCouriers(customer,{south:fix().latitude-.000001,north:fix().latitude+.000001,west:fix().longitude-.000001,east:fix().longitude+.000001});assert.equal(narrow.length,0);
   await reject(nearbyCouriers(courier),403);await reject(nearbyCouriers(customer,{south:-90,north:90,west:-180,east:180}),400);
 });
 test('offline, expired, disabled, nonconsenting and stale couriers disappear without deleting order history',async()=>{
   await begin();await updateCourierPresence(courier,fix());
-  await setCourierStatus(courier,{online:false});assert.ok(!(await nearbyCouriers(customer)).some(p=>Math.abs(p.latitude-fix().latitude)<.01));
+  await setCourierStatus(courier,{online:false});assert.ok(!(await nearbyCouriers(customer)).some(fixtureCell));
   await setCourierStatus(courier,{online:true});await relax();await updateCourierPresence(courier,fix(1000));
   await database().query("UPDATE qadam.courier_status SET updated_at=now()-interval '9 hours' WHERE user_id=$1",[courier.id]);await reject(updateCourierPresence(courier,fix()),409);
   await setCourierStatus(courier,{online:true});await updateCourierPresence(courier,{sharing:false});await reject(updateCourierPresence(courier,fix()),403);
   await updateCourierPresence(courier,{sharing:true,consent:true});await updateCourierPresence(courier,fix());
-  await database().query("UPDATE qadam.courier_presence SET captured_at=now()-interval '91 seconds' WHERE user_id=$1",[courier.id]);assert.ok(!(await nearbyCouriers(customer)).some(p=>Math.abs(p.latitude-fix().latitude)<.01));
+  await database().query("UPDATE qadam.courier_presence SET captured_at=now()-interval '91 seconds' WHERE user_id=$1",[courier.id]);assert.ok(!(await nearbyCouriers(customer)).some(fixtureCell));
 });
 test('outdated and future fixes are rejected, retries cannot move a marker back, and frequent writes are throttled',async()=>{
   await begin();await reject(updateCourierPresence(courier,fix(-91000)),400);await reject(updateCourierPresence(courier,fix(31000)),400);
@@ -59,7 +61,7 @@ test('one shift feed updates all active assigned orders and completed deliveries
   const a=await createOrder(customer,input()),b=await createOrder(customer,input());await acceptOrder(courier,a.id);await acceptOrder(courier,b.id);
   assert.equal((await getOrder(customer,a.id)).courierLocation?.latitude,first.latitude);
   await reject(getOrder(other,a.id),404);
-  assert.ok(!(await nearbyCouriers(customer)).some(p=>Math.abs(p.latitude-first.latitude)<.01));
+  assert.ok(!(await nearbyCouriers(customer)).some(fixtureCell));
   for(const s of ['PICKED_UP','IN_TRANSIT','DELIVERED'] as const)await transitionOrder(courier,a.id,s);
   await relax();await updateCourierPresence(courier,{...fix(2000),latitude:43.26});
   assert.equal((await getOrder(customer,a.id)).courierLocation?.latitude,first.latitude);assert.equal((await getOrder(customer,b.id)).courierLocation?.latitude,43.26);
@@ -67,7 +69,7 @@ test('one shift feed updates all active assigned orders and completed deliveries
 test('turning off consent races GPS safely and requires a new measurement before appearing again',async()=>{
   await begin();await updateCourierPresence(courier,fix());await relax();
   await Promise.allSettled([updateCourierPresence(courier,{sharing:false}),updateCourierPresence(courier,fix(1000))]);
-  assert.equal((await getCourierStatus(courier)).locationSharing,false);assert.ok(!(await nearbyCouriers(customer)).some(p=>Math.abs(p.latitude-fix().latitude)<.01));
+  assert.equal((await getCourierStatus(courier)).locationSharing,false);assert.ok(!(await nearbyCouriers(customer)).some(fixtureCell));
   await updateCourierPresence(courier,{sharing:true,consent:true});assert.equal((await getCourierStatus(courier)).location,null);
 });
 test('production RLS grants let qadam_app persist its GPS state and deny client roles',async()=>{

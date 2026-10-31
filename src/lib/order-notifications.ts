@@ -2,6 +2,7 @@ import { transaction, database } from './db';
 import { appOrigin } from './deployment-config';
 import { enqueueBotMessage, type Db, type BotJob } from './telegram-outbox';
 import type { Status } from './types';
+import { deliveryWindow,parcelLabels,type ParcelType } from './order-details';
 
 const courier = `(u.role='COURIER' OR EXISTS(SELECT 1 FROM qadam.courier_applications a WHERE a.user_id=u.id AND a.status='APPROVED'))`;
 const label = (number: string) => `QD-${number.padStart(4,'0')}`;
@@ -15,7 +16,8 @@ const keyboard = (id: string, admin = false) => ({ inline_keyboard: [[{ text: '�
 async function noticeOrder(db: Db, id: string) {
   return (await db.query(`SELECT o.id,o.number::text,o.customer_id,o.pickup_address,o.destination_address,
     o.pickup_latitude,o.pickup_longitude,o.destination_latitude,o.destination_longitude,r.name AS courier_name,
-    o.price_kzt,o.distance_m,o.duration_s,o.payer,o.payment_method
+    o.price_kzt,o.distance_m,o.duration_s,o.payer,o.payment_method,o.parcel_type,o.fragile,o.surprise,o.urgent,
+    o.deliver_after AS "deliverAfter",o.deliver_before AS "deliverBefore"
     FROM qadam.orders o LEFT JOIN qadam.users r ON r.id=o.courier_id WHERE o.id=$1`, [id])).rows[0];
 }
 function distance(order: Record<string, unknown>) {
@@ -39,7 +41,7 @@ export async function queueAvailableOrder(db: Db, id: string) {
       VALUES($1,$2,$3) ON CONFLICT(order_id,user_id,kind) DO NOTHING RETURNING id::text`, [id,recipient.id,recipient.chat]);
     if (!saved.rowCount) continue;
     await enqueueBotMessage(db,`order:${id}:available:${recipient.id}`,recipient.chat,{
-      chat_id:recipient.chat,text:`Новый заказ ${label(order.number)}\nЗабрать: ${order.pickup_address}\nДоставить: ${order.destination_address}\n${distance(order)}${order.price_kzt===null?'':`\nВыплата: ${order.price_kzt} ₸. Комиссия: 0 ₸.\n${order.payer==='RECIPIENT'?'Платит получатель':'Платит отправитель'} · ${order.payment_method==='CASH'?'наличные':'перевод Kaspi'}.`}`,
+      chat_id:recipient.chat,text:`Новый заказ ${label(order.number)}\nЗабрать: ${order.pickup_address}\nДоставить: ${order.destination_address}\n${distance(order)}${deliveryWindow(order)?`\nКо времени: ${deliveryWindow(order)} (Алматы).`:''}${order.parcel_type?`\n${parcelLabels[order.parcel_type as ParcelType]}.`:''}${order.fragile?' Хрупкое.':''}${order.surprise?' Сюрприз: сначала свяжитесь с отправителем.':''}${order.urgent?' Важно без задержки.':''}${order.price_kzt===null?'':`\nВыплата: ${order.price_kzt} ₸. Комиссия: 0 ₸.\n${order.payer==='RECIPIENT'?'Платит получатель':'Платит отправитель'} · ${order.payment_method==='CASH'?'наличные':'перевод Kaspi'}.`}`,
       reply_markup:keyboard(id),
     },'sendMessage',{orderId:id,notificationId:saved.rows[0].id});
   }
@@ -81,7 +83,7 @@ export async function alertWaitingOrders() {
       WHERE u.active AND t.allows_write AND t.bot_blocked_at IS NULL`)).rows;
     if (!admins.length) return 0;
     const waiting = await db.query(`SELECT id,number::text FROM qadam.orders WHERE status='SEARCHING_FOR_COURIER'
-      AND courier_id IS NULL AND alerted_at IS NULL AND created_at<now()-interval '10 minutes'
+      AND courier_id IS NULL AND alerted_at IS NULL AND (greatest(created_at,coalesce(deliver_after,created_at))<now()-interval '10 minutes' OR deliver_before<=now())
       ORDER BY created_at,id LIMIT 20 FOR UPDATE SKIP LOCKED`);
     for (const order of waiting.rows) {
       for (const admin of admins) await enqueueBotMessage(db,`order:${order.id}:waiting:${admin.id}`,admin.chat,{
@@ -101,6 +103,7 @@ export async function shouldSendOrderJob(job: BotJob) {
       JOIN qadam.users u ON u.id=n.user_id JOIN qadam.telegram_identities t ON t.user_id=u.id
       JOIN qadam.courier_status s ON s.user_id=u.id WHERE n.id=$1 AND n.closed_at IS NULL
       AND o.status='SEARCHING_FOR_COURIER' AND o.courier_id IS NULL AND u.active AND ${courier}
+      AND (o.deliver_before IS NULL OR o.deliver_before>now())
       AND (o.price_kzt IS NULL OR EXISTS(SELECT 1 FROM qadam.courier_applications ca WHERE ca.user_id=u.id AND ca.status='APPROVED' AND ca.transport='CAR'))
       AND s.online AND s.updated_at>now()-interval '8 hours' AND t.telegram_user_id=$2
       AND t.allows_write AND t.bot_blocked_at IS NULL`,[job.notificationId,job.telegramId]);

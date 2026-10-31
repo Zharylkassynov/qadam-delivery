@@ -373,3 +373,25 @@ html[data-telegram="true"] .app-shell { height: var(--tg-viewport-stable-height,
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { scroll-behavior: auto !important; transition: none !important; animation: none !important; }
 }
+
+.delivery-options{display:grid;gap:16px;padding:20px 0;border-top:1px solid var(--line);border-bottom:1px solid var(--line);min-width:0}
+.delivery-options legend{font-size:18px;line-height:26px;font-weight:600;padding:0 0 12px}
+.delivery-segments{display:flex;gap:6px;padding:4px;border-radius:10px;background:var(--canvas);min-width:0}
+.delivery-segments button{flex:1;min-width:0;min-height:44px;border:0;border-radius:7px;background:transparent;color:var(--muted);padding:8px;font-size:14px;line-height:20px}
+.delivery-segments button[aria-pressed=true]{background:var(--surface);color:var(--brand);font-weight:600;box-shadow:0 1px 3px #122f4312}
+.delivery-check{display:flex;align-items:flex-start;gap:10px;font-size:14px;line-height:22px;min-height:44px}
+.delivery-check input{width:20px;height:20px;flex:0 0 20px;accent-color:var(--brand);margin:2px 0 0}
+.delivery-check small{display:block;color:var(--muted);margin-top:3px;font-size:13px;line-height:20px}
+.delivery-window-fields{display:grid;gap:14px;min-width:0}
+.delivery-time-row{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;min-width:0}
+.delivery-time-row .field,.delivery-window-fields .field{min-width:0}
+.delivery-time-row input,.delivery-window-fields input{min-width:0;max-width:100%;width:100%}
+.delivery-window{font-size:20px;line-height:28px;font-weight:600;overflow-wrap:anywhere}
+.card-window{font-size:14px;line-height:22px;color:var(--brand);font-weight:600;overflow-wrap:anywhere}
+.business-source-name{font-size:14px;line-height:22px;color:var(--muted);overflow-wrap:anywhere}
+.order-card>.button{margin-top:12px}
+.sticky-action:has(>.button+.button){display:flex;flex-direction:column;align-items:center;gap:8px}
+.screen-business .screen-content{max-width:600px}
+.delivery-check input:focus-visible{outline:3px solid var(--brand);outline-offset:3px}
+.screen-create .choice-row[aria-label="Тип отправления"]{flex-wrap:wrap}
+.screen-create .choice-row[aria-label="Тип отправления"]>.choice{flex:1 0 95px;min-width:95px}

@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { actionLabels, nextStatus, type MapPoint, type Order, type User } from '../lib/types';
 import { AddressRow, Badge, Brand, Button, EmptyState, Feedback, Icon, OrderCard, PriceNote, RouteCard, Skeletons, Timeline, finished, formatTime, initials, orderNumber } from './delivery-ui';
-import { emptyDraft, OrderForm, OrderReview, orderPayload, type OrderDraft } from './order-form';
+import { emptyDraft, OrderForm, OrderReview, orderPayload, repeatDraft,type OrderDraft } from './order-form';
 import { serviceCity, serviceTimezone } from '../lib/service-area';
 import { CourierOnboarding, CourierApplicationAdmin } from './courier-onboarding';
 import { CourierDirectory } from './courier-directory';
@@ -17,8 +17,11 @@ import { OrderContacts,PaymentChoices,QuoteSummary,SavedOrderPrice,formatMoney }
 import { deliveryPilot } from '../lib/delivery-pilot';
 import { useOrderQuote } from './use-order-quote';
 import { PhoneLink } from './phone-link';
+import { useBusinessProfile,BusinessProfilePanel,emptyBusiness,type BusinessDraft } from './business-profile';
+import { OrderRequirements } from './order-requirements';
+import { windowExpired,futurePriceMessage } from '../lib/order-details';
 
-type View = 'home' | 'orders' | 'profile' | 'create' | 'review' | 'detail' | 'point' | 'courierApplication' | 'adminApplications' | 'adminOrders' | 'couriers' | 'phone';
+type View = 'home' | 'orders' | 'profile' | 'create' | 'review' | 'detail' | 'point' | 'courierApplication' | 'adminApplications' | 'adminOrders' | 'couriers' | 'phone' | 'business';
 type Filter = 'all' | 'active' | 'history';
 type Props = {
   user: User; telegram: boolean; orders: Order[]; loading: boolean; busy: boolean; error: string; notice: string;
@@ -39,13 +42,20 @@ export function DeliveryWorkspace(props: Props) {
   const [point, setPoint] = useState<MapPoint | null>(null);
   const [pointAddress, setPointAddress] = useState('');
   const [pointMode, setPointMode] = useState<AddressPickerMode>('search');
-  const [pointOrigin, setPointOrigin] = useState<'home' | 'create'>('home');
+  const [pointOrigin, setPointOrigin] = useState<'home' | 'create' | 'business'>('home');
   const [pointSequence, setPointSequence] = useState(false);
   const [pointSession, setPointSession] = useState(0);
   const [creatingNew, setCreatingNew] = useState(false);
   const [phoneReturn,setPhoneReturn]=useState<View>('profile');
   const phone=usePhoneProfile(!!user.telegramId);
+  const business=useBusinessProfile(user.role==='CUSTOMER');
+  const [businessDraft,setBusinessDraft]=useState<BusinessDraft>({...emptyBusiness});
+  const [businessMode,setBusinessMode]=useState<'view'|'edit'|'delete'>('view');
+  const [businessValidation,setBusinessValidation]=useState('');
+  const [pickupSource,setPickupSource]=useState<'auto'|'shop'|'other'|'repeat'>('auto');
+  const [repeated,setRepeated]=useState(false);
   const pricing=useOrderQuote(view==='review',draft);
+  const needsPhone=(pricing.enabled===true||!!draft.businessName||draft.surprise)&&!phone.profile.phoneVerified;
   const bodyRef = useRef<HTMLElement>(null);
   const customer = user.role === 'CUSTOMER';
   const ownOrders = customer ? orders : orders.filter((order) => order.courierId === user.id);
@@ -55,6 +65,11 @@ export function DeliveryWorkspace(props: Props) {
   const visible = ownOrders.filter((order) => filter === 'all' || (filter === 'history' ? finished(order) : !finished(order)));
   const detail = props.detailOrder?.id === selected ? props.detailOrder : orders.find((order) => order.id === selected);
   const openedLink = useRef<string | null>(null);
+  useEffect(()=>{
+    if(pickupSource!=='auto'||!business.profile)return;
+    const p=business.profile;
+    setDraft(current=>current.pickupAddress||current.destinationAddress?current:{...current,pickupAddress:p.pickupAddress,pickupPoint:p.pickupPoint,pickupDetails:p.pickupDetails,businessName:p.name});
+  },[business.profile,pickupSource]);
 
   useEffect(() => {
     bodyRef.current?.scrollTo({ top: 0 });
@@ -74,7 +89,7 @@ export function DeliveryWorkspace(props: Props) {
   useEffect(() => { props.onDetailChange(view === 'detail' ? selected : null); }, [view, selected, props.onDetailChange]);
 
   function navigate(target: View) {
-    if (busy) return;
+    if (busy||business.busy) return;
     props.onClearMessages();
     setView(target);
   }
@@ -87,22 +102,43 @@ export function DeliveryWorkspace(props: Props) {
     setPointMode('search'); setPointOrigin(origin); setPointSequence(sequence); setPointSession((value) => value + 1);
     navigate('point');
   }
+  function businessAddress(){
+    setPointKind('pickup');setPoint(businessDraft.pickupPoint);setPointAddress(businessDraft.pickupAddress);setPointOrigin('business');setPointMode('search');setPointSequence(false);setPointSession(n=>n+1);navigate('point');
+  }
+  function changeBusinessMode(mode:'view'|'edit'|'delete'){
+    if(mode==='edit'){const p=business.profile;setBusinessDraft(p?{name:p.name,pickupAddress:p.pickupAddress,pickupPoint:p.pickupPoint,pickupDetails:p.pickupDetails}:{...emptyBusiness});}
+    setBusinessValidation('');setBusinessMode(mode);
+  }
+  async function saveBusiness(){
+    if(businessDraft.name.trim().length<2||businessDraft.name.trim().length>100||businessDraft.pickupAddress.trim().length<5||!businessDraft.pickupPoint){setBusinessValidation('Укажите название от 2 символов, адрес и подтвердите точку входа на карте.');return;}
+    setBusinessValidation('');
+    if(!phone.profile.phoneVerified){setPhoneReturn('business');navigate('phone');return;}
+    if(await business.save(businessDraft))setBusinessMode('view');
+  }
+  function chooseSource(shop:boolean){
+    const p=business.profile;if(shop&&!p)return;
+    setPickupSource(shop?'shop':'other');
+    setDraft(current=>({...current,pickupAddress:shop?p!.pickupAddress:'',pickupPoint:shop?p!.pickupPoint:null,businessName:shop?p!.name:null,pickupDetails:shop?p!.pickupDetails:'',pilotParcelConfirmed:false}));
+  }
   function continueDraft() {
     if (draft.pickupAddress.trim().length < 5) editAddress('pickup', 'home', true);
     else if (draft.destinationAddress.trim().length < 5) editAddress('destination', 'home', true);
     else navigate('create');
   }
-  function newDelivery() { setCreatingNew(true); navigate('home'); }
+  function newDelivery() {const p=business.profile;setRepeated(false);setPickupSource(p?'shop':'other');setDraft({...emptyDraft,...(p?{pickupAddress:p.pickupAddress,pickupPoint:p.pickupPoint,pickupDetails:p.pickupDetails,businessName:p.name}:{})});setCreatingNew(true);navigate('home');}
+  function repeat(order:Order){setDraft(repeatDraft(order));setPickupSource('repeat');setRepeated(true);setCreatingNew(true);navigate('create');}
   function confirmAddress() {
     if (busy || pointAddress.trim().length < 5 || pointAddress.trim().length > 200 || (pointMode === 'map' && !point)) return;
-    setDraft((current) => ({ ...current, [`${pointKind}Point`]: point, [`${pointKind}Address`]: pointAddress.trim() }));
+    if(pointOrigin==='business'){if(!point){setBusinessValidation('Выберите точку входа на карте.');return;}setBusinessDraft(current=>({...current,pickupPoint:point,pickupAddress:pointAddress.trim()}));navigate('business');return;}
+    if(pointKind==='pickup')setPickupSource('other');
+    setDraft((current) => ({ ...current, [`${pointKind}Point`]: point, [`${pointKind}Address`]: pointAddress.trim(),pilotParcelConfirmed:false,...(pointKind==='pickup'?{businessName:null,pickupDetails:''}:{}) }));
     if (pointSequence && pointKind === 'pickup' && draft.destinationAddress.trim().length < 5) editAddress('destination', pointOrigin, true);
     else navigate(pointOrigin);
   }
   function back() {
     if(view==='phone'){navigate(phoneReturn);return;}
     if (view === 'point' && pointMode === 'map') { setPointMode('search'); return; }
-    navigate(view === 'point' ? pointOrigin : view === 'review' ? 'create' : 'home');
+    navigate(view === 'point' ? pointOrigin : view === 'review' ? 'create' : view==='business'?'profile':'home');
   }
   async function accept(order: Order) {
     if(order.pricing&&!phone.profile.phoneVerified){props.onSelect(order.id);setPhoneReturn('detail');navigate('phone');return;}
@@ -114,20 +150,20 @@ export function DeliveryWorkspace(props: Props) {
   }
   async function confirmOrder() {
     if(!pricing.ready)return;
-    if(pricing.enabled&&!phone.profile.phoneVerified){setPhoneReturn('review');navigate('phone');return;}
-    if (await props.onCreate(orderPayload(draft,pricing.enabled?pricing.quote?.id:undefined))) { setDraft({ ...emptyDraft }); setCreatingNew(false); setView('detail'); }
+    if(needsPhone){setPhoneReturn('review');navigate('phone');return;}
+    if (await props.onCreate(orderPayload(draft,pricing.enabled?pricing.quote?.id:undefined))) {setPickupSource('auto');setRepeated(false);setDraft({ ...emptyDraft }); setCreatingNew(false); setView('detail'); }
   }
   const actionable = view === 'detail' && detail && !customer && (detail.status === 'SEARCHING_FOR_COURIER' || (detail.courierId === user.id && nextStatus[detail.status]));
   const completedDetail = view === 'detail' && detail && finished(detail);
-  const hasFooter = view === 'create' || view === 'review' || view === 'point' || view==='phone' || !!actionable || !!completedDetail;
+  const hasFooter = view === 'create' || view === 'review' || view === 'point' || view==='phone' || view==='business' || !!actionable || !!completedDetail;
   const showNav = view === 'home' || view === 'orders' || view === 'profile';
-  const title = view === 'phone' ? 'Телефон для связи' : view === 'point' ? pointMode === 'map' ? `Уточните точку ${pointKind === 'pickup' ? 'А' : 'Б'}` : pointKind === 'pickup' ? 'Откуда забрать?' : 'Куда доставить?' : view === 'home' ? customer ? serviceCity : 'Заказы рядом' : view === 'orders' ? 'Мои заказы' : view === 'profile' ? 'Профиль' : view === 'create' ? 'Получатель и посылка' : view === 'review' ? 'Проверка заказа' : detail ? `Заказ ${orderNumber(detail)}` : 'Заказ недоступен';
+  const title = view==='business'?'Мой магазин':view === 'phone' ? 'Телефон для связи' : view === 'point' ? pointMode === 'map' ? `Уточните точку ${pointKind === 'pickup' ? 'А' : 'Б'}` : pointKind === 'pickup' ? 'Откуда забрать?' : 'Куда доставить?' : view === 'home' ? customer ? serviceCity : 'Заказы рядом' : view === 'orders' ? 'Мои заказы' : view === 'profile' ? 'Профиль' : view === 'create' ? 'Получатель и посылка' : view === 'review' ? 'Проверка заказа' : detail ? `Заказ ${orderNumber(detail)}` : 'Заказ недоступен';
   const navItems: { view: View; label: string; icon: 'box' | 'clock' | 'person' }[] = [
     { view: 'home', label: customer ? 'Доставка' : 'Доступные', icon: 'box' },
     { view: 'orders', label: customer ? 'Заказы' : 'Мои заказы', icon: 'clock' },
     { view: 'profile', label: 'Профиль', icon: 'person' },
   ];
-  const card = (order: Order) => <OrderCard key={order.id} order={order} busy={busy} onOpen={() => open(order)}/>;
+  const card = (order: Order) => <OrderCard key={order.id} order={order} busy={busy} onOpen={() => open(order)} onRepeat={customer&&finished(order)?()=>repeat(order):undefined}/>;
   const refresh = <Button variant="secondary" onClick={props.onRefresh} disabled={busy}>Обновить список</Button>;
 
   if (view === 'courierApplication') return <CourierOnboarding user={user} source={props.source} onBack={() => navigate('profile')} onOrders={() => { props.onRefresh(); navigate('home'); }}/>;
@@ -149,7 +185,7 @@ export function DeliveryWorkspace(props: Props) {
           {notice && <Feedback tone="success" title={notice} role="status"/>}
           {syncError && <Feedback tone="error" title="Данные не обновлены" role="alert" action={<button type="button" className="text-button" onClick={props.onRefresh}>Повторить</button>}>{syncError}{syncedAt && <p>Последнее обновление: {formatTime(syncedAt)}. Статусы могут быть устаревшими.</p>}</Feedback>}
 
-          {view === 'home' && customer && <CustomerHome draft={draft} activeOrders={activeOrders} creatingNew={creatingNew} loading={loading} busy={busy} onAddress={(kind) => editAddress(kind, 'home')} onParcel={(parcelType) => setDraft((current) => ({ ...current, parcelType,pilotParcelConfirmed:false }))} onContinue={continueDraft} onNew={newDelivery} onOpen={open} onOrders={() => { setFilter('active'); navigate('orders'); }}/>}
+          {view === 'home' && customer && <CustomerHome draft={draft} activeOrders={activeOrders} creatingNew={creatingNew} loading={loading} busy={busy} business={business.profile} onSource={chooseSource} onAddress={(kind) => editAddress(kind, 'home')} onParcel={(parcelType) => setDraft((current) => ({ ...current, parcelType,pilotParcelConfirmed:false }))} onContinue={continueDraft} onNew={newDelivery} onOpen={open} onOrders={() => { setFilter('active'); navigate('orders'); }}/>}
 
           {view === 'home' && !customer && <><CourierAvailability telegram={props.telegram}/><div className="screen-heading"><h1 tabIndex={-1}>Можно принять</h1><p>Доступные заказы. Условия доставки уточняются до начала заказа.</p></div><p className="city-label"><Icon type="locate"/>{serviceCity}</p>
             {activeOrders.length > 0 && <Button variant="secondary" onClick={() => { setFilter('active'); navigate('orders'); }} disabled={busy}>Мои активные доставки · {activeOrders.length}</Button>}
@@ -159,23 +195,34 @@ export function DeliveryWorkspace(props: Props) {
           {view === 'orders' && <><h1 className="sr-only" tabIndex={-1}>Мои заказы</h1>{!customer && <h2 className="list-title">Ваши доставки</h2>}<div className="choice-row order-filters" role="group" aria-label="Фильтр заказов">{(customer ? ['all', 'active', 'history'] as const : ['active', 'history'] as const).map((value) => <button type="button" className={`choice ${filter === value ? 'selected' : ''}`} aria-pressed={filter === value} key={value} onClick={() => setFilter(value)} disabled={busy}>{{ all: 'Все', active: 'Активные', history: 'Завершённые' }[value]}</button>)}</div>
             {loading ? <Skeletons/> : visible.length ? <div className="order-list">{visible.map(card)}</div> : <EmptyState title={filter === 'history' ? 'История пока пуста' : 'Заказов пока нет'} action={customer ? <Button variant="secondary" onClick={newDelivery}>Заказать доставку</Button> : refresh}>{filter === 'history' ? 'Завершённые и отменённые доставки сохранятся здесь.' : customer ? 'Создайте первую доставку, чтобы передать посылку.' : 'Ваши принятые доставки появятся здесь.'}</EmptyState>}<SyncTime value={syncedAt} offline={!!syncError}/></>}
 
-          {view === 'create' && customer && <OrderForm draft={draft} onChange={setDraft} onReview={() => navigate('review')} onPoint={(kind) => editAddress(kind, 'create')} busy={busy}/>}
-          {view === 'point' && customer && <AddressPicker key={pointSession} kind={pointKind} address={draft[`${pointKind}Address`]} pickupAddress={draft.pickupAddress} point={point} onChange={setPoint} onAddress={setPointAddress} mode={pointMode} onModeChange={setPointMode}/>}
+          {view === 'create' && customer && <>{repeated&&<Feedback title="Данные из прошлого заказа">Проверьте адреса и получателя. Прежние время, стоимость, срочность и открытка не перенесены.</Feedback>}<OrderForm draft={draft} onChange={setDraft} onReview={() => navigate('review')} onPoint={(kind) => editAddress(kind, 'create')} busy={busy}/></>}
+          {view === 'point' && customer && <AddressPicker key={pointSession} kind={pointKind} address={pointOrigin==='business'?businessDraft.pickupAddress:draft[`${pointKind}Address`]} pickupAddress={draft.pickupAddress} point={point} onChange={setPoint} onAddress={setPointAddress} mode={pointMode} onModeChange={setPointMode}/>}
           {view === 'review' && customer && <OrderReview draft={draft} onEdit={() => navigate('create')} busy={busy} pricing={<>
+            {pricing.enabled===true&&draft.timing==='window'&&<Feedback title="Расчёт для будущей даты пока недоступен" tone="warning">{futurePriceMessage}</Feedback>}
             {pricing.enabled===false?<PriceNote/>:<><p className="muted">Автомобиль</p>{pricing.enabled===true&&<section className="review-section"><h2>Условия посылки</h2><label className="courier-consent"><input type="checkbox" checked={draft.pilotParcelConfirmed} disabled={busy} onChange={event=>setDraft(current=>({...current,pilotParcelConfirmed:event.target.checked}))}/><span>{deliveryPilot.parcelStatement}</span></label><p className="muted payment-hint">Доставка до двери в зоне сервиса. Включено по 5 минут на получение и вручение. Автоматических доплат нет. <a href="/rules" target="_blank" rel="noopener noreferrer">Правила доставки</a></p></section>}{pricing.enabled!==true||draft.pilotParcelConfirmed?<QuoteSummary quote={pricing.quote} previousPrice={pricing.previousPrice} busy={pricing.busy} error={pricing.error} onRetry={pricing.retry} onExpired={pricing.expire}/>:<p className="muted">Подтвердите условия посылки, чтобы рассчитать стоимость.</p>}</>}
             <PaymentChoices payer={draft.payer} paymentMethod={draft.paymentMethod} disabled={busy} onChange={(field,value)=>setDraft(current=>({...current,[field]:value}))}/>
             <p className="muted">Подтверждённый номер из Telegram будет доступен курьеру после принятия заказа.{pricing.enabled&&!phone.profile.phoneVerified?' Перед созданием подтвердите свой номер для связи.':''}</p>
           </>}/>}
           {view==='phone'&&<PhoneProfilePanel profile={phone.profile} busy={phone.busy} notice={phone.notice}/>}
+          {view==='business'&&customer&&<BusinessProfilePanel profile={business.profile} draft={businessDraft} onChange={setBusinessDraft} mode={businessMode} onMode={changeBusinessMode} phone={phone.profile} onPhone={()=>{setPhoneReturn('business');navigate('phone');}} onPoint={businessAddress} loading={business.loading} busy={business.busy} error={businessValidation||business.error} onRetry={business.refresh}/>}
           {view === 'detail' && (detail ? <OrderDetail order={detail} user={user} onCancel={async () => { if (window.confirm('Отменить этот заказ?')) await props.onMutate(`/api/orders/${detail.id}/status`, { status: 'CANCELLED' }, 'Заказ отменён и сохранён в истории.'); }} busy={busy}/> : <EmptyState title="Заказ больше недоступен" action={<Button variant="secondary" onClick={() => navigate('home')}>К списку заказов</Button>}>Возможно, его уже принял другой курьер. Обновите список и выберите другую доставку.</EmptyState>)}
           {view === 'profile' && <><h1 className="sr-only" tabIndex={-1}>Профиль</h1><div className="profile-card"><span className="avatar large">{initials(user.name)}</span><h2>{user.name}</h2><p className="muted">{customer ? 'Клиент' : 'Курьер'}{user.telegramId && ' · Telegram'}</p><p>{user.telegramId ? `Telegram ID: ${user.telegramId}` : user.email}</p></div><div className="profile-stats"><div><strong>{activeOrders.length}</strong><span>Активные</span></div><div><strong>{completed.length}</strong><span>Доставлены</span></div></div>
+            {customer&&<Button variant="secondary" onClick={()=>{changeBusinessMode('view');business.refresh();navigate('business');}}>Мой магазин</Button>}
             {user.telegramId&&<Button variant="secondary" onClick={()=>{setPhoneReturn('profile');navigate('phone');}}>Мой телефон</Button>}
             {user.telegramId && <><Feedback title={customer ? 'Доставляй с Qadam' : 'Доступ курьера открыт'}>{customer ? 'Подай заявку. Администратор проверит её и откроет доступ к заказам.' : 'Принимай заказы и отмечай каждый шаг доставки.'}</Feedback><Button onClick={() => navigate('courierApplication')} disabled={busy}>{customer ? 'Стать курьером' : 'Моя заявка курьера'}</Button></>}
             {user.isAdmin && <><h2>Администрирование</h2><Button variant="secondary" onClick={() => navigate('adminOrders')} disabled={busy}>Все заказы</Button><Button variant="secondary" onClick={() => navigate('adminApplications')} disabled={busy}>Заявки курьеров</Button><Button variant="secondary" onClick={() => navigate('couriers')} disabled={busy}>Курьеры</Button></>}
             {!props.telegram && <Button variant="secondary" onClick={() => void props.onSignOut()} disabled={busy}>Выйти из аккаунта</Button>}</>}
         </div>
       </main>
-      {hasFooter && <footer key={view} className={`sticky-action ${view === 'point' ? 'address-action' : ''}`}>{view==='phone'?<Button className="wide" disabled={phone.busy} onClick={()=>phone.profile.phoneVerified?navigate(phoneReturn):void phone.request()}>{phone.busy?'Проверяем номер…':phone.profile.phoneVerified?'Вернуться к заказу':'Поделиться номером'}</Button>:view === 'point' ? <Button className="wide" disabled={busy || pointAddress.trim().length < 5 || pointAddress.trim().length > 200 || (pointMode === 'map' && !point)} onClick={confirmAddress}>{pointMode === 'map' ? 'Подтвердить точку' : 'Выбрать адрес'}</Button> : view === 'create' ? <Button form="delivery-form" type="submit" className="wide" disabled={busy}>Проверить заказ</Button> : view === 'review' ? <Button className="wide" onClick={() => void confirmOrder()} disabled={busy||!pricing.ready}>{busy ? 'Сохраняем…' : pricing.enabled?phone.profile.phoneVerified?`Создать заказ за ${formatMoney(pricing.quote?.priceKzt??0)}`:'Подтвердить телефон':'Подтвердить заказ'}</Button> : completedDetail ? <Button className="wide" onClick={history} disabled={busy}>В историю заказов</Button> : actionable && detail ? <Button className="wide" disabled={busy} onClick={() => void (detail.status === 'SEARCHING_FOR_COURIER' ? accept(detail) : advance(detail))}>{busy ? 'Сохраняем…' : detail.status === 'SEARCHING_FOR_COURIER' ? detail.pricing?`Принять · ${formatMoney(detail.pricing.courierPayoutKzt)}`:'Принять заказ' : actionLabels[detail.status]}</Button> : null}</footer>}
+      {hasFooter&&<footer key={view} className={`sticky-action ${view==='point'?'address-action':''}`}>
+        {view==='business'?businessMode==='delete'?<><Button className="wide" disabled={business.busy} onClick={()=>void business.remove().then(ok=>{if(ok){setBusinessMode('view');setPickupSource('other');setDraft(current=>({...current,businessName:null}));}})}>{business.busy?'Удаляем…':'Удалить профиль'}</Button><Button variant="secondary" className="wide" disabled={business.busy} onClick={()=>changeBusinessMode('view')}>Оставить магазин</Button></>:businessMode==='edit'?<Button className="wide" disabled={business.busy||business.loading} onClick={()=>void saveBusiness()}>{business.busy?'Сохраняем…':'Сохранить магазин'}</Button>:<Button className="wide" disabled={business.loading||!!business.error} onClick={()=>business.profile?newDelivery():changeBusinessMode('edit')}>{business.profile?'Заказать из магазина':'Добавить магазин'}</Button>
+        :view==='phone'?<Button className="wide" disabled={phone.busy} onClick={()=>phone.profile.phoneVerified?navigate(phoneReturn):void phone.request()}>{phone.busy?'Проверяем номер…':phone.profile.phoneVerified?phoneReturn==='business'?'Вернуться к магазину':phoneReturn==='profile'?'Вернуться в профиль':'Вернуться к заказу':'Поделиться номером'}</Button>
+        :view==='point'?<Button className="wide" disabled={busy||pointAddress.trim().length<5||pointAddress.trim().length>200||((pointMode==='map'||pointOrigin==='business')&&!point)} onClick={confirmAddress}>{pointMode==='map'?'Подтвердить точку':'Выбрать адрес'}</Button>
+        :view==='create'?<Button form="delivery-form" type="submit" className="wide" disabled={busy}>Проверить заказ</Button>
+        :view==='review'?pricing.enabled===true&&draft.timing==='window'?<Button className="wide" disabled={busy} onClick={()=>{setDraft(current=>({...current,timing:'soon',pilotParcelConfirmed:false}));navigate('create');}}>Изменить время</Button>:<Button className="wide" onClick={()=>void confirmOrder()} disabled={busy||!pricing.ready}>{busy?'Сохраняем…':needsPhone?'Подтвердить телефон':pricing.enabled?pricing.quote?`Создать заказ за ${formatMoney(pricing.quote.priceKzt)}`:'Рассчитываем стоимость…':'Подтвердить заказ'}</Button>
+        :completedDetail?<>{customer&&detail&&<Button className="wide" disabled={busy} onClick={()=>repeat(detail)}>Повторить заказ</Button>}<Button className="wide" variant="secondary" onClick={history} disabled={busy}>В историю заказов</Button></>
+        :actionable&&detail?<Button className="wide" disabled={busy||(detail.status==='SEARCHING_FOR_COURIER'&&windowExpired(detail))} onClick={()=>void(detail.status==='SEARCHING_FOR_COURIER'?accept(detail):advance(detail))}>{busy?'Сохраняем…':detail.status==='SEARCHING_FOR_COURIER'?windowExpired(detail)?'Интервал истёк':detail.pricing?`Принять · ${formatMoney(detail.pricing.courierPayoutKzt)}`:'Принять заказ':actionLabels[detail.status]}</Button>:null}
+      </footer>}
       {showNav && <nav className="mobile-nav" aria-label="Мобильная навигация">{navItems.map((item) => <button type="button" key={item.view} className={view === item.view ? 'current' : ''} aria-current={view === item.view ? 'page' : undefined} disabled={busy} onClick={() => navigate(item.view)}><Icon type={item.icon}/><span>{item.label}</span></button>)}</nav>}
     </div>
   </div>;
@@ -199,6 +246,7 @@ function OrderDetail({ order, user, busy, onCancel }: { order: Order; user: User
     <OrderTracking order={order} user={user}/>
     {customer && order.courierName && <div className="courier-contact"><span className="avatar">{initials(order.courierName)}</span><div><strong>{order.courierName}</strong><small>Ваш курьер</small></div></div>}
     <RouteCard pickup={order.pickupAddress} destination={order.destinationAddress}/>
+    <OrderRequirements order={order}/>
     {!complete && <Recipient order={order}/>}
     <SavedOrderPrice order={order} courier={!customer}/>
     <OrderContacts order={order} customer={customer}/>

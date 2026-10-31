@@ -4,6 +4,7 @@ import { api } from '../lib/client-api';
 import type { OrderQuote } from '../lib/types';
 import { orderPayload,type OrderDraft } from './order-form';
 import { deliveryPilot } from '../lib/delivery-pilot';
+import { futurePriceMessage } from '../lib/order-details';
 
 export function useOrderQuote(active:boolean,draft:OrderDraft){
   const [enabled,setEnabled]=useState<boolean|null>(null),[quote,setQuote]=useState<OrderQuote|null>(null);
@@ -21,6 +22,7 @@ export function useOrderQuote(active:boolean,draft:OrderDraft){
         if(!alive)return;setEnabled(status.enabled);
         if(!status.enabled)return;
         const payload=JSON.parse(fingerprint);
+        if(payload.deliverAfter||payload.deliverBefore)throw new Error(futurePriceMessage);
         if(!payload.pilotTermsVersion)return;
         if(!payload.pickupPoint||!payload.destinationPoint)throw new Error('Укажите обе точки на карте для расчёта стоимости.');
         const result=await api<{quote:OrderQuote}>('/api/orders/quote',{...payload,transport:'CAR'},controller.signal);

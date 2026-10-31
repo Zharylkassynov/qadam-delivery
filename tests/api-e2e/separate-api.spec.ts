@@ -3,6 +3,8 @@ import { randomUUID } from 'node:crypto';
 import { miniApp } from '../e2e/telegram-browser-fixture';
 import { signedTelegramData } from '../telegram-fixture';
 import { mockMapTiles } from '../e2e/map-fixture';
+import { database,closeDatabase } from '../../src/lib/db';
+import { saveTelegramContact } from '../../src/lib/user-profiles';
 
 const api = 'http://127.0.0.1:3102';
 const frontend = 'http://127.0.0.1:3103';
@@ -24,6 +26,11 @@ test('frontend exposes no API; the standalone API preserves CORS, authentication
   expect((await request.post(`${api}/api/auth/telegram`, { headers: { Origin: frontend }, data: { initData: 'x'.repeat(17000) } })).status()).toBe(413);
   expect((await request.post(`${api}/api/auth/telegram`, { headers: { Origin: frontend }, data: { initData: 'forged' } })).status()).toBe(401);
   expect((await request.post(`${api}/api/telegram/webhook`, { data: { update_id: 1 } })).status()).toBe(401);
+  for(const method of ['PUT','DELETE']){
+    const result=await request.fetch(`${api}/api/business-profile`,{method:'OPTIONS',headers:{Origin:frontend,'Access-Control-Request-Method':method,'Access-Control-Request-Headers':'authorization, content-type'}});
+    expect(result.status()).toBe(204);expect(result.headers()['access-control-allow-methods']).toContain(method);
+    expect((await request.fetch(`${api}/api/business-profile`,{method,headers:{Origin:frontend},data:{}})).status()).toBe(401);
+  }
 });
 
 test('Mini App completes a delivery through a separate API without cookies and restores it after reload', async ({ page, playwright }, testInfo) => {
@@ -87,4 +94,26 @@ test('separate API failure is visible and the interface can recover', async ({ p
   await page.getByRole('button', { name: 'Повторить', exact: true }).click();
   await expect(error).toHaveCount(0);
   await expect(page.getByRole('heading', { name: 'Куда доставить?', exact: true })).toBeVisible();
+});
+
+test('authenticated shop CRUD works from the separate frontend with browser CORS preflights',async({page,request})=>{
+  const url=process.env.TEST_DATABASE_URL;
+  if(!url||!new URL(url).pathname.endsWith('_test')||!['localhost','127.0.0.1'].includes(new URL(url).hostname))throw new Error('Separate local _test database required');
+  process.env.DATABASE_URL=url;
+  const telegramId=7600000000000+Math.floor(Math.random()*1000000000);
+  const response=await request.post(`${api}/api/auth/telegram`,{headers:{Origin:frontend},data:{initData:signedTelegramData({id:telegramId,first_name:'Магазин отдельного API'})}});
+  expect(response.status()).toBe(200);const account=await response.json();
+  try{
+    await saveTelegramContact(String(telegramId),'+77000000042',Date.now());
+    await mockMapTiles(page.context());await page.goto('/');
+    const profile={name:'Магазин отдельного API',pickupAddress:'Абая, 100, Алматы',pickupPoint:{latitude:43.24,longitude:76.9},pickupDetails:'Вход со двора'};
+    const call=(method:string,body?:unknown)=>page.evaluate(async({method,body,token,api})=>{
+      const result=await fetch(`${api}/api/business-profile`,{method,credentials:'omit',headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json'},...(body===undefined?{}:{body:JSON.stringify(body)})});
+      return {status:result.status,body:await result.json()};
+    },{method,body,token:account.sessionToken,api});
+    const put=await call('PUT',profile);expect(put.status).toBe(200);expect(put.body.profile.name).toBe(profile.name);
+    expect((await call('GET')).body.profile.pickupAddress).toBe(profile.pickupAddress);
+    expect((await call('DELETE',{})).status).toBe(200);expect((await call('GET')).body.profile).toBeNull();
+    expect(await page.evaluate(()=>Object.keys(localStorage))).toEqual([]);
+  }finally{await database().query('DELETE FROM qadam.users WHERE id=$1',[account.user.id]);await closeDatabase();}
 });
