@@ -45,7 +45,7 @@
 - **Стек:** Next.js 16 (App Router, API в `src/app/api/**/route.ts`, `runtime = 'nodejs'`), React 19, TypeScript,
   zod 4, `pg` без ORM, Leaflet, Tailwind 4 + `src/app/globals.css`. Перед изменениями Next.js читать
   `node_modules/next/dist/docs/` (см. `AGENTS.md`).
-- **Деплой:** Vercel (регион `fra1`, Node 22, автодеплой `main` из приватного GitHub `Zharylkassynov/qadam-delivery`).
+- **Деплой:** Vercel (регион `fra1`, Node 22, автодеплой `main` из публичного GitHub `Zharylkassynov/qadam-delivery`).
   База — Supabase Postgres (Франкфурт) через transaction pooler под ограниченной ролью `qadam_app`.
 - **Локальная подготовка переноса (27.10):** отдельные приложения `frontend/` и `backend/`
   переиспользуют экраны и серверную логику из `src/`. Compose запускает интерфейс на 3200,
