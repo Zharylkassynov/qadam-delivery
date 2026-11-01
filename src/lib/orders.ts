@@ -11,6 +11,9 @@ import { deliveryPilot } from './delivery-pilot';
 import { scheduleError,futurePriceMessage } from './order-details';
 import { orderDetailFields } from './order-detail-schema';
 import { checkBusinessSnapshot } from './business-profiles';
+import {proofEnabled} from './proof-settings';
+import {initialiseCode} from './order-codes';
+import {lockCouriers,requireCourierAccess,notBlocked} from './trust-core';
 
 export const pointSchema = z.object({ latitude: z.number().min(-90).max(90), longitude: z.number().min(-180).max(180) }).strict();
 export const createOrderSchema = z.object({
@@ -41,6 +44,7 @@ export const selectOrder = `SELECT o.id,o.number::text,o.customer_id AS "custome
   o.sender_phone AS "senderPhone",o.courier_phone AS "courierPhone",
   o.parcel_type AS "parcelType",o.fragile,o.surprise,o.urgent,o.card_text AS "cardText",
   o.business_name AS "businessName",o.pickup_details AS "pickupDetails",o.deliver_after AS "deliverAfter",o.deliver_before AS "deliverBefore",
+  o.photo_required AS "photoRequired",o.code_required AS "codeRequired",o.assignment_version AS "assignmentVersion",
   CASE WHEN o.price_kzt IS NOT NULL THEN jsonb_build_object('priceKzt',o.price_kzt,'courierPayoutKzt',o.courier_payout_kzt,
     'platformFeeKzt',o.platform_fee_kzt,'distanceM',o.distance_m,'durationS',o.duration_s,
     'tariffVersion',o.tariff_version,'breakdown',o.pricing_details) END AS pricing,
@@ -48,7 +52,7 @@ export const selectOrder = `SELECT o.id,o.number::text,o.customer_id AS "custome
   CASE WHEN o.destination_latitude IS NOT NULL THEN jsonb_build_object('latitude',o.destination_latitude,'longitude',o.destination_longitude) END AS "destinationPoint",
   (SELECT jsonb_build_object('latitude',l.latitude,'longitude',l.longitude,'accuracy',l.accuracy,'capturedAt',l.captured_at,'receivedAt',l.received_at)
     FROM qadam.courier_locations l WHERE l.order_id=o.id AND l.courier_id=o.courier_id) AS "courierLocation",
-  COALESCE((SELECT jsonb_agg(jsonb_build_object('id',e.id,'status',e.status,'at',e.created_at,'actor',u.name) ORDER BY e.id)
+  COALESCE((SELECT jsonb_agg(jsonb_build_object('id',e.id,'status',e.status,'at',e.created_at,'actor',u.name,'kind',e.kind,'reason',CASE WHEN e.kind IN ('ASSIGN','RELEASE','CANCEL') THEN e.reason END) ORDER BY e.id)
     FROM qadam.order_events e JOIN qadam.users u ON u.id=e.actor_id WHERE e.order_id=o.id),'[]'::jsonb) AS events
   FROM qadam.orders o JOIN qadam.users c ON c.id=o.customer_id LEFT JOIN qadam.users r ON r.id=o.courier_id`;
 
@@ -61,7 +65,7 @@ async function protectRecipientContacts(client: Pick<PoolClient, 'query'>, actor
   const admin = await client.query(`SELECT 1 FROM qadam.administrators a
     JOIN qadam.users u ON u.id=a.user_id WHERE a.user_id=$1 AND u.active=true`, [actor.id]);
   if (admin.rowCount) return orders;
-  return orders.map(order => order.courierId === actor.id ? order : { ...order, recipientName: null, recipientPhone: null, senderPhone:null,courierPhone:null,cardText:null });
+  return orders.map(order => order.courierId === actor.id ? order : { ...order, recipientName: null, recipientPhone: null, senderPhone:null,courierPhone:null,cardText:null,events:order.events.map(e=>({...e,reason:null})) });
 }
 
 async function readOrder(client: PoolClient, id: string, actor: User): Promise<Order> {
@@ -74,6 +78,7 @@ async function event(client: PoolClient, id: string, actor: User, status: Status
 }
 
 export async function listOrders(actor: User): Promise<Order[]> {
+  if(actor.role==='COURIER')await requireCourierAccess(database(),actor.id);
   await alertWaitingOrders();
   const where = actor.role === 'CUSTOMER'
     ? 'o.customer_id=$1'
@@ -101,16 +106,17 @@ export async function listOrders(actor: User): Promise<Order[]> {
       UNION ALL
       (SELECT o.id FROM qadam.orders o WHERE o.courier_id IS NULL AND o.status='SEARCHING_FOR_COURIER'
         AND o.deliver_after IS NOT NULL AND (o.price_kzt IS NULL OR ${eligibleCar}) ORDER BY ${sort} LIMIT 100)
-    ) ${selectOrder} WHERE o.id IN (SELECT id FROM visible) ORDER BY ${sort}`;
+    ) ${selectOrder} WHERE o.id IN (SELECT id FROM visible) AND EXISTS(SELECT 1 FROM qadam.users u WHERE u.id=$1 AND u.active AND ${notBlocked()}) ORDER BY ${sort}`;
   const result = await database().query(query, [actor.id]);
   return protectRecipientContacts(database(), actor, result.rows);
 }
 
 export async function getOrder(actor: User, reference: string): Promise<Order> {
+  if(actor.role==='COURIER')await requireCourierAccess(database(),actor.id);
   const ref = orderReference(reference);
   if (!ref) throw new AppError(404, 'Заказ не найден.');
   const result = await database().query(`${selectOrder} WHERE ${ref.includes('-') ? 'o.id=$2::uuid' : 'o.number=$2::bigint'}
-    AND (o.customer_id=$1 OR ($3='COURIER' AND (o.courier_id=$1 OR (o.courier_id IS NULL AND o.status='SEARCHING_FOR_COURIER' AND (o.price_kzt IS NULL OR ${eligibleCar}))))
+    AND (o.customer_id=$1 OR ($3='COURIER' AND EXISTS(SELECT 1 FROM qadam.users u WHERE u.id=$1 AND u.active AND ${notBlocked()}) AND (o.courier_id=$1 OR (o.courier_id IS NULL AND o.status='SEARCHING_FOR_COURIER' AND (o.price_kzt IS NULL OR ${eligibleCar}))))
       OR EXISTS(SELECT 1 FROM qadam.administrators a JOIN qadam.users u ON u.id=a.user_id WHERE a.user_id=$1 AND u.active))`,
   [actor.id, ref, actor.role]);
   if (!result.rowCount) throw new AppError(404, 'Заказ не найден или больше недоступен.');
@@ -134,11 +140,13 @@ export async function createOrder(actor: User, input: CreateOrder): Promise<Orde
       for(const key of ['pickupPoint','destinationPoint'] as const)if((order[key]?.latitude??null)!==(data[key]?.latitude??null)||(order[key]?.longitude??null)!==(data[key]?.longitude??null))throw new AppError(409,'Этот запрос уже использован для других точек доставки. Обновите страницу.');
       for(const key of ['parcelType','cardText','businessName','pickupDetails'] as const)if((order[key]||null)!==(data[key]||null))throw new AppError(409,'Этот запрос уже использован для других сведений о посылке. Обновите страницу.');
       for(const key of ['fragile','surprise','urgent'] as const)if(!!order[key]!==!!data[key])throw new AppError(409,'Условия доставки изменились. Обновите страницу.');
+      if(!!order.codeRequired!==!!data.codeRequired)throw new AppError(409,'Условия подтверждения изменились. Обновите заказ.');
       for(const key of ['deliverAfter','deliverBefore'] as const)if((order[key]?new Date(order[key]).toISOString():null)!==(data[key]??null))throw new AppError(409,'Время доставки изменилось. Обновите страницу.');
       if(order.pricing&&(order.pricing.breakdown.pilotTermsVersion??null)!==(data.pilotTermsVersion??null))throw new AppError(409,'Условия посылки изменились. Обновите заказ.');
       return order;
     }
     const timeError=scheduleError(data);if(timeError)throw new AppError(400,timeError);
+    const proof=proofEnabled();if(data.codeRequired&&!proof)throw new AppError(409,'Код вручения ещё не подключён. Обновите условия заказа.');
     await checkBusinessSnapshot(actor,data.businessName,client);
     const tariff=await currentTariff(client);
     if(tariff&&(data.deliverAfter||data.deliverBefore))throw new AppError(422,futurePriceMessage);
@@ -178,6 +186,8 @@ export async function createOrder(actor: User, input: CreateOrder): Promise<Orde
       return order;
     }
     const id = result.rows[0].id;
+    await client.query('UPDATE qadam.orders SET photo_required=$2,code_required=$3 WHERE id=$1',[id,proof,!!data.codeRequired]);
+    if(data.codeRequired)await initialiseCode(client,id);
     if(quote)await client.query('UPDATE qadam.order_quotes SET used_at=clock_timestamp() WHERE id=$1',[quote.id]);
     await event(client, id, actor, 'CREATED');
     await client.query("UPDATE qadam.orders SET status='SEARCHING_FOR_COURIER',updated_at=now() WHERE id=$1", [id]);
@@ -192,11 +202,12 @@ export async function acceptOrder(actor: User, id: string,shareContact=false): P
   z.uuid().parse(id);
   return transaction(async (client) => {
     // Serialize assignments to this courier, including different orders and legacy orders.
-    await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))',[`courier-assignment:${actor.id}`]);
+    await lockCouriers(client,[actor.id]);await requireCourierAccess(client,actor.id);
     // Lock this order until assignment and its audit event are committed together.
-    const result = await client.query('SELECT status,courier_id,price_kzt,deliver_before FROM qadam.orders WHERE id=$1 FOR UPDATE', [id]);
+    const result = await client.query('SELECT status,courier_id,customer_id,price_kzt,deliver_before FROM qadam.orders WHERE id=$1 FOR UPDATE', [id]);
     const order = result.rows[0];
     if (!order) throw new AppError(404, 'Заказ не найден.');
+    if(order.customer_id===actor.id)throw new AppError(409,'Нельзя принять собственный заказ.');
     if (order.courier_id === actor.id && order.status !== 'CANCELLED') return readOrder(client, id, actor);
     if (order.status !== 'SEARCHING_FOR_COURIER' || order.courier_id) throw new AppError(409, 'Заказ уже принят другим курьером или больше недоступен.');
     if(order.deliver_before&&new Date(order.deliver_before).getTime()<=Date.now())throw new AppError(409,'Интервал доставки истёк. Клиенту нужно указать новое время в новом заказе.');
@@ -210,7 +221,7 @@ export async function acceptOrder(actor: User, id: string,shareContact=false): P
       if(!car.rowCount)throw new AppError(403,'Этот заказ доступен только одобренным автокурьерам.');
       courierPhone=await requirePhone(actor,client);
     }else if(shareContact)courierPhone=(await phoneProfile(actor,client)).phone;
-    await client.query("UPDATE qadam.orders SET courier_id=$1,status='ACCEPTED',updated_at=now(),courier_phone=$3 WHERE id=$2", [actor.id, id,courierPhone]);
+    await client.query("UPDATE qadam.orders SET courier_id=$1,status='ACCEPTED',updated_at=now(),courier_phone=$3,assignment_version=assignment_version+1 WHERE id=$2", [actor.id, id,courierPhone]);
     await event(client, id, actor, 'ACCEPTED');
     await client.query(`INSERT INTO qadam.courier_locations(order_id,courier_id,latitude,longitude,accuracy,captured_at)
       SELECT $1,p.user_id,p.latitude,p.longitude,p.accuracy,p.captured_at FROM qadam.courier_presence p
@@ -228,8 +239,9 @@ export async function transitionOrder(actor: User, id: string, target: Status): 
   z.uuid().parse(id);
   z.enum(statuses).parse(target);
   return transaction(async (client) => {
-    const result = await client.query('SELECT status,customer_id,courier_id FROM qadam.orders WHERE id=$1 FOR UPDATE', [id]);
-    const order = result.rows[0] as { status: Status; customer_id: string; courier_id: string | null } | undefined;
+    if(actor.role==='COURIER'){await lockCouriers(client,[actor.id]);await requireCourierAccess(client,actor.id);}
+    const result = await client.query('SELECT status,customer_id,courier_id,photo_required,code_required FROM qadam.orders WHERE id=$1 FOR UPDATE', [id]);
+    const order = result.rows[0] as { status: Status; customer_id: string; courier_id: string | null;photo_required:boolean;code_required:boolean } | undefined;
     if (!order) throw new AppError(404, 'Заказ не найден.');
     if (actor.role === 'CUSTOMER') {
       if (order.customer_id !== actor.id) throw new AppError(403, 'Нет доступа к этому заказу.');
@@ -240,6 +252,7 @@ export async function transitionOrder(actor: User, id: string, target: Status): 
       if (order.courier_id !== actor.id) throw new AppError(403, 'Этот заказ вам не назначен.');
       if (order.status === target) return readOrder(client, id, actor);
       if (nextStatus[order.status] !== target) throw new AppError(409, 'Недопустимый переход статуса. Обновите заказ и выполните следующий шаг.');
+      if(target==='DELIVERED'&&(order.photo_required||order.code_required))throw new AppError(409,'Откройте подтверждение вручения: нужно фото и выбранный код.');
     }
     await client.query('UPDATE qadam.orders SET status=$1,updated_at=now() WHERE id=$2', [target, id]);
     await event(client, id, actor, target);

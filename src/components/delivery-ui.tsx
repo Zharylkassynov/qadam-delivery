@@ -81,7 +81,7 @@ export function PriceNote() {
 }
 
 export function Timeline({ order, title = 'Путь заказа', acceptedLabel }: { order: Order; title?: string; acceptedLabel?: string }) {
-  return <section className="timeline-section" aria-label="История статусов"><h2>{title}</h2><ol className="timeline">{order.events.map((event) => <li key={event.id}><span className="timeline-mark" aria-hidden="true">✓</span><div><strong>{event.status === 'ACCEPTED' && acceptedLabel ? acceptedLabel : statusLabels[event.status]}</strong><small>{formatTime(event.at)} · {event.actor}</small></div></li>)}</ol></section>;
+  return <section className="timeline-section" aria-label="История статусов"><h2>{title}</h2><ol className="timeline">{order.events.map((event) => <li key={event.id}><span className="timeline-mark" aria-hidden="true">✓</span><div><strong>{({ASSIGN:'Курьер назначен командой',RELEASE:'Курьер отказался до забора',CANCEL:'Заказ отменён командой',CODE_RESET:'Код перевыпущен'} as Record<string,string>)[event.kind??'']??(event.status === 'ACCEPTED' && acceptedLabel ? acceptedLabel : statusLabels[event.status])}</strong>{event.reason&&<p className="pre-wrap">{event.reason}</p>}<small>{formatTime(event.at)} · {event.actor}</small></div></li>)}</ol></section>;
 }
 
 export function MapUnavailable({ order }: { order: Order }) {

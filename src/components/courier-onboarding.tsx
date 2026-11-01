@@ -53,17 +53,20 @@ export function CourierOnboarding({ user, source, onBack, onOrders }: { user: Us
     catch (e) { setError(errorText(e)); }
     finally { mutating.current = false; setBusy(false); }
   }
-  const granted = ready && !application && user.role === 'COURIER';
-  const form = ready && !loading && !granted && (!application || editing);
+  const blocked = Boolean(user.courierBlocked || application?.blocked);
+  const granted = ready && !blocked && !application && user.role === 'COURIER';
+  const form = ready && !loading && !blocked && !granted && (!application || editing);
   let action: ReactNode = <Button onClick={onBack} disabled={busy}>Вернуться в профиль</Button>;
   if (loading) action = <Button disabled>Загружаем…</Button>;
   else if (!ready && loadError) action = <Button onClick={() => { setLoading(true); setRefresh((n) => n + 1); }}>Повторить подключение</Button>;
+  else if (blocked) action = <Button onClick={onOrders}>К клиентским доставкам</Button>;
   else if (form) action = <Button type="submit" form="courier-application-form" disabled={busy || permissions.contactBusy}>{busy ? 'Отправляем…' : 'Отправить заявку'}</Button>;
   else if (granted) action = <Button onClick={onOrders}>К доступным заказам</Button>;
   else if (application?.status === 'APPROVED') action = <Button onClick={onOrders}>К доступным заказам</Button>;
   else if (application?.status === 'REJECTED') action = <Button onClick={(event) => { event.preventDefault(); setPhone(application.phone); setTransport(courierTransports.find(value => value === application.transport) ?? ''); setNotes(application.notes); setDistrict(application.district ?? ''); setAvailability(application.availability); setAgeConfirmed(false); setAcceptRules(false); setError(''); setEditing(true); }}>Подать повторно</Button>;
   return <ApplicationScreen title="Стать курьером" actions={action} onBack={onBack} busy={busy} courier scrollKey={form ? 'form' : application?.status ?? 'loading'}>
     {loading && <p role="status">Загружаем заявку…</p>}
+    {!loading && blocked && <><h1>Курьерский доступ ограничен</h1><Feedback title="Свяжитесь с командой Qadam" tone="warning">Уточните причину и порядок восстановления доступа: <a href="https://t.me/zharlkssnv" target="_blank" rel="noreferrer">@zharlkssnv</a>. Заказывать доставку по-прежнему можно.</Feedback></>}
     {!loading && granted && <><h1>Можно начинать</h1><Feedback title="Доступ курьера открыт" tone="success">Доступ назначен администратором. Повторная заявка не требуется.</Feedback></>}
     {(error || loadError) && <Feedback title={error || loadError} tone="error" role="alert" action={loadError && ready ? <Button variant="ghost" onClick={() => setRefresh((n) => n + 1)}>Повторить</Button> : undefined}/>}
     {form && <form id="courier-application-form" onSubmit={(e) => void submit(e)} className="form-fields"><fieldset className="form-fields" disabled={busy}>
@@ -76,7 +79,7 @@ export function CourierOnboarding({ user, source, onBack, onOrders }: { user: Us
       <label className="courier-consent"><input type="checkbox" required checked={ageConfirmed} onChange={event => setAgeConfirmed(event.target.checked)}/><span>Мне есть 18 лет.</span></label>
       <label className="courier-consent"><input type="checkbox" required checked={acceptRules} onChange={event => setAcceptRules(event.target.checked)}/><span>Принимаю <a href="/rules" target="_blank" rel="noopener">правила сервиса</a> и согласен на обработку персональных данных, включая передачу за пределы Казахстана, как описано в <a href="/privacy" target="_blank" rel="noopener">политике конфиденциальности</a>.</span></label>
     </fieldset></form>}
-    {!loading && application && !editing && <>
+    {!loading && !blocked && application && !editing && <>
       <h1>{application.status === 'PENDING' ? 'Заявка отправлена' : application.status === 'APPROVED' ? 'Можно начинать' : 'Нужно уточнить данные'}</h1>
       <Feedback role="status" tone={application.status === 'PENDING' ? 'warning' : application.status === 'APPROVED' ? 'success' : 'error'} title={application.status === 'PENDING' ? 'На рассмотрении' : application.status === 'APPROVED' ? 'Заявка одобрена' : 'Заявка отклонена'}>
         {application.status === 'PENDING' ? 'Команда проверит данные. Решение появится здесь и придёт в Telegram, если разрешены сообщения бота.' : application.status === 'APPROVED' ? 'Тебе открыт доступ к заказам курьера.' : `Причина: ${application.decisionReason}`}

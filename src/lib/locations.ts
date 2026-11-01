@@ -4,6 +4,7 @@ import { transaction } from './db';
 import { AppError } from './errors';
 import { pointSchema } from './orders';
 import type { CourierLocation, User } from './types';
+import {lockCouriers,requireCourierAccess} from './trust-core';
 
 export const locationSchema = pointSchema.extend({
   accuracy: z.number().min(0).max(100000).nullable(),
@@ -26,6 +27,7 @@ export async function reportLocation(actor: User, id: string, input: z.infer<typ
   const age = Date.now() - Date.parse(data.capturedAt);
   if (age > 120000 || age < -30000) throw new AppError(400, 'Координаты устарели. Получите новую позицию и проверьте время устройства.');
   return transaction(async (client) => {
+    await lockCouriers(client,[actor.id]);await requireCourierAccess(client,actor.id);
     // Use the same lock as assignment/status changes: delivery completion wins atomically.
     const order = (await client.query('SELECT courier_id,status FROM qadam.orders WHERE id=$1 FOR UPDATE', [id])).rows[0];
     if (!order) throw new AppError(404, 'Заказ не найден.');

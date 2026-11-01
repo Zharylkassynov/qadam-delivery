@@ -7,6 +7,7 @@ if (!testUrl || !new URL(testUrl).pathname.endsWith('_test')) throw new Error('A
 
 export default defineConfig({
   testDir: './tests/api-e2e', workers: 1, fullyParallel: false, timeout: 60000,
+  outputDir:'test-results/api',
   expect: { timeout: 12000 }, retries: 0, reporter: 'list',
   use: { ...devices['Desktop Chrome'], channel: process.env.CI ? undefined : 'chrome',
     baseURL: 'http://127.0.0.1:3103', viewport: { width: 390, height: 844 }, trace: 'retain-on-failure' },
@@ -14,7 +15,7 @@ export default defineConfig({
     command: 'node scripts/apps.mjs backend test-start', url: 'http://127.0.0.1:3102/health',
     reuseExistingServer: false, timeout: 120000,
     env: { DATABASE_URL: testUrl, TEST_DATABASE_URL: testUrl, APP_ORIGIN: 'http://127.0.0.1:3103', API_ORIGIN: 'http://127.0.0.1:3102',
-      PORT: '3102', DEMO_AUTH_ENABLED: 'true', TELEGRAM_AUTH_ENABLED: 'true', TELEGRAM_BOT_TOKEN: testBotToken,
+      PORT: '3102', DELIVERY_PROOF_ENABLED:'false',DEMO_AUTH_ENABLED: 'true', TELEGRAM_AUTH_ENABLED: 'true', TELEGRAM_BOT_TOKEN: testBotToken,
       TELEGRAM_WEBHOOK_SECRET: 'synthetic_test_webhook_secret_abcdefghijklmnopqrstuvwxyz',
       TELEGRAM_WORKER_ENABLED: 'false', GEOAPIFY_API_KEY: '', TOMTOM_API_KEY:'',QADAM_NEXT_DIST_DIR: '.next', NEXT_TELEMETRY_DISABLED: '1' },
   }, {

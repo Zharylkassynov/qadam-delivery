@@ -69,7 +69,8 @@ test('Telegram administrator observes self-accepted delivery, history, search, p
     await expect(admin.locator('.admin-order-list .order-card')).toHaveCount(1);
     await admin.getByRole('button', { name: `Открыть заказ ${number}`, exact: true }).click();
     await expect(admin.getByRole('heading', { name: 'Ожидает курьера', exact: true })).toBeVisible();
-    await expect(admin.getByRole('button', { name: /Назначить|Сменить курьера|Принять заказ|Посылка у меня|Передавать геопозицию/ })).toHaveCount(0);
+    await expect(admin.getByRole('button', { name:'Назначить курьера',exact:true })).toBeVisible();
+    await expect(admin.getByRole('button', { name: /Принять заказ|Посылка у меня|Передавать геопозицию/ })).toHaveCount(0);
     await courier.getByRole('button', { name: `Открыть заказ ${number}`, exact: true }).click();
     await courier.getByRole('button', { name: 'Принять заказ', exact: true }).click();
     await expect(admin.getByRole('heading', { name: 'Курьер забирает посылку', exact: true })).toBeVisible();

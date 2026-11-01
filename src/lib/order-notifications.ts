@@ -3,8 +3,9 @@ import { appOrigin } from './deployment-config';
 import { enqueueBotMessage, type Db, type BotJob } from './telegram-outbox';
 import type { Status } from './types';
 import { deliveryWindow,parcelLabels,type ParcelType } from './order-details';
+import {notBlocked} from './trust-core';
 
-const courier = `(u.role='COURIER' OR EXISTS(SELECT 1 FROM qadam.courier_applications a WHERE a.user_id=u.id AND a.status='APPROVED'))`;
+const courier = `(${notBlocked()} AND (u.role='COURIER' OR EXISTS(SELECT 1 FROM qadam.courier_applications a WHERE a.user_id=u.id AND a.status='APPROVED')))`;
 const label = (number: string) => `QD-${number.padStart(4,'0')}`;
 const orderUrl = (id: string, admin = false) => {
   const url = new URL('/', appOrigin()); url.searchParams.set('order',id);
@@ -16,7 +17,7 @@ const keyboard = (id: string, admin = false) => ({ inline_keyboard: [[{ text: '�
 async function noticeOrder(db: Db, id: string) {
   return (await db.query(`SELECT o.id,o.number::text,o.customer_id,o.pickup_address,o.destination_address,
     o.pickup_latitude,o.pickup_longitude,o.destination_latitude,o.destination_longitude,r.name AS courier_name,
-    o.price_kzt,o.distance_m,o.duration_s,o.payer,o.payment_method,o.parcel_type,o.fragile,o.surprise,o.urgent,
+    o.price_kzt,o.distance_m,o.duration_s,o.payer,o.payment_method,o.parcel_type,o.fragile,o.surprise,o.urgent,o.assignment_version,
     o.deliver_after AS "deliverAfter",o.deliver_before AS "deliverBefore"
     FROM qadam.orders o LEFT JOIN qadam.users r ON r.id=o.courier_id WHERE o.id=$1`, [id])).rows[0];
 }
@@ -37,10 +38,11 @@ export async function queueAvailableOrder(db: Db, id: string) {
       AND t.allows_write AND t.bot_blocked_at IS NULL AND u.id<>$1
       AND ($2::integer IS NULL OR EXISTS(SELECT 1 FROM qadam.courier_applications ca WHERE ca.user_id=u.id AND ca.status='APPROVED' AND ca.transport='CAR'))`, [order.customer_id,order.price_kzt])).rows;
   for (const recipient of recipients) {
-    const saved = await db.query(`INSERT INTO qadam.order_notifications(order_id,user_id,chat_id)
-      VALUES($1,$2,$3) ON CONFLICT(order_id,user_id,kind) DO NOTHING RETURNING id::text`, [id,recipient.id,recipient.chat]);
+    const saved = await db.query(`INSERT INTO qadam.order_notifications(order_id,user_id,chat_id,generation,kind)
+      VALUES($1,$2,$3,$4,CASE WHEN $4=0 THEN 'AVAILABLE' ELSE 'AVAILABLE:'||$4::text END)
+      ON CONFLICT(order_id,user_id,kind,generation) DO NOTHING RETURNING id::text`, [id,recipient.id,recipient.chat,order.assignment_version]);
     if (!saved.rowCount) continue;
-    await enqueueBotMessage(db,`order:${id}:available:${recipient.id}`,recipient.chat,{
+    await enqueueBotMessage(db,`order:${id}:available:${order.assignment_version?`${order.assignment_version}:`:''}${recipient.id}`,recipient.chat,{
       chat_id:recipient.chat,text:`Новый заказ ${label(order.number)}\nЗабрать: ${order.pickup_address}\nДоставить: ${order.destination_address}\n${distance(order)}${deliveryWindow(order)?`\nКо времени: ${deliveryWindow(order)} (Алматы).`:''}${order.parcel_type?`\n${parcelLabels[order.parcel_type as ParcelType]}.`:''}${order.fragile?' Хрупкое.':''}${order.surprise?' Сюрприз: сначала свяжитесь с отправителем.':''}${order.urgent?' Важно без задержки.':''}${order.price_kzt===null?'':`\nВыплата: ${order.price_kzt} ₸. Комиссия: 0 ₸.\n${order.payer==='RECIPIENT'?'Платит получатель':'Платит отправитель'} · ${order.payment_method==='CASH'?'наличные':'перевод Kaspi'}.`}`,
       reply_markup:keyboard(id),
     },'sendMessage',{orderId:id,notificationId:saved.rows[0].id});
@@ -72,7 +74,7 @@ export async function queueCustomerOrderStatus(db: Db, id: string, status: Statu
     PICKED_UP:'Посылка у курьера.', IN_TRANSIT:'Посылка в пути.', DELIVERED:'Посылка доставлена.', CANCELLED:'Заказ отменён.',
   };
   if (!texts[status]) return;
-  await enqueueBotMessage(db,`order:${id}:status:${status}`,identity.chat,{chat_id:identity.chat,
+  await enqueueBotMessage(db,`order:${id}${order.assignment_version>1?`:assignment:${order.assignment_version}`:''}:status:${status}`,identity.chat,{chat_id:identity.chat,
     text:`${label(order.number)}\n${texts[status]}`,reply_markup:keyboard(id)},'sendMessage',{orderId:id});
 }
 
@@ -98,6 +100,10 @@ export async function alertWaitingOrders() {
 // Recheck eligibility immediately before sending a delayed availability notice.
 export async function shouldSendOrderJob(job: BotJob) {
   if (!job.orderId || job.method==='editMessageText') return true;
+  if(job.method==='sendPhoto'){
+    const ready=await database().query("SELECT 1 FROM qadam.order_photos p JOIN qadam.orders o ON o.id=p.order_id WHERE p.order_id=$1 AND o.status='DELIVERED' AND p.assignment_version=o.assignment_version AND p.file_id=$2 AND p.state='READY' AND p.expires_at>clock_timestamp()",[job.orderId,job.body.photo]);
+    if(!ready.rowCount)return false;
+  }
   if (job.notificationId) {
     const row = await database().query(`SELECT 1 FROM qadam.order_notifications n JOIN qadam.orders o ON o.id=n.order_id
       JOIN qadam.users u ON u.id=n.user_id JOIN qadam.telegram_identities t ON t.user_id=u.id

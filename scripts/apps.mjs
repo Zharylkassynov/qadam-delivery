@@ -35,5 +35,6 @@ if (requestedAction === 'test-start') {
   run(['--import', 'tsx', 'scripts/prepare-e2e.ts']);
 }
 const args = ['node_modules/next/dist/bin/next', action, app];
+if(action==='build'&&process.platform==='win32')args.push('--webpack');
 if (action === 'start') args.push('--hostname', process.env.QADAM_API_BIND ?? '127.0.0.1', '--port', process.env.PORT ?? (app === 'backend' ? '3102' : '3103'));
 run(args);

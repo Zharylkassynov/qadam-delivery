@@ -5,7 +5,7 @@ export class BotApiError extends Error {
 
 // Never expose a raw fetch error: its URL can contain the bot token.
 export const botApi: BotTransport = async (method, body) => {
-  if (!['sendMessage', 'editMessageText', 'answerCallbackQuery'].includes(method)) throw new BotApiError(400);
+  if (!['sendMessage', 'editMessageText', 'answerCallbackQuery','sendPhoto'].includes(method)) throw new BotApiError(400);
   const token = process.env.TELEGRAM_BOT_TOKEN;
   if (!token || !/^\d+:[A-Za-z0-9_-]{30,}$/.test(token)) throw new BotApiError(503);
   try {

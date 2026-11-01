@@ -4,17 +4,19 @@ import { AppError } from './errors';
 import { locationSchema, persistOrderLocation } from './locations';
 import type { CourierLocation, User } from './types';
 import {courierMapBounds} from './courier-map';
+import {lockCouriers,requireCourierAccess,notBlocked} from './trust-core';
 
 export const presenceSettingsSchema = z.union([
   z.object({ sharing: z.literal(true), consent: z.literal(true) }).strict(),
   z.object({ sharing: z.literal(false) }).strict(),
 ]);
 export const presenceInputSchema = z.union([presenceSettingsSchema,locationSchema]);
-const courierRole = `(u.role='COURIER' OR EXISTS(SELECT 1 FROM qadam.courier_applications a WHERE a.user_id=u.id AND a.status='APPROVED'))`;
+const courierRole = `(${notBlocked()} AND (u.role='COURIER' OR EXISTS(SELECT 1 FROM qadam.courier_applications a WHERE a.user_id=u.id AND a.status='APPROVED')))`;
 
 export async function updateCourierPresence(actor: User, input: unknown): Promise<{ location: CourierLocation | null }> {
   const data = presenceInputSchema.parse(input);
   return transaction(async db => {
+    await lockCouriers(db,[actor.id]);await requireCourierAccess(db,actor.id);
     // A shift-off request and a GPS write serialize on the same shift row.
     const shift = (await db.query(`SELECT s.online AND s.updated_at>clock_timestamp()-interval '8 hours' AS online
       FROM qadam.courier_status s JOIN qadam.users u ON u.id=s.user_id

@@ -6,6 +6,7 @@ import { requireAdministrator } from './administrators';
 import { courierTransports, type CourierApplication, type CourierDirectoryData, type User } from './types';
 import { availabilityOptions, districts } from './courier-options';
 import { queueApplicationDecision, queueApplicationSubmitted } from './telegram-notifications';
+import {notBlocked} from './trust-core';
 
 export const applicationSchema = z.object({
   phone: z.string().trim().min(7).max(30).regex(/^[+\d\s()\-]+$/).refine((s) => s.replace(/\D/g, '').length >= 7),
@@ -20,7 +21,7 @@ type Input = z.infer<typeof applicationSchema>;
 type Decision = z.infer<typeof decisionSchema>;
 const fields = `a.id,a.user_id AS "userId",u.name,t.telegram_user_id::text AS "telegramId",a.phone,a.transport,a.notes,a.status,
   a.submitted_at AS "submittedAt",a.reviewed_at AS "reviewedAt",r.name AS reviewer,a.decision_reason AS "decisionReason",u.active AS "applicantActive",
-  a.district,a.availability,a.age_confirmed AS "ageConfirmed",a.consent_at AS "consentAt",a.source`;
+  a.district,a.availability,a.age_confirmed AS "ageConfirmed",a.consent_at AS "consentAt",a.source,NOT ${notBlocked()} AS blocked`;
 const from = `FROM qadam.courier_applications a JOIN qadam.users u ON u.id=a.user_id
   JOIN qadam.telegram_identities t ON t.user_id=u.id LEFT JOIN qadam.users r ON r.id=a.reviewed_by`;
 type Queryable = Pick<PoolClient, 'query'>;
@@ -44,6 +45,7 @@ export async function submitApplication(actor: User, input: Input) {
     await db.query("SELECT pg_advisory_xact_lock(hashtextextended('courier-submit:' || $1,0))", [actor.id]);
     const member = await db.query('SELECT role,active FROM qadam.users WHERE id=$1', [actor.id]);
     if (!member.rows[0]?.active) throw new AppError(403, 'Этот аккаунт отключён.');
+    if((await db.query('SELECT 1 FROM qadam.courier_blocks WHERE user_id=$1 AND blocked',[actor.id])).rowCount)throw new AppError(403,'Курьерский доступ ограничен. Свяжитесь с командой Qadam.');
     if (member.rows[0].role === 'COURIER') throw new AppError(409, 'У вас уже есть доступ курьера.');
     const existing = await db.query("SELECT id,status FROM qadam.courier_applications WHERE user_id=$1 AND status IN ('PENDING','APPROVED')", [actor.id]);
     if (existing.rows[0]) {

@@ -10,6 +10,8 @@ import { OrderTracking } from './order-tracking';
 import { SavedOrderPrice } from './order-pricing';
 import { PhoneLink } from './phone-link';
 import { OrderRequirements } from './order-requirements';
+import {AdminDispatch} from './admin-dispatch';
+import {OrderTrustPanel} from './order-trust';
 
 const labels: Record<AdminOrderFilter, string> = { all: 'Все', unassigned: 'Без курьера', active: 'Активные', history: 'История' };
 const message = (e: unknown) => e instanceof Error ? e.message : 'Не удалось обновить данные. Повторите.';
@@ -104,7 +106,7 @@ export function AdminOrders({ user, onBack, initialOrderId }: { user: User; onBa
       {error && <Feedback title="Не удалось обновить" tone="error" role="alert" action={<Button variant="ghost" onClick={reload}>Повторить</Button>}>
         {error}{syncedAt && <p>Последнее обновление: {formatTime(syncedAt)}. Статусы могут быть устаревшими.</p>}
       </Feedback>}
-      {selected ? detailLoading ? <Skeletons/> : order && <AdminOrderDetail order={order} user={user}/> : <>
+      {selected ? detailLoading ? <Skeletons/> : order && <AdminOrderDetail key={order.id} order={order} user={user} onSaved={reload}/> : <>
         <h1>Диспетчерская</h1><p className="admin-sync">{serviceCity} · список обновляется каждые 15 секунд</p>
         <div className="admin-toolbar">
           <div className="field"><label htmlFor="admin-order-search">Найти заказ</label><input id="admin-order-search" type="search" maxLength={100} value={search} onChange={e => setSearch(e.target.value)} placeholder="Номер или адрес" aria-describedby="admin-search-hint"/><small className="field-hint" id="admin-search-hint">Например, QD-0042 или Абая</small></div>
@@ -115,13 +117,13 @@ export function AdminOrders({ user, onBack, initialOrderId }: { user: User; onBa
           <p className="admin-sync" role="status">Показано {page.orders.length} из {page.total} заказов</p>
           {page.orders.length < page.total && <Button variant="secondary" onClick={() => setCriteria(value => ({ ...value, take: value.take + 20 }))} disabled={loading}>{loading ? 'Загружаем…' : 'Показать ещё'}</Button>}
         </> : <EmptyState title={criteria.search || criteria.filter !== 'all' ? 'Ничего не найдено' : 'Заказов пока нет'} action={criteria.search || criteria.filter !== 'all' ? <Button variant="secondary" onClick={() => { setSearch(''); setPage(null); setCriteria({ search: '', filter: 'all', take: 20 }); }}>Сбросить фильтры</Button> : undefined}>{criteria.search || criteria.filter !== 'all' ? 'Измените запрос или сбросьте фильтры.' : 'Новые доставки появятся здесь после создания клиентом.'}</EmptyState>)}
-        <p className="admin-sync">Откройте заказ, чтобы посмотреть адреса, курьера и историю статусов. Заявки курьеров доступны в профиле.</p>
+        <p className="admin-sync">Откройте заказ, чтобы посмотреть адреса, контакты, историю и доступные действия диспетчера.</p>
       </>}
     </>}
   </ApplicationScreen>;
 }
 
-function AdminOrderDetail({ order, user }: { order: AdminOrder; user: User }) {
+function AdminOrderDetail({ order, user,onSaved }: { order: AdminOrder; user: User;onSaved:()=>void }) {
   const heading = { CREATED: 'Заказ создан', SEARCHING_FOR_COURIER: 'Ожидает курьера', ACCEPTED: 'Курьер забирает посылку', PICKED_UP: 'Посылка у курьера', IN_TRANSIT: 'Посылка в пути', DELIVERED: 'Доставка завершена', CANCELLED: 'Заказ отменён' }[order.status];
   const activeCourier = !!order.courierId && !['DELIVERED', 'CANCELLED'].includes(order.status);
   return <section className="admin-order-detail" aria-label="Наблюдение за заказом">
@@ -137,6 +139,8 @@ function AdminOrderDetail({ order, user }: { order: AdminOrder; user: User }) {
     {order.notes && <p className="muted pre-wrap">{order.notes}</p>}
     {order.status === 'SEARCHING_FOR_COURIER' && <Feedback title="Заказ доступен курьерам">Одобренный курьер сам выбирает доставку и нажимает «Принять заказ».</Feedback>}
     <Timeline order={order} title="История заказа" acceptedLabel="Принят курьером"/>
+    <AdminDispatch order={order} onSaved={onSaved}/>
+    <OrderTrustPanel key={`${order.id}:${order.assignmentVersion}`} order={order} user={user}/>
     {!activeCourier && <OrderTracking order={order} user={user} readOnly/>}
   </section>;
 }

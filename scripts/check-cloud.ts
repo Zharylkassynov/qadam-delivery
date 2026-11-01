@@ -46,8 +46,22 @@ try {
     await client.query('DELETE FROM qadam.business_profiles WHERE false');
     await client.query('SELECT parcel_type,fragile,surprise,urgent,card_text,business_name,pickup_details,deliver_after,deliver_before FROM qadam.orders LIMIT 0');
     await client.query('UPDATE qadam.orders SET parcel_type=parcel_type,fragile=fragile,surprise=surprise,urgent=urgent,card_text=card_text,business_name=business_name,pickup_details=pickup_details,deliver_after=deliver_after,deliver_before=deliver_before WHERE false');
+    await client.query('SELECT photo_required,code_required,assignment_version FROM qadam.orders LIMIT 0');
+    await client.query('UPDATE qadam.orders SET photo_required=photo_required,code_required=code_required,assignment_version=assignment_version WHERE false');
+    await client.query('SELECT kind,reason,previous_courier_id,next_courier_id FROM qadam.order_events LIMIT 0');
+    await client.query('SELECT generation FROM qadam.order_notifications LIMIT 0');
+    for(const table of ['courier_blocks','courier_block_events','order_delivery_codes','order_actions','order_photos','order_ratings']) {
+      await client.query(`SELECT * FROM qadam.${table} LIMIT 0`);
+      const privileges=(await client.query(`SELECT has_table_privilege(current_user,$1,'INSERT') AS can_insert,
+        c.relrowsecurity AS rls FROM pg_class c WHERE c.oid=$1::regclass`,[`qadam.${table}`])).rows[0];
+      if(!privileges?.can_insert||!privileges.rls)throw new Error('Delivery trust permissions missing');
+    }
+    await client.query('UPDATE qadam.courier_blocks SET blocked=blocked WHERE false');
+    await client.query('UPDATE qadam.order_delivery_codes SET attempts=attempts WHERE false');
+    await client.query('UPDATE qadam.order_photos SET file_id=file_id,state=state WHERE false');
+    await client.query('DELETE FROM qadam.courier_locations WHERE false');
   } finally { await client.query('ROLLBACK'); }
-  console.log(JSON.stringify({ project: target.ref, host: target.host, poolerMode: target.poolerMode, clientTlsVerified: stream.authorized, tlsProtocol: stream.getProtocol(), orderNotificationsReady: true, courierPresenceReady:true, pricingContactsReady:true,businessOrdersReady:true, ...pricingState, ...state }));
+  console.log(JSON.stringify({ project: target.ref, host: target.host, poolerMode: target.poolerMode, clientTlsVerified: stream.authorized, tlsProtocol: stream.getProtocol(), orderNotificationsReady: true, courierPresenceReady:true, pricingContactsReady:true,businessOrdersReady:true,deliveryTrustReady:true, ...pricingState, ...state }));
   } finally { client.release(); }
 } catch (error) {
   // Deliberately omit stack/URL, which may contain secrets from parser errors.

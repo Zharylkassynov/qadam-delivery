@@ -59,18 +59,27 @@ test('Mini App completes a delivery through a separate API without cookies and r
   const courier = await playwright.request.newContext({ baseURL: api, extraHTTPHeaders: { Origin: frontend } });
   try {
     expect((await courier.post('/api/auth/login', { data: { email: 'courier1@qadam.demo', password: process.env.DEMO_PASSWORD } })).status()).toBe(200);
+    const proofConfig=await courier.get('/api/delivery-proof');expect(proofConfig.status()).toBe(200);expect((await proofConfig.json()).enabled).toBe(false);
     expect((await courier.post('/api/courier/status', { data: { online: true } })).status()).toBe(200);
     expect((await courier.post('/api/courier/location', { data: { sharing:true,consent:true } })).status()).toBe(200);
     expect((await courier.post('/api/courier/location', { data: { latitude:43.24,longitude:76.9,accuracy:22,capturedAt:new Date().toISOString() } })).status()).toBe(200);
     expect((await (await courier.get('/api/courier/status')).json()).status.online).toBe(true);
     expect((await (await courier.get(`/api/orders/${order.id}`)).json()).order.recipientPhone).toBeNull();
     expect((await courier.post(`/api/orders/${order.id}/accept`, { data: {} })).status()).toBe(200);
+    const trust=await courier.get(`/api/orders/${order.id}/trust`);expect(trust.status()).toBe(200);
+    expect((await courier.get(`/api/orders/${order.id}/code`)).status()).toBe(403);
+    expect((await courier.get(`/api/admin/orders/${order.id}/manage`)).status()).toBe(403);
     for (const status of ['PICKED_UP', 'IN_TRANSIT', 'DELIVERED']) {
       expect((await courier.post(`/api/orders/${order.id}/status`, { data: { status } })).status()).toBe(200);
     }
     expect((await (await courier.get(`/api/orders/${order.number}`)).json()).order.status).toBe('DELIVERED');
     expect((await courier.post('/api/courier/status', { data: { online: false } })).status()).toBe(200);
     await expect(page.getByRole('heading', { name: 'Посылка у получателя', exact: true })).toBeVisible();
+    await page.getByRole('radio',{name:'5',exact:true}).check();
+    await page.getByLabel('Комментарий · необязательно',{exact:true}).fill('Отзыв через отдельный API');
+    await page.getByRole('button',{name:'Сохранить отзыв',exact:true}).click();
+    await expect(page.getByText('Отзыв сохранён. Для исправления напишите команде Qadam.',{exact:true})).toBeVisible();
+    expect(Object.hasOwn((await (await courier.get(`/api/orders/${order.id}/trust`)).json()).trust,'rating')).toBe(false);
     await page.screenshot({ path: testInfo.outputPath('separate-api-delivered.png'), fullPage: true });
     await page.reload();
     await page.getByRole('navigation', { name: 'Мобильная навигация', exact: true }).getByRole('button', { name: 'Заказы', exact: true }).click();

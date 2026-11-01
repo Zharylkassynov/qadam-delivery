@@ -1,0 +1,10 @@
+Generated with the built-in ImageGen tool on 2026-10-31.
+Final image saved as a 1024x1024 JPEG.
+
+Use case: logo-brand.
+Asset type: final square Telegram bot profile photo for Qadam Delivery, a local parcel delivery service in Almaty. Generate a 1024x1024 square raster avatar.
+Primary request: a distinctive polished modern logistics brand avatar with one bold white Q monogram on a solid cobalt blue #2455DB background.
+Art direction: strong simple geometric silhouette, flat vector-like precision, elegant contemporary transport identity. The large white Q is instantly readable, with a slightly squared circular form and its short diagonal tail subtly forming a forward-pointing delivery arrow. In its generous blue counter, integrate one very simple small white outlined parcel cube with a single tape seam; keep the cube minimal and harmonious with the thick Q, no tiny decorative details. One unified emblem, not multiple separate icons.
+Composition: emblem centered optically, perfectly balanced, all white artwork fits inside the central 66% of the square with ample blue margins, safe for circular Telegram cropping. Crisp high-contrast edges, beautifully controlled proportions, reads clearly at 48 pixels. Solid uniform full-bleed cobalt blue background.
+Text: only the stylized letter Q. No brand name or other letters, no tagline.
+Constraints: no mockup, no interface, no gradients, no 3D, no shadows, no textures, no scooter, no scenery, no watermark, no border, no rounded square frame. Deliver the actual finished square profile image.
