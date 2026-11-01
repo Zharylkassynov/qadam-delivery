@@ -23,6 +23,7 @@ import { windowExpired,futurePriceMessage } from '../lib/order-details';
 import {api} from '../lib/client-api';
 import {OrderTrustPanel} from './order-trust';
 import {CourierRelease,DeliveryHandoff} from './delivery-handoff';
+import {OrderLocationStream} from './order-location-stream';
 
 type View = 'home' | 'orders' | 'profile' | 'create' | 'review' | 'detail' | 'handoff' | 'point' | 'courierApplication' | 'adminApplications' | 'adminOrders' | 'couriers' | 'phone' | 'business';
 type Filter = 'all' | 'active' | 'history';
@@ -254,6 +255,7 @@ function OrderDetail({ order, user, busy, onCancel,onReleased }: { order: Order;
     {complete ? <div className="success-symbol"><Icon type="check"/></div> : <Badge status={order.status}/>}
     <div className="screen-heading"><h1 tabIndex={-1}>{heading}</h1><p>{complete ? `${orderNumber(order)} · ${formatTime(order.updatedAt)}` : order.status === 'SEARCHING_FOR_COURIER' ? customer ? 'Заказ создан. Курьер увидит адреса и сможет принять доставку.' : 'Проверьте адреса и условия перед принятием заказа.' : `Создан ${formatTime(order.createdAt)}`}</p></div>
     <OrderTracking order={order} user={user}/>
+    {order.courierId===user.id&&['ACCEPTED','PICKED_UP','IN_TRANSIT'].includes(order.status)&&<OrderLocationStream key={`${order.id}:${order.assignmentVersion}`} order={order}/>}
     {customer && order.courierName && <div className="courier-contact"><span className="avatar">{initials(order.courierName)}</span><div><strong>{order.courierName}</strong><small>Ваш курьер</small></div></div>}
     <RouteCard pickup={order.pickupAddress} destination={order.destinationAddress}/>
     <OrderRequirements order={order}/>

@@ -11,13 +11,14 @@ export const locationSchema = pointSchema.extend({
   capturedAt: z.iso.datetime(),
 }).strict();
 
-export async function persistOrderLocation(client: Pick<PoolClient,'query'>, id: string, courierId: string, data: z.infer<typeof locationSchema>) {
-  return client.query(`INSERT INTO qadam.courier_locations(order_id,courier_id,latitude,longitude,accuracy,captured_at)
-    VALUES($1,$2,$3,$4,$5,$6) ON CONFLICT(order_id) DO UPDATE SET courier_id=excluded.courier_id,
-    latitude=excluded.latitude,longitude=excluded.longitude,accuracy=excluded.accuracy,captured_at=excluded.captured_at,received_at=clock_timestamp()
+export async function persistOrderLocation(client: Pick<PoolClient,'query'>, id: string, courierId: string, data: z.infer<typeof locationSchema>,source:'MINI_APP'|'TELEGRAM_LIVE'='MINI_APP') {
+  return client.query(`INSERT INTO qadam.courier_locations(order_id,courier_id,latitude,longitude,accuracy,captured_at,location_source)
+    SELECT $1,$2,$3,$4,$5,$6,$7 WHERE $7='TELEGRAM_LIVE' OR NOT EXISTS(SELECT 1 FROM qadam.order_location_streams WHERE order_id=$1 AND state IN ('WAITING','LIVE') AND expires_at>clock_timestamp() AND (state='LIVE' OR created_at>clock_timestamp()-interval '5 minutes'))
+    ON CONFLICT(order_id) DO UPDATE SET courier_id=excluded.courier_id,
+    latitude=excluded.latitude,longitude=excluded.longitude,accuracy=excluded.accuracy,captured_at=excluded.captured_at,location_source=excluded.location_source,received_at=clock_timestamp()
     WHERE qadam.courier_locations.captured_at<excluded.captured_at
     RETURNING latitude,longitude,accuracy,captured_at AS "capturedAt",received_at AS "receivedAt"`,
-  [id,courierId,data.latitude,data.longitude,data.accuracy,data.capturedAt]);
+  [id,courierId,data.latitude,data.longitude,data.accuracy,data.capturedAt,source]);
 }
 
 export async function reportLocation(actor: User, id: string, input: z.infer<typeof locationSchema>): Promise<CourierLocation> {
@@ -33,6 +34,8 @@ export async function reportLocation(actor: User, id: string, input: z.infer<typ
     if (!order) throw new AppError(404, 'Заказ не найден.');
     if (order.courier_id !== actor.id) throw new AppError(403, 'Этот заказ вам не назначен.');
     if (!['ACCEPTED', 'PICKED_UP', 'IN_TRANSIT'].includes(order.status)) throw new AppError(409, 'Передача позиции для этого заказа завершена.');
+    const stream=await client.query("SELECT 1 FROM qadam.order_location_streams WHERE order_id=$1 AND state IN ('WAITING','LIVE') AND expires_at>clock_timestamp() AND (state='LIVE' OR created_at>clock_timestamp()-interval '5 minutes')",[id]);
+    if(stream.rowCount)throw new AppError(409,'Для заказа выбрана трансляция Telegram. Сначала остановите её использование в Qadam.');
     const previous = (await client.query(`SELECT latitude,longitude,accuracy,captured_at AS "capturedAt",received_at AS "receivedAt",
       received_at>clock_timestamp()-interval '5 seconds' AS throttled
       FROM qadam.courier_locations WHERE order_id=$1`, [id])).rows[0];
@@ -41,11 +44,7 @@ export async function reportLocation(actor: User, id: string, input: z.infer<typ
       const { throttled: _, ...location } = previous; return location;
     }
     if (previous?.throttled) throw new AppError(429, 'Позиция уже обновлена. Следующая отправка через несколько секунд.');
-    const result = await client.query(`INSERT INTO qadam.courier_locations(order_id,courier_id,latitude,longitude,accuracy,captured_at)
-      VALUES($1,$2,$3,$4,$5,$6) ON CONFLICT(order_id) DO UPDATE SET courier_id=excluded.courier_id,
-      latitude=excluded.latitude,longitude=excluded.longitude,accuracy=excluded.accuracy,captured_at=excluded.captured_at,received_at=now()
-      RETURNING latitude,longitude,accuracy,captured_at AS "capturedAt",received_at AS "receivedAt"`,
-    [id, actor.id, data.latitude, data.longitude, data.accuracy, data.capturedAt]);
+    const result=await persistOrderLocation(client,id,actor.id,data);
     return result.rows[0];
   });
 }

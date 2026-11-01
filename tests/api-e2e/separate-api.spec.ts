@@ -60,6 +60,8 @@ test('Mini App completes a delivery through a separate API without cookies and r
   try {
     expect((await courier.post('/api/auth/login', { data: { email: 'courier1@qadam.demo', password: process.env.DEMO_PASSWORD } })).status()).toBe(200);
     const proofConfig=await courier.get('/api/delivery-proof');expect(proofConfig.status()).toBe(200);expect((await proofConfig.json()).enabled).toBe(false);
+    expect((await courier.get('/api/courier/location-preferences')).status()).toBe(200);
+    expect((await courier.post('/api/courier/location-preferences',{data:{autoEnabled:false}})).status()).toBe(200);
     expect((await courier.post('/api/courier/status', { data: { online: true } })).status()).toBe(200);
     expect((await courier.post('/api/courier/location', { data: { sharing:true,consent:true } })).status()).toBe(200);
     expect((await courier.post('/api/courier/location', { data: { latitude:43.24,longitude:76.9,accuracy:22,capturedAt:new Date().toISOString() } })).status()).toBe(200);
@@ -67,6 +69,7 @@ test('Mini App completes a delivery through a separate API without cookies and r
     expect((await (await courier.get(`/api/orders/${order.id}`)).json()).order.recipientPhone).toBeNull();
     expect((await courier.post(`/api/orders/${order.id}/accept`, { data: {} })).status()).toBe(200);
     const trust=await courier.get(`/api/orders/${order.id}/trust`);expect(trust.status()).toBe(200);
+    const stream=await courier.get(`/api/orders/${order.id}/location-stream`);expect(stream.status()).toBe(200);expect((await stream.json()).enabled).toBe(false);
     expect((await courier.get(`/api/orders/${order.id}/code`)).status()).toBe(403);
     expect((await courier.get(`/api/admin/orders/${order.id}/manage`)).status()).toBe(403);
     for (const status of ['PICKED_UP', 'IN_TRANSIT', 'DELIVERED']) {

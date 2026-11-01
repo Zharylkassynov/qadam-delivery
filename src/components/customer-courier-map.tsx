@@ -31,12 +31,13 @@ export function CustomerCourierMap({order,markers}:{order?:Order;markers:MapMark
   },[assigned,bounds,refresh]);
   const fresh=points.filter(p=>now-Date.parse(p.capturedAt)<=90000),count=fresh.reduce((sum,p)=>sum+p.count,0);
   const location=order?.courierLocation,stale=Boolean(location&&now-Date.parse(location.capturedAt)>90000);
+  const source=location?.source==='TELEGRAM_LIVE'?'Источник — трансляция Telegram. ':'';
   const courierMarkers:MapMarker[]=assigned?location?[{...location,kind:'courier',stale,label:`Ваш курьер · ${formatTime(location.capturedAt)}${stale?' · позиция устарела':''}`}]:[]:fresh.map(p=>({...p,kind:'courier',approximate:true,label:`${p.count===1?'Свободный курьер':`${p.count} курьера`} · примерное расположение`}));
   return <>
     <DeliveryMap markers={[...markers,...courierMarkers]} onBoundsChange={assigned?undefined:setBounds}/>
     <div className={`customer-map-status ${stale?'map-status-stale':''}`} role="status">
       <strong>{assigned?location?stale?'Позиция вашего курьера устарела':`Ваш курьер · позиция обновлена в ${formatTime(location.capturedAt)}`:'Курьер ещё не передал позицию':loading?'Загружаем позиции курьеров…':error?'Не удалось обновить позиции':count?`${count} ${count===1?'курьер':'курьера'} на карте`:'Свежих позиций пока нет'}</strong>
-      <p>{assigned?location?stale?'Новых координат нет более 90 секунд. Курьер мог переместиться.':location.accuracy===null?'Точность не указана устройством.':`Точность около ${Math.round(location.accuracy)} м. Новые точки появляются автоматически.`:'Координаты появятся, когда курьер включит смену и разрешит передачу позиции.':error?'Проверьте интернет и повторите. Создание доставки доступно.':count?'Примерное расположение свободных курьеров.':'Курьеры появятся, когда включат смену и передадут позицию.'}</p>
+      <p>{source}{assigned?location?stale?'Новых координат нет более 90 секунд. Курьер мог переместиться.':location.accuracy===null?'Точность не указана устройством.':`Точность около ${Math.round(location.accuracy)} м. Новые точки появляются автоматически.`:'Координаты появятся, когда курьер включит смену и разрешит передачу позиции.':error?'Проверьте интернет и повторите. Создание доставки доступно.':count?'Примерное расположение свободных курьеров.':'Курьеры появятся, когда включат смену и передадут позицию.'}</p>
       {!assigned&&error&&<button className="text-button" onClick={()=>setRefresh(n=>n+1)}>Повторить обновление</button>}
     </div>
   </>;

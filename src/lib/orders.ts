@@ -50,7 +50,7 @@ export const selectOrder = `SELECT o.id,o.number::text,o.customer_id AS "custome
     'tariffVersion',o.tariff_version,'breakdown',o.pricing_details) END AS pricing,
   CASE WHEN o.pickup_latitude IS NOT NULL THEN jsonb_build_object('latitude',o.pickup_latitude,'longitude',o.pickup_longitude) END AS "pickupPoint",
   CASE WHEN o.destination_latitude IS NOT NULL THEN jsonb_build_object('latitude',o.destination_latitude,'longitude',o.destination_longitude) END AS "destinationPoint",
-  (SELECT jsonb_build_object('latitude',l.latitude,'longitude',l.longitude,'accuracy',l.accuracy,'capturedAt',l.captured_at,'receivedAt',l.received_at)
+  (SELECT jsonb_build_object('latitude',l.latitude,'longitude',l.longitude,'accuracy',l.accuracy,'capturedAt',l.captured_at,'receivedAt',l.received_at,'source',l.location_source)
     FROM qadam.courier_locations l WHERE l.order_id=o.id AND l.courier_id=o.courier_id) AS "courierLocation",
   COALESCE((SELECT jsonb_agg(jsonb_build_object('id',e.id,'status',e.status,'at',e.created_at,'actor',u.name,'kind',e.kind,'reason',CASE WHEN e.kind IN ('ASSIGN','RELEASE','CANCEL') THEN e.reason END) ORDER BY e.id)
     FROM qadam.order_events e JOIN qadam.users u ON u.id=e.actor_id WHERE e.order_id=o.id),'[]'::jsonb) AS events

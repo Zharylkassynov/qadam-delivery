@@ -30,7 +30,7 @@ export type MapPoint = { latitude: number; longitude: number };
 export type DeliveryRoute = { mode: 'drive'; distanceMeters: number; paths: [number, number][][] };
 export type OrderQuote = { id: string; expiresAt: string; priceKzt: number; breakdown: import('./pricing').PriceBreakdown; distanceM: number; durationS: number; tariffVersion: string };
 export type OrderPricing = { priceKzt: number; courierPayoutKzt: number; platformFeeKzt: number; distanceM: number; durationS: number; tariffVersion: string; breakdown: import('./pricing').PriceBreakdown };
-export type CourierLocation = MapPoint & { accuracy: number | null; capturedAt: string; receivedAt: string };
+export type CourierLocation = MapPoint & { accuracy: number | null; capturedAt: string; receivedAt: string; source?:'MINI_APP'|'TELEGRAM_LIVE' };
 export type Order = {
   id: string; number: string; customerId: string; customerName: string;
   courierId: string | null; courierName: string | null;
