@@ -36,7 +36,7 @@ export function quoteFingerprint(data:QuoteInput){
   const x=quoteInputSchema.parse(data);
   return createHash('sha256').update(JSON.stringify([x.pickupAddress,x.destinationAddress,x.recipientName,x.recipientPhone,x.notes,
     x.pickupPoint.latitude,x.pickupPoint.longitude,x.destinationPoint.latitude,x.destinationPoint.longitude,x.transport,x.payer,x.paymentMethod,x.shareContact,x.pilotTermsVersion,
-    x.parcelType??null,x.fragile??false,x.surprise??false,x.urgent??false,x.cardText||null,x.businessName??null,x.pickupDetails||null,x.deliverAfter??null,x.deliverBefore??null])).digest('hex');
+    x.parcelType??null,x.fragile??false,x.surprise??false,x.urgent??false,x.cardText||null,x.businessName??null,x.pickupDetails||null,x.deliverAfter??null,x.deliverBefore??null,x.codeRequired??false])).digest('hex');
 }
 function inside(point:MapPoint,tariff:Tariff){const z=tariff.zone;return point.latitude>=z.south&&point.latitude<=z.north&&point.longitude>=z.west&&point.longitude<=z.east;}
 export async function createQuote(actor:User,input:unknown,calculate:(a:MapPoint,b:MapPoint)=>Promise<QuoteRoute>=quoteRoute):Promise<OrderQuote>{

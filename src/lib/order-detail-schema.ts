@@ -3,6 +3,7 @@ import { parcelKinds } from './order-details';
 // Keep server validation out of the browser's formatting/date utilities.
 const date=z.iso.datetime({offset:true}).transform(value=>new Date(value).toISOString()).nullable().optional();
 export const orderDetailFields={
+  codeRequired:z.boolean().optional(),
   parcelType:z.enum(parcelKinds).nullable().optional(),
   fragile:z.boolean().optional(),surprise:z.boolean().optional(),urgent:z.boolean().optional(),
   cardText:z.string().trim().max(300).nullable().optional(),

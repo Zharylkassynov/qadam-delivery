@@ -5,6 +5,7 @@ import { geoapifyKey, takeMapBudget } from './map-services';
 import type { DeliveryRoute, MapPoint, User } from './types';
 import { quoteRoute } from './quote-routing';
 import { currentTariff } from './order-quotes';
+import {requireCourierAccess} from './trust-core';
 
 const coordinate = z.tuple([z.number().min(-180).max(180), z.number().min(-90).max(90)]);
 const resultSchema = z.object({ features: z.array(z.object({
@@ -28,13 +29,14 @@ async function providerJson(response: Response) {
 }
 
 export async function orderRoute(actor: User, orderId: string): Promise<DeliveryRoute | null> {
+  if(actor.role==='COURIER')await requireCourierAccess(database(),actor.id);
   if (!z.uuid().safeParse(orderId).success) throw new AppError(400, 'Некорректный номер заказа.');
   // Match order visibility on every request, including cache hits. Never accept
   // coordinates, courier IDs or provider URLs supplied by the caller.
   const result = await database().query(`SELECT pickup_latitude AS "aLat",pickup_longitude AS "aLon",
     destination_latitude AS "bLat",destination_longitude AS "bLon",price_kzt AS "priceKzt" FROM qadam.orders
     WHERE id=$1 AND (($3='CUSTOMER' AND customer_id=$2) OR
-      ($3='COURIER' AND (courier_id=$2 OR (courier_id IS NULL AND status='SEARCHING_FOR_COURIER'
+      ($3='COURIER' AND NOT EXISTS(SELECT 1 FROM qadam.courier_blocks cb WHERE cb.user_id=$2 AND cb.blocked) AND (courier_id=$2 OR (courier_id IS NULL AND status='SEARCHING_FOR_COURIER'
         AND (price_kzt IS NULL OR EXISTS(SELECT 1 FROM qadam.courier_applications ca WHERE ca.user_id=$2 AND ca.status='APPROVED' AND ca.transport='CAR'))))) OR
       EXISTS(SELECT 1 FROM qadam.administrators a JOIN qadam.users u ON u.id=a.user_id
         WHERE a.user_id=$2 AND u.active=true))`, [orderId, actor.id, actor.role]);

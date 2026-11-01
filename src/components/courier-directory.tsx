@@ -8,6 +8,7 @@ import { availabilityLabels, districtLabels } from '../lib/courier-options';
 import { ApplicationScreen } from './courier-onboarding';
 import { Button, EmptyState, Feedback, formatTime } from './delivery-ui';
 import { PhoneLink } from './phone-link';
+import {CourierBlockControl} from './admin-dispatch';
 
 export function CourierDirectory({ user, onBack }: { user: User; onBack: () => void }) {
   const [couriers, setCouriers] = useState<CourierApplication[]>([]);
@@ -36,11 +37,12 @@ export function CourierDirectory({ user, onBack }: { user: User; onBack: () => v
       {loading && <p role="status">Загружаем курьеров…</p>}
       {!loading && !error && !couriers.length && <EmptyState title="Одобренных курьеров пока нет">Рассмотри новые заявки в профиле.</EmptyState>}
       <div className="courier-directory">{couriers.map(courier => <article className="courier-directory-row" key={courier.id}>
-        <h2>{courier.name}</h2><span className="courier-access-label">Доступ открыт</span>
+        <h2>{courier.name}</h2><span className={`courier-access-label ${courier.blocked?'courier-access-blocked':''}`}>{courier.blocked?'Доступ ограничен':'Доступ открыт'}</span>
         <PhoneLink phone={courier.phone}/>
         <p>{transportLabels[courier.transport]}{courier.district ? ` · ${districtLabels[courier.district]}` : ''}</p>
         <p>{courier.availability.length ? courier.availability.map(value => availabilityLabels[value]).join(', ') : 'Время не указано'}</p>
         <small className="muted">Источник: {courier.source ?? 'не указан'}<br/>{courier.reviewedAt && `Одобрено ${formatTime(courier.reviewedAt)}`}</small>
+        <CourierBlockControl key={`${courier.id}:${courier.blocked}`} courier={courier} user={user} onSaved={()=>setRefresh(n=>n+1)}/>
       </article>)}</div>
     </>}
   </ApplicationScreen>;

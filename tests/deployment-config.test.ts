@@ -14,6 +14,18 @@ test('production accepts the restricted transaction pooler and exact HTTPS origi
   assert.equal(appOrigin(production), production.APP_ORIGIN);
 });
 
+test('delivery proof validates its complete server configuration and stays out of frontend and Preview',()=>{
+  const proof={DELIVERY_PROOF_ENABLED:'true',DELIVERY_CODE_SECRET:'ab'.repeat(32),TELEGRAM_STORAGE_CHAT_ID:'-1001234567890',TELEGRAM_BOT_TOKEN:'123456789:local_test_only_abcdefghijklmnopqrstuvwxyz'};
+  assert.doesNotThrow(()=>validateDeployment({...production,...proof}));
+  assert.doesNotThrow(()=>validateDeployment({...production,DELIVERY_PROOF_ENABLED:'false'}));
+  for(const missing of ['DELIVERY_CODE_SECRET','TELEGRAM_STORAGE_CHAT_ID','TELEGRAM_BOT_TOKEN'])assert.throws(()=>validateDeployment({...production,...proof,[missing]:undefined}));
+  for(const invalid of [{DELIVERY_CODE_SECRET:'short'},{TELEGRAM_STORAGE_CHAT_ID:'@public-channel'},{DELIVERY_PROOF_ENABLED:'1'}])assert.throws(()=>validateDeployment({...production,...invalid}));
+  for(const privateSetting of [{DELIVERY_CODE_SECRET:proof.DELIVERY_CODE_SECRET},{TELEGRAM_STORAGE_CHAT_ID:proof.TELEGRAM_STORAGE_CHAT_ID},proof]){
+    assert.throws(()=>validateDeployment({QADAM_FRONTEND_ONLY:'true',NEXT_PUBLIC_API_ORIGIN:'https://api.example.test',...privateSetting}));
+    assert.throws(()=>validateDeployment({VERCEL:'1',VERCEL_ENV:'preview',VERCEL_URL:'test.vercel.app',...privateSetting}));
+  }
+});
+
 test('routing candidate key stays server-only, including frontend builds and Preview',()=>{
   const key='synthetic-tomtom-key-12345678';
   assert.doesNotThrow(()=>validateDeployment({...production,TOMTOM_API_KEY:key}));

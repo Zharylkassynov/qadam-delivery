@@ -4,6 +4,7 @@ import { database, transaction } from './db';
 import { AppError } from './errors';
 import type { User } from './types';
 import { verifyTelegramData } from './telegram';
+import {notBlocked} from './trust-core';
 
 const scrypt = promisify(scryptCallback);
 export const sessionCookie = 'qadam_session';
@@ -11,13 +12,13 @@ export const sessionMaxAge = 60 * 60 * 24 * 7;
 const hashToken = (token: string) => createHash('sha256').update(token).digest('hex');
 // Approved applications grant courier access without runtime UPDATE rights on users.
 const userFields = `u.id,u.email,u.name,
-  CASE WHEN u.role='COURIER' OR EXISTS(SELECT 1 FROM qadam.courier_applications ca WHERE ca.user_id=u.id AND ca.status='APPROVED')
+  CASE WHEN ${notBlocked()} AND (u.role='COURIER' OR EXISTS(SELECT 1 FROM qadam.courier_applications ca WHERE ca.user_id=u.id AND ca.status='APPROVED'))
     THEN 'COURIER' ELSE 'CUSTOMER' END AS role,
-  t.telegram_user_id::text AS "telegramId",
+  t.telegram_user_id::text AS "telegramId",NOT ${notBlocked()} AS "courierBlocked",
   EXISTS(SELECT 1 FROM qadam.administrators a WHERE a.user_id=u.id) AS "isAdmin"`;
 function publicUser(row: Record<string, unknown>): User {
   return { id: row.id as string, email: row.email as string, name: row.name as string, role: row.role as User['role'],
-    ...(row.telegramId ? { telegramId: row.telegramId as string } : {}), ...(row.isAdmin ? { isAdmin: true as const } : {}) };
+    ...(row.telegramId ? { telegramId: row.telegramId as string } : {}), ...(row.isAdmin ? { isAdmin: true as const } : {}),...(row.courierBlocked?{courierBlocked:true as const}:{}) };
 }
 
 export async function hashPassword(password: string) {

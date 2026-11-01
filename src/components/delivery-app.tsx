@@ -79,7 +79,7 @@ export function DeliveryApp() {
         const data = await api<{ orders: Order[]; user?: User }>('/api/orders', undefined, controller.signal);
         if (alive && current === revision.current) {
           setOrders(data.orders); setSyncError(''); setSyncedAt(new Date().toISOString());
-          if (data.user && (data.user.role !== user!.role || data.user.isAdmin !== user!.isAdmin)) {
+          if (data.user && (data.user.role !== user!.role || data.user.isAdmin !== user!.isAdmin || data.user.courierBlocked!==user!.courierBlocked)) {
             setSelected(null); setUser(data.user);
           }
         }

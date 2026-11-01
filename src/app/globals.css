@@ -393,5 +393,19 @@ html[data-telegram="true"] .app-shell { height: var(--tg-viewport-stable-height,
 .sticky-action:has(>.button+.button){display:flex;flex-direction:column;align-items:center;gap:8px}
 .screen-business .screen-content{max-width:600px}
 .delivery-check input:focus-visible{outline:3px solid var(--brand);outline-offset:3px}
+.order-trust,.trust-section{display:flex;flex-direction:column;gap:12px;min-width:0;overflow-wrap:anywhere}
+.order-trust:empty{display:none}.order-trust>.trust-section+.trust-section,.admin-dispatch{border-top:1px solid var(--line);padding-top:20px}
+.trust-section h3{font-size:17px;line-height:25px;font-weight:600;margin:0}
+.trust-pair{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.trust-pair .button{min-width:0;padding:12px 8px;font-size:14px}
+.trust-photo{display:block;width:100%;height:auto;max-height:360px;object-fit:contain;border:1px solid var(--line);border-radius:10px;background:var(--surface)}
+.trust-photo-empty{display:grid;place-content:center;text-align:center;min-height:148px;padding:20px;border:1px dashed var(--muted);border-radius:12px;color:var(--muted);font-size:14px}
+.delivery-code{font-size:48px;line-height:64px;letter-spacing:12px;font-weight:600;font-variant-numeric:tabular-nums;user-select:all;margin:8px 0}
+.field .delivery-code-input{font-size:30px;letter-spacing:12px;font-variant-numeric:tabular-nums}
+.trust-rating{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:7px;border:0;padding:0;margin:0;min-width:0}
+.trust-rating label{position:relative;display:grid;justify-items:center;align-content:center;min-height:58px;border:1px solid var(--line);border-radius:8px;color:var(--muted);cursor:pointer}
+.trust-rating input{position:absolute;inset:0;width:100%;height:100%;margin:0;opacity:0;z-index:1;cursor:pointer}.trust-rating span{font-size:26px;line-height:30px}.trust-rating small{font-size:12px}
+.trust-rating label:has(:checked){color:var(--brand);background:var(--brand-soft);border-color:var(--brand)}.trust-rating label:has(:focus-visible){outline:3px solid var(--brand);outline-offset:3px}
+.trust-rating-result{font-size:24px;font-weight:600}.trust-audit summary{cursor:pointer;min-height:44px;padding:10px 0;color:var(--brand)}.trust-audit>div{display:grid;gap:6px;padding:12px 0;border-top:1px solid var(--line)}
+.trust-audit small{color:var(--muted)}.courier-access-label.courier-access-blocked{color:var(--danger);background:#fff0f1}
 .screen-create .choice-row[aria-label="Тип отправления"]{flex-wrap:wrap}
 .screen-create .choice-row[aria-label="Тип отправления"]>.choice{flex:1 0 95px;min-width:95px}

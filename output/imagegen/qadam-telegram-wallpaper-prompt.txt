@@ -1,0 +1,10 @@
+Generated using the built-in ImageGen tool on 2026-10-31.
+
+Use case: stylized-concept.
+Asset type: finished portrait Telegram chat wallpaper for Qadam Delivery, a local parcel delivery service in Almaty, Kazakhstan.
+Primary request: Create a beautifully restrained premium delivery-themed wallpaper, ready to upload as an image. Tall smartphone portrait composition, approximately 9:16.
+Style/medium: sophisticated airy monochromatic line illustration with subtle tactile matte-paper grain; precise thin hand-drawn outlines, harmonious contemporary brand illustration, highly polished.
+Scene/backdrop: very pale cool blue-gray paper (#f3f6fa) with quiet, delicate blue (#2455db) line art diluted to low opacity. A sparse arrangement of small parcel boxes, a compact delivery scooter, an envelope, map pins and gently curving dotted delivery routes around the outer margins. Along the bottom margin, a delicate simplified outline of Almaty's mountains and a few low-rise city buildings, understated and integrated into the pattern.
+Composition/framing: wallpaper fills the entire canvas, no frame; generous restful negative space throughout the central 60% of the image for chat messages. Motifs small, spaced apart, predominantly at edges; a few partially cropped edge motifs create a natural wallpaper composition. Low contrast throughout, no large focal object.
+Lighting/mood: calm, welcoming, trustworthy and elegant.
+Constraints: no text, no lettering, no logo, no numbers, no UI, no chat bubbles, no phone mockup, no watermark, no gradients, no saturated blue blocks, no glossy 3D objects. This is the actual background image, not a presentation of the background.

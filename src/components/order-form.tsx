@@ -15,13 +15,13 @@ export type OrderDraft = {
   parcelType: typeof parcelTypes[number]; parcelDescription: string; notes: string;
   pickupPoint: MapPoint | null; destinationPoint: MapPoint | null;
   payer: 'SENDER'|'RECIPIENT'; paymentMethod: 'KASPI_TRANSFER'|'CASH';
-  pilotParcelConfirmed: boolean;
+  pilotParcelConfirmed: boolean;codeRequired:boolean;
   timing:'soon'|'window';deliveryDate:string;deliveryFrom:string;deliveryTo:string;
   urgent:boolean;fragile:boolean;surprise:boolean;addCard:boolean;cardText:string;
   businessName:string|null;pickupDetails:string;
 };
 export const emptyDraft: OrderDraft = { pickupAddress: '', destinationAddress: '', recipientName: '', recipientPhone: '', parcelType: 'Посылка', parcelDescription: '', notes: '', pickupPoint: null, destinationPoint: null, payer:'SENDER',paymentMethod:'KASPI_TRANSFER',pilotParcelConfirmed:false,
-  timing:'soon',deliveryDate:'',deliveryFrom:'',deliveryTo:'',urgent:false,fragile:false,surprise:false,addCard:false,cardText:'',businessName:null,pickupDetails:'' };
+  timing:'soon',deliveryDate:'',deliveryFrom:'',deliveryTo:'',urgent:false,fragile:false,surprise:false,addCard:false,cardText:'',businessName:null,pickupDetails:'',codeRequired:false };
 
 // Structured fields accompany the readable legacy notes; old orders remain intact.
 export function orderPayload(draft: OrderDraft,quoteId?:string) {
@@ -32,7 +32,7 @@ export function orderPayload(draft: OrderDraft,quoteId?:string) {
     ...(quoteId&&draft.pilotParcelConfirmed?{pilotTermsVersion:deliveryPilot.termsVersion}:{}),
     recipientName: draft.recipientName.trim(), recipientPhone: draft.recipientPhone.trim(),
     notes: [`Тип отправления: ${draft.parcelType}`, draft.parcelDescription.trim() && `О посылке: ${draft.parcelDescription.trim()}`, draft.notes.trim() && `Комментарий: ${draft.notes.trim()}`].filter(Boolean).join('\n'),
-    parcelType:parcelCode[draft.parcelType],fragile:draft.fragile,surprise:draft.surprise,urgent:draft.urgent,
+    parcelType:parcelCode[draft.parcelType],fragile:draft.fragile,surprise:draft.surprise,urgent:draft.urgent,codeRequired:draft.codeRequired,
     cardText:draft.addCard?draft.cardText.trim()||null:null,businessName:draft.businessName,pickupDetails:draft.pickupDetails.trim()||null,
     deliverAfter:draft.timing==='window'?almatyInput(draft.deliveryDate,draft.deliveryFrom):null,
     deliverBefore:draft.timing==='window'?almatyInput(draft.deliveryDate,draft.deliveryTo):null,

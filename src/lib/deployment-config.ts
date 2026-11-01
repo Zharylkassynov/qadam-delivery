@@ -20,6 +20,10 @@ export function appOrigin(env: Environment = process.env) {
 }
 
 export function validateDeployment(env: Environment = process.env) {
+  if(env.DELIVERY_PROOF_ENABLED&&!['true','false'].includes(env.DELIVERY_PROOF_ENABLED))throw new Error('DELIVERY_PROOF_ENABLED must be true or false');
+  if(env.DELIVERY_CODE_SECRET&&!/^[a-fA-F0-9]{64}$/.test(env.DELIVERY_CODE_SECRET))throw new Error('DELIVERY_CODE_SECRET must contain 64 hexadecimal characters');
+  if(env.TELEGRAM_STORAGE_CHAT_ID&&!/^-[1-9]\d{5,18}$/.test(env.TELEGRAM_STORAGE_CHAT_ID))throw new Error('Invalid private Telegram storage channel');
+  if(env.DELIVERY_PROOF_ENABLED==='true'&&(!env.DELIVERY_CODE_SECRET||!env.TELEGRAM_STORAGE_CHAT_ID||!/^\d+:[A-Za-z0-9_-]{30,}$/.test(env.TELEGRAM_BOT_TOKEN??'')))throw new Error('Delivery proof requires its server secret, private channel and Telegram bot');
   if(env.TOMTOM_API_KEY&&!/^[A-Za-z0-9_-]{16,128}$/.test(env.TOMTOM_API_KEY))throw new Error('Invalid server routing key');
   if (env.TELEGRAM_WORKER_ENABLED && !['true','false'].includes(env.TELEGRAM_WORKER_ENABLED)) throw new Error('TELEGRAM_WORKER_ENABLED must be true or false');
   if (env.VERCEL === '1' && env.VERCEL_ENV === 'production' && env.TELEGRAM_AUTH_ENABLED === 'true' && env.TELEGRAM_WORKER_ENABLED === 'false') throw new Error('Telegram worker must be enabled in Production');
@@ -32,7 +36,7 @@ export function validateDeployment(env: Environment = process.env) {
     if (env.VERCEL === '1' && (new URL(api).protocol !== 'https:' || ['localhost', '127.0.0.1', '[::1]'].includes(new URL(api).hostname))) {
       throw new Error('Public frontend deployments require a public HTTPS API origin');
     }
-    if (env.DATABASE_URL || env.TEST_DATABASE_URL || env.TELEGRAM_BOT_TOKEN || env.TELEGRAM_WEBHOOK_SECRET || env.GEOAPIFY_API_KEY || env.TOMTOM_API_KEY || env.DEMO_PASSWORD) {
+    if (env.DATABASE_URL || env.TEST_DATABASE_URL || env.TELEGRAM_BOT_TOKEN || env.TELEGRAM_WEBHOOK_SECRET || env.GEOAPIFY_API_KEY || env.TOMTOM_API_KEY || env.DEMO_PASSWORD || env.DELIVERY_CODE_SECRET || env.TELEGRAM_STORAGE_CHAT_ID || env.DELIVERY_PROOF_ENABLED==='true') {
       throw new Error('Frontend-only deployments must not contain backend credentials');
     }
     return;
@@ -46,7 +50,7 @@ export function validateDeployment(env: Environment = process.env) {
     throw new Error('Vercel must use the standard .next output directory');
   }
   if (env.VERCEL_ENV === 'preview') {
-    if (env.DEMO_AUTH_ENABLED === 'true' || env.DATABASE_URL || env.TELEGRAM_AUTH_ENABLED === 'true' || env.TELEGRAM_BOT_TOKEN || env.TELEGRAM_WEBHOOK_SECRET || env.GEOAPIFY_API_KEY || env.TOMTOM_API_KEY) {
+    if (env.DEMO_AUTH_ENABLED === 'true' || env.DATABASE_URL || env.TELEGRAM_AUTH_ENABLED === 'true' || env.TELEGRAM_BOT_TOKEN || env.TELEGRAM_WEBHOOK_SECRET || env.GEOAPIFY_API_KEY || env.TOMTOM_API_KEY || env.DELIVERY_CODE_SECRET || env.TELEGRAM_STORAGE_CHAT_ID || env.DELIVERY_PROOF_ENABLED==='true') {
       throw new Error('Preview must have login disabled and no database or bot credentials; scope credentials to Production');
     }
     return;

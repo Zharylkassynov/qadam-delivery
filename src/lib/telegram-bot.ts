@@ -81,6 +81,7 @@ async function handleUpdate(update: TelegramUpdate) {
 
 export async function processTelegramJobs(transport?: BotTransport) {
   const db = database();
+  await (await import('./photo-retention')).expireOrderPhotos();
   for (let i = 0; i < 8; i++) {
     const job = (await db.query(`UPDATE qadam.telegram_updates SET locked_until=now()+interval '60 seconds',attempts=attempts+1
       WHERE update_id=(SELECT update_id FROM qadam.telegram_updates WHERE processed_at IS NULL AND attempts<8 AND available_at<=now()

@@ -1,0 +1,15 @@
+Generated with the built-in ImageGen tool on 2026-10-31.
+Final artwork resampled to exactly 640x360 pixels for Telegram BotFather.
+
+Use case: ads-marketing.
+Asset type: final Telegram bot description cover for the "What can this bot do?" block of Qadam Delivery.
+Create ONE finished professional brand cover, landscape 16:9, target size 640x360 pixels. Full bleed actual artwork, no mockup or phone.
+Brand: Qadam Delivery, a parcel delivery service in Almaty, Kazakhstan. Primary brand cobalt #2455DB, dark ink #122F43, pale blue-gray #F3F6FA, white.
+Art direction: distinctive, polished minimal logistics brand identity with a strong readable typographic left half and a charming premium tactile miniature delivery scene on the right. Very pale blue-gray background. Large bold cobalt clean geometric sans-serif brand name on the left, with deliberate hierarchy and generous margins. Exact text, no other writing:
+"Qadam"
+"Delivery"
+"Доставка по Алматы"
+First two lines large, third line noticeably smaller in dark navy, still comfortably readable at 640x360.
+On the right: one handsome cobalt-blue delivery scooter facing left, with a small neat white parcel box over its rear wheel, and one larger warm-white cardboard shipping box behind it sealed with a cobalt tape strip. Carefully crafted soft matte 3D illustration with restrained realistic soft shadows, crisp appealing forms and no visual clutter. Behind the illustration a very subtle thin blue outline of Almaty's mountains and the Kok Tobe tower, small scale. A single minimal blue dotted route and one simple map pin integrate with the scene. Illustration stays clear of the text.
+Balanced horizontal composition, content inside a 6% safe margin, suitable for viewing on a small smartphone. Brand name has excellent contrast and occupies a substantial part of the composition. Clean solid background, no decorative gradient.
+No extra slogans, no delivery-time promises, no prices, no Telegram logo, no UI, no border, no watermark, no people, no unreadable microtext.

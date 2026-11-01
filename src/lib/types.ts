@@ -1,5 +1,5 @@
 export type Role = 'CUSTOMER' | 'COURIER';
-export type User = { id: string; name: string; email: string; role: Role; telegramId?: string; isAdmin?: true };
+export type User = { id: string; name: string; email: string; role: Role; telegramId?: string; isAdmin?: true;courierBlocked?:true };
 export const courierTransports = ['FOOT', 'ELECTRIC_MOPED', 'MOPED', 'CAR'] as const;
 export type CourierTransport = typeof courierTransports[number];
 export type CourierApplication = {
@@ -8,7 +8,7 @@ export type CourierApplication = {
   status: 'PENDING' | 'APPROVED' | 'REJECTED'; submittedAt: string;
   reviewedAt: string | null; reviewer: string | null; decisionReason: string; applicantActive: boolean;
   district: import('./courier-options').District | null; availability: import('./courier-options').Availability[];
-  ageConfirmed: boolean; consentAt: string | null; source: string | null;
+  ageConfirmed: boolean; consentAt: string | null; source: string | null; blocked?:boolean;
 };
 // Bicycle remains readable in historical applications, but cannot be selected anew.
 export const transportLabels = { FOOT: 'Пеший', ELECTRIC_MOPED: 'Электромопед', MOPED: 'Мопед', CAR: 'Автомобиль', BICYCLE: 'Велосипед' } as const;
@@ -24,7 +24,7 @@ export const nextStatus: Partial<Record<Status, Status>> = {
 export const actionLabels: Partial<Record<Status, string>> = {
   ACCEPTED: 'Посылка у меня', PICKED_UP: 'Начать доставку', IN_TRANSIT: 'Завершить доставку',
 };
-export type OrderEvent = { id: number; status: Status; at: string; actor: string };
+export type OrderEvent = { id: number; status: Status; at: string; actor: string;kind?:string;reason?:string|null };
 export type MapPoint = { latitude: number; longitude: number };
 // Route paths use Leaflet's [latitude, longitude] order, unlike provider GeoJSON.
 export type DeliveryRoute = { mode: 'drive'; distanceMeters: number; paths: [number, number][][] };
@@ -43,7 +43,9 @@ export type Order = {
   parcelType?:import('./order-details').ParcelType|null;fragile?:boolean;surprise?:boolean;urgent?:boolean;
   cardText?:string|null;businessName?:string|null;pickupDetails?:string|null;
   deliverAfter?:string|null;deliverBefore?:string|null;
+  photoRequired?:boolean;codeRequired?:boolean;assignmentVersion?:number;
 };
+export type OrderTrust={photoRequired:boolean;codeRequired:boolean;assignmentVersion:number;photo:{state:'READY'|'EXPIRED';expiresAt:string}|null;attemptsRemaining:number|null;rating?:{score:number;comment:string;createdAt:string}|null;canResetCode:boolean};
 
 export const adminOrderFilters = ['all', 'unassigned', 'active', 'history'] as const;
 export type AdminOrderFilter = typeof adminOrderFilters[number];
