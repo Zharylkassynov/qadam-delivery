@@ -60,6 +60,14 @@ try {
     await client.query('UPDATE qadam.order_delivery_codes SET attempts=attempts WHERE false');
     await client.query('UPDATE qadam.order_photos SET file_id=file_id,state=state WHERE false');
     await client.query('DELETE FROM qadam.courier_locations WHERE false');
+    await client.query('SELECT auto_location_enabled,auto_consent_version,auto_consent_at FROM qadam.courier_presence LIMIT 0');
+    await client.query('UPDATE qadam.courier_presence SET auto_location_enabled=auto_location_enabled,auto_consent_version=auto_consent_version,auto_consent_at=auto_consent_at WHERE false');
+    await client.query('SELECT location_source FROM qadam.courier_locations LIMIT 0');
+    await client.query('UPDATE qadam.courier_locations SET location_source=location_source WHERE false');
+    await client.query('SELECT id,order_id,courier_id,assignment_version,request_key,telegram_user_id,state,consent_version,expires_at,message_id,last_update_id,update_count FROM qadam.order_location_streams LIMIT 0');
+    await client.query("UPDATE qadam.order_location_streams SET state='STOPPED' WHERE false");
+    await client.query(`INSERT INTO qadam.order_location_streams(order_id,courier_id,assignment_version,request_key,telegram_user_id,consent_version,expires_at)
+      SELECT gen_random_uuid(),gen_random_uuid(),0,gen_random_uuid(),1,'permissions-check',now() WHERE false`);
   } finally { await client.query('ROLLBACK'); }
   console.log(JSON.stringify({ project: target.ref, host: target.host, poolerMode: target.poolerMode, clientTlsVerified: stream.authorized, tlsProtocol: stream.getProtocol(), orderNotificationsReady: true, courierPresenceReady:true, pricingContactsReady:true,businessOrdersReady:true,deliveryTrustReady:true, ...pricingState, ...state }));
   } finally { client.release(); }

@@ -190,6 +190,10 @@ test('production RLS grants allow the restricted role to save availability, mess
     await client.query('CREATE POLICY notifications_fixture_update ON qadam.orders FOR UPDATE TO qadam_app USING(true) WITH CHECK(true)');
     for(const [table,policy] of [['courier_status','courier_status_server'],['order_notifications','order_notifications_server']]) await client.query(`DROP POLICY IF EXISTS ${policy} ON qadam.${table}`);
     await client.query(sql.slice(sql.indexOf('ALTER TABLE qadam.courier_status ENABLE ROW LEVEL SECURITY;')));
+    // The role is created after migrations in this isolated fixture. Install the later trigger dependency grants too.
+    await client.query('DROP POLICY IF EXISTS order_location_streams_server ON qadam.order_location_streams');
+    const streams=await readFile(new URL('../db/migrations/20261101103834_courier_location_streams.sql',import.meta.url),'utf8');
+    await client.query(streams.match(/DO \$\$ DECLARE api_role text; BEGIN[\s\S]*?END; \$\$;/)![0]);
     await client.query('SET LOCAL ROLE qadam_app');
     await client.query('INSERT INTO qadam.courier_status(user_id,online) VALUES($1,true)',[courier.id]);
     await client.query('UPDATE qadam.courier_status SET online=false WHERE user_id=$1',[courier.id]);

@@ -9,6 +9,8 @@ import { enqueueBotMessage, drainBotOutbox } from './telegram-notifications';
 import type { BotTransport } from './telegram-bot-api';
 import type { User } from './types';
 import { saveTelegramContact } from './user-profiles';
+import {telegramLocationInput} from './telegram-location-input';
+import {liveLocationEnabled,receiveLiveLocation} from './order-location-streams';
 
 const id = z.number().int().positive().max(2 ** 52 - 1);
 const sender = z.object({ id, first_name: z.string().max(200).optional() });
@@ -27,6 +29,10 @@ export function validWebhookSecret(actual: string | null, expected = process.env
 
 export async function receiveTelegramUpdate(input: unknown) {
   const update = updateSchema.parse(input);
+  if(liveLocationEnabled()){
+    const point=telegramLocationInput(input);
+    if(point)await receiveLiveLocation(point);
+  }
   // Persist before HTTP 200; a retry never inserts a second update.
   await database().query('INSERT INTO qadam.telegram_updates(update_id,payload) VALUES($1,$2) ON CONFLICT(update_id) DO NOTHING', [update.update_id, JSON.stringify(update)]);
   return update.update_id;

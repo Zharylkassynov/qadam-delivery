@@ -44,7 +44,7 @@ test('public map rounds on the server, groups cells, exposes no identities, and 
 test('offline, expired, disabled, nonconsenting and stale couriers disappear without deleting order history',async()=>{
   await begin();await updateCourierPresence(courier,fix());
   await setCourierStatus(courier,{online:false});assert.ok(!(await nearbyCouriers(customer)).some(fixtureCell));
-  await setCourierStatus(courier,{online:true});await relax();await updateCourierPresence(courier,fix(1000));
+  await setCourierStatus(courier,{online:true});await updateCourierPresence(courier,{sharing:true,consent:true});await updateCourierPresence(courier,fix(1000));
   await database().query("UPDATE qadam.courier_status SET updated_at=now()-interval '9 hours' WHERE user_id=$1",[courier.id]);await reject(updateCourierPresence(courier,fix()),409);
   await setCourierStatus(courier,{online:true});await updateCourierPresence(courier,{sharing:false});await reject(updateCourierPresence(courier,fix()),403);
   await updateCourierPresence(courier,{sharing:true,consent:true});await updateCourierPresence(courier,fix());

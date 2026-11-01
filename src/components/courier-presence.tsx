@@ -5,11 +5,12 @@ import { api,ApiError } from '../lib/client-api';
 import type { CourierStatus } from '../lib/courier-status';
 import type { CourierLocation,User } from '../lib/types';
 import { currentLocation,locationPermission,nativeLocationManager,type DeviceFix } from '../lib/device-location';
-import { formatTime } from './delivery-ui';
+import { Button,Feedback,formatTime } from './delivery-ui';
+import {locationConsentVersion} from '../lib/location-consent';
 
 type Phase='off'|'pending'|'live'|'permission'|'unavailable'|'network'|'paused';
 type Presence={status:CourierStatus|null;busy:boolean;error:string;phase:Phase;geoError:string;saved:string|null;
-  online:boolean;load:()=>Promise<void>;setOnline:(on:boolean)=>Promise<void>;enableLocation:()=>Promise<void>;retry:()=>void;openSettings:()=>void};
+  online:boolean;load:()=>Promise<void>;setOnline:(on:boolean)=>Promise<void>;enableLocation:(saveAuto?:boolean)=>Promise<void>;saveSettings:(data:Record<string,unknown>)=>Promise<boolean>;retry:()=>void;openSettings:()=>void};
 const Context=createContext<Presence|null>(null);
 export const useCourierPresence=()=>{const value=useContext(Context);if(!value)throw new Error('Courier presence provider missing');return value;};
 const foreground=()=>!document.hidden&&window.Telegram?.WebApp?.isActive!==false;
@@ -88,10 +89,11 @@ export function CourierPresenceProvider({user,children}:{user:User;children:Reac
     catch {if(alive.current){setError('Не удалось сохранить статус. Предыдущее состояние сохранено.');setVersion(v=>v+1);}}
     finally {saving.current=false;if(alive.current)setBusy(false);}
   }
-  async function enableLocation(){
+  async function enableLocation(saveAuto=false){
     if(consentBusy.current||saving.current||!foreground())return;
     consentBusy.current=true;setBusy(true);setGeoError('');const generation=++geoGeneration.current;
     try {
+      if(saveAuto)await api('/api/courier/location-preferences',{autoEnabled:true,consentVersion:locationConsentVersion});
       await api('/api/courier/location',{sharing:true,consent:true});
       if(generation!==geoGeneration.current||!alive.current||!foreground())return;
       const fix=await currentLocation();
@@ -102,16 +104,23 @@ export function CourierPresenceProvider({user,children}:{user:User;children:Reac
     finally {consentBusy.current=false;if(alive.current){setBusy(false);await load();setVersion(v=>v+1);}}
   }
   const retry=()=>{setVersion(v=>v+1);void load();};
+  async function saveSettings(data:Record<string,unknown>){
+    if(saving.current)return false;
+    saving.current=true;statusRevision.current++;if(data.revoke)geoGeneration.current++;setBusy(true);setError('');
+    try{await api('/api/courier/location-preferences',data);return true;}
+    catch(e){setError(e instanceof Error?e.message:'Не удалось сохранить настройку.');return false;}
+    finally{saving.current=false;setBusy(false);await load();setVersion(v=>v+1);}
+  }
   const openSettings=()=>{const manager=nativeLocationManager();if(manager)manager.openSettings();else{setGeoError('Разрешите геолокацию в настройках сайта, затем нажмите «Повторить геолокацию».');}};
   // tick updates expiry even when a status request fails.
   void tick;
-  return <Context.Provider value={{status,busy,error,phase,geoError,saved,online,load,setOnline,enableLocation,retry,openSettings}}>{children}</Context.Provider>;
+  return <Context.Provider value={{status,busy,error,phase,geoError,saved,online,load,setOnline,enableLocation,saveSettings,retry,openSettings}}>{children}</Context.Provider>;
 }
 
-export function CourierGpsStatus(){
+function CourierGpsContent(){
   const geo=useCourierPresence(),[consent,setConsent]=useState(false);
   if(!geo.online)return <div className="courier-gps"><p>Для автоматической передачи позиции включите «Я на линии».</p><button className="text-button" disabled={geo.busy} onClick={()=>void geo.setOnline(true)}>Включить смену</button></div>;
-  if(!geo.status?.locationSharing)return <div className="courier-gps geo-consent"><p>Свободным клиентам показываем примерное расположение. Клиенту вашего заказа — GPS-позицию с точностью устройства.</p><label><input type="checkbox" checked={consent} onChange={e=>setConsent(e.target.checked)}/><span>Разрешаю показывать мою позицию во время смены.</span></label><button className="button primary wide" disabled={!consent||geo.busy} onClick={()=>void geo.enableLocation()}>{geo.busy?'Получаем позицию…':'Разрешить геолокацию'}</button></div>;
+  if(!geo.status?.locationSharing)return <div className="courier-gps geo-consent"><p>Свободным клиентам показываем примерное расположение. Клиенту вашего заказа — позицию и время обновления.</p><label><input type="checkbox" checked={consent} onChange={e=>setConsent(e.target.checked)}/><span>Разрешаю автоматически включать передачу геопозиции при выходе на линию.</span></label><p>Пока Qadam открыт. Для внешнего навигатора трансляция Telegram подключается отдельно. Выбор можно отозвать в настройках.</p><button className="button primary wide" disabled={!consent||geo.busy} onClick={()=>void geo.enableLocation(true)}>{geo.busy?'Получаем позицию…':'Разрешить геолокацию'}</button></div>;
   const title={off:'Геолокация готова к включению',pending:'Получаем вашу позицию…',live:'Позиция передаётся',permission:'Геолокация не разрешена',unavailable:'Геолокация недоступна',network:'Позиция не отправлена',paused:'Передача позиции приостановлена'}[geo.phase];
   return <div className={`courier-gps ${['permission','unavailable','network'].includes(geo.phase)?'gps-warning':''}`} role="status"><strong>{title}</strong>
     <p>{geo.phase==='live'&&geo.saved?`Позиция сохранена: ${formatTime(geo.saved)}. Можно переходить между экранами.`:geo.phase==='paused'?'Qadam свёрнут. После возвращения передача продолжится автоматически.':geo.phase==='network'?'Нет связи с сервером. Повторим отправку автоматически.':geo.phase==='permission'?'Заказы доступны, но клиенты пока не видят вас на общей карте.':geo.phase==='pending'?'Как только устройство определит местоположение, вы появитесь на карте.':'Проверьте геолокацию устройства. Заказы остаются доступны.'}</p>
@@ -119,4 +128,18 @@ export function CourierGpsStatus(){
     {['permission','unavailable'].includes(geo.phase)&&<><button className="text-button" disabled={geo.busy} onClick={geo.openSettings}>Открыть настройки геолокации</button><button className="text-button" disabled={geo.busy} onClick={()=>void geo.enableLocation()}>Повторить геолокацию</button></>}
     {geo.phase==='network'&&<button className="text-button" disabled={geo.busy} onClick={geo.retry}>Повторить отправку</button>}
   </div>;
+}
+
+export function CourierGpsStatus(){
+  const geo=useCourierPresence(),[open,setOpen]=useState(false),[auto,setAuto]=useState(false),[notice,setNotice]=useState('');
+  return <><CourierGpsContent/><div className="trust-section courier-gps-settings">
+    {!open?<Button variant="ghost" disabled={geo.busy} onClick={()=>{setAuto(!!geo.status?.autoLocationEnabled);setOpen(true);setNotice('');}}>Настройки геолокации</Button>:<>
+      <h2>Геолокация курьера</h2><label className="courier-consent"><input type="checkbox" checked={auto} disabled={geo.busy} onChange={e=>setAuto(e.target.checked)}/><span>Автоматически включать при выходе на линию</span></label>
+      <p className="muted">Выключение автозапуска не меняет разрешения Telegram и не отменяет текущую трансляцию в чате.</p>
+      {geo.error&&<Feedback title={geo.error} tone="error" role="alert"/>}
+      <Button disabled={geo.busy} onClick={()=>void geo.saveSettings(auto?{autoEnabled:true,consentVersion:locationConsentVersion}:{autoEnabled:false}).then(ok=>{if(ok){setOpen(false);setNotice('Настройка автозапуска сохранена.');}})}>Сохранить настройку</Button>
+      <Button variant="secondary" disabled={geo.busy} onClick={()=>void geo.saveSettings({revoke:true}).then(ok=>{if(ok){setOpen(false);setNotice('Передача в Qadam остановлена. Остановите трансляцию также в чате Telegram.');}})}>Отозвать согласие и остановить</Button>
+      <Button variant="ghost" disabled={geo.busy} onClick={()=>setOpen(false)}>Закрыть настройки</Button>
+    </>}{notice&&<p role="status">{notice}</p>}
+  </div></>;
 }

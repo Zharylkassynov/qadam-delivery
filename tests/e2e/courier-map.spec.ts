@@ -37,7 +37,7 @@ test('shift GPS survives navigation and reload, pauses on hide, resumes, and cha
     await expect(courier.getByText('Позиция передаётся',{exact:true})).toBeVisible();
     await courier.reload();await expect(courier.getByText('Позиция передаётся',{exact:true})).toBeVisible();
     await courier.screenshot({path:info.outputPath('courier-shift-gps.png'),fullPage:true});
-    await expect(courier.getByRole('checkbox',{name:'Разрешаю показывать мою позицию во время смены.'})).toHaveCount(0);
+    await expect(courier.getByRole('checkbox',{name:'Разрешаю автоматически включать передачу геопозиции при выходе на линию.'})).toHaveCount(0);
     const r=await request.post('/api/orders',{headers:headers(f.customer.sessionToken),data:{requestKey:randomUUID(),pickupAddress:`Карта ${randomUUID().slice(0,6)}, Абая 10`,destinationAddress:'Алматы, Ауэзова 20',recipientName:'Получатель карты',recipientPhone:'+77000000000',notes:''}});expect(r.status()).toBe(201);const {order}=await r.json();
     expect((await request.post(`/api/orders/${order.id}/accept`,{headers:headers(f.courier.sessionToken),data:{}})).status()).toBe(200);
     await client.evaluate(()=>window.dispatchEvent(new Event('focus')));await expect(client.locator('.customer-map-status')).toContainText('Ваш курьер');

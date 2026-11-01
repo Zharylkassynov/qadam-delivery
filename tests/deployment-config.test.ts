@@ -14,6 +14,15 @@ test('production accepts the restricted transaction pooler and exact HTTPS origi
   assert.equal(appOrigin(production), production.APP_ORIGIN);
 });
 
+test('live location needs a protected Telegram webhook and keeps pilot settings server-only',()=>{
+  const live={TELEGRAM_LIVE_LOCATION_ENABLED:'true',TELEGRAM_AUTH_ENABLED:'true',TELEGRAM_BOT_TOKEN:'123456789:local_test_only_abcdefghijklmnopqrstuvwxyz',TELEGRAM_WEBHOOK_SECRET:'synthetic-webhook-secret-abcdefghijklmnopqrstuvwxyz',TELEGRAM_LIVE_LOCATION_PILOT_IDS:'123456'};
+  assert.doesNotThrow(()=>validateDeployment({...production,...live}));
+  for(const missing of ['TELEGRAM_BOT_TOKEN','TELEGRAM_WEBHOOK_SECRET','TELEGRAM_AUTH_ENABLED'])assert.throws(()=>validateDeployment({...production,...live,[missing]:undefined}));
+  for(const bad of ['-1','user','1, 2','01'])assert.throws(()=>validateDeployment({...production,...live,TELEGRAM_LIVE_LOCATION_PILOT_IDS:bad}));
+  assert.throws(()=>validateDeployment({QADAM_FRONTEND_ONLY:'true',NEXT_PUBLIC_API_ORIGIN:'https://api.example.test',TELEGRAM_LIVE_LOCATION_PILOT_IDS:'123456'}));
+  assert.throws(()=>validateDeployment({VERCEL:'1',VERCEL_ENV:'preview',VERCEL_URL:'preview.vercel.app',...live}));
+});
+
 test('delivery proof validates its complete server configuration and stays out of frontend and Preview',()=>{
   const proof={DELIVERY_PROOF_ENABLED:'true',DELIVERY_CODE_SECRET:'ab'.repeat(32),TELEGRAM_STORAGE_CHAT_ID:'-1001234567890',TELEGRAM_BOT_TOKEN:'123456789:local_test_only_abcdefghijklmnopqrstuvwxyz'};
   assert.doesNotThrow(()=>validateDeployment({...production,...proof}));
