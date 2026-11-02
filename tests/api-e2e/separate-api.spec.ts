@@ -5,6 +5,7 @@ import { signedTelegramData } from '../telegram-fixture';
 import { mockMapTiles } from '../e2e/map-fixture';
 import { database,closeDatabase } from '../../src/lib/db';
 import { saveTelegramContact } from '../../src/lib/user-profiles';
+import {locationConsentVersion} from '../../src/lib/location-consent';
 
 const api = 'http://127.0.0.1:3102';
 const frontend = 'http://127.0.0.1:3103';
@@ -61,7 +62,7 @@ test('Mini App completes a delivery through a separate API without cookies and r
     expect((await courier.post('/api/auth/login', { data: { email: 'courier1@qadam.demo', password: process.env.DEMO_PASSWORD } })).status()).toBe(200);
     const proofConfig=await courier.get('/api/delivery-proof');expect(proofConfig.status()).toBe(200);expect((await proofConfig.json()).enabled).toBe(false);
     expect((await courier.get('/api/courier/location-preferences')).status()).toBe(200);
-    expect((await courier.post('/api/courier/location-preferences',{data:{autoEnabled:false}})).status()).toBe(200);
+    expect((await courier.post('/api/courier/location-preferences',{data:{autoEnabled:true,consentVersion:locationConsentVersion}})).status()).toBe(200);
     expect((await courier.post('/api/courier/status', { data: { online: true } })).status()).toBe(200);
     expect((await courier.post('/api/courier/location', { data: { sharing:true,consent:true } })).status()).toBe(200);
     expect((await courier.post('/api/courier/location', { data: { latitude:43.24,longitude:76.9,accuracy:22,capturedAt:new Date().toISOString() } })).status()).toBe(200);

@@ -24,6 +24,7 @@ import {api} from '../lib/client-api';
 import {OrderTrustPanel} from './order-trust';
 import {CourierRelease,DeliveryHandoff} from './delivery-handoff';
 import {OrderLocationStream} from './order-location-stream';
+import {useCourierPresence} from './courier-presence';
 
 type View = 'home' | 'orders' | 'profile' | 'create' | 'review' | 'detail' | 'handoff' | 'point' | 'courierApplication' | 'adminApplications' | 'adminOrders' | 'couriers' | 'phone' | 'business';
 type Filter = 'all' | 'active' | 'history';
@@ -64,8 +65,10 @@ export function DeliveryWorkspace(props: Props) {
   const needsPhone=(pricing.enabled===true||!!draft.businessName||draft.surprise)&&!phone.profile.phoneVerified;
   const bodyRef = useRef<HTMLElement>(null);
   const customer = user.role === 'CUSTOMER';
+  const courierPresence=useCourierPresence();
   const ownOrders = customer ? orders : orders.filter((order) => order.courierId === user.id);
   const activeOrders = ownOrders.filter((order) => !finished(order));
+  useEffect(()=>{if(!customer)void courierPresence.load();},[customer,activeOrders.length,courierPresence.load]);
   const completed = ownOrders.filter((order) => order.status === 'DELIVERED');
   const available = orders.filter((order) => order.status === 'SEARCHING_FOR_COURIER' && !order.courierId);
   const visible = ownOrders.filter((order) => filter === 'all' || (filter === 'history' ? finished(order) : !finished(order)));
@@ -232,7 +235,7 @@ export function DeliveryWorkspace(props: Props) {
         :view==='create'?<Button form="delivery-form" type="submit" className="wide" disabled={busy}>Проверить заказ</Button>
         :view==='review'?pricing.enabled===true&&draft.timing==='window'?<Button className="wide" disabled={busy} onClick={()=>{setDraft(current=>({...current,timing:'soon',pilotParcelConfirmed:false}));navigate('create');}}>Изменить время</Button>:<Button className="wide" onClick={()=>void confirmOrder()} disabled={busy||!pricing.ready||proofEnabled===null||!!proofError}>{busy?'Сохраняем…':needsPhone?'Подтвердить телефон':pricing.enabled?pricing.quote?`Создать заказ за ${formatMoney(pricing.quote.priceKzt)}`:'Рассчитываем стоимость…':'Подтвердить заказ'}</Button>
         :completedDetail?<>{customer&&detail&&<Button className="wide" disabled={busy} onClick={()=>repeat(detail)}>Повторить заказ</Button>}<Button className="wide" variant="secondary" onClick={history} disabled={busy}>В историю заказов</Button></>
-        :actionable&&detail?<Button className="wide" disabled={busy||(detail.status==='SEARCHING_FOR_COURIER'&&windowExpired(detail))} onClick={()=>void(detail.status==='SEARCHING_FOR_COURIER'?accept(detail):advance(detail))}>{busy?'Сохраняем…':detail.status==='SEARCHING_FOR_COURIER'?windowExpired(detail)?'Интервал истёк':detail.pricing?`Принять · ${formatMoney(detail.pricing.courierPayoutKzt)}`:'Принять заказ':actionLabels[detail.status]}</Button>:null}
+        :actionable&&detail?<Button className="wide" disabled={busy||(detail.status==='SEARCHING_FOR_COURIER'&&(windowExpired(detail)||!courierPresence.canAccept))} onClick={()=>void(detail.status==='SEARCHING_FOR_COURIER'?accept(detail):advance(detail))}>{busy?'Сохраняем…':detail.status==='SEARCHING_FOR_COURIER'?windowExpired(detail)?'Интервал истёк':detail.pricing?`Принять · ${formatMoney(detail.pricing.courierPayoutKzt)}`:'Принять заказ':actionLabels[detail.status]}</Button>:null}
       </footer>}
       {showNav && <nav className="mobile-nav" aria-label="Мобильная навигация">{navItems.map((item) => <button type="button" key={item.view} className={view === item.view ? 'current' : ''} aria-current={view === item.view ? 'page' : undefined} disabled={busy} onClick={() => navigate(item.view)}><Icon type={item.icon}/><span>{item.label}</span></button>)}</nav>}
     </div>
@@ -255,6 +258,7 @@ function OrderDetail({ order, user, busy, onCancel,onReleased }: { order: Order;
     {complete ? <div className="success-symbol"><Icon type="check"/></div> : <Badge status={order.status}/>}
     <div className="screen-heading"><h1 tabIndex={-1}>{heading}</h1><p>{complete ? `${orderNumber(order)} · ${formatTime(order.updatedAt)}` : order.status === 'SEARCHING_FOR_COURIER' ? customer ? 'Заказ создан. Курьер увидит адреса и сможет принять доставку.' : 'Проверьте адреса и условия перед принятием заказа.' : `Создан ${formatTime(order.createdAt)}`}</p></div>
     <OrderTracking order={order} user={user}/>
+    {!customer&&order.status==='SEARCHING_FOR_COURIER'&&<CourierAvailability telegram={!!user.telegramId}/>}
     {order.courierId===user.id&&['ACCEPTED','PICKED_UP','IN_TRANSIT'].includes(order.status)&&<OrderLocationStream key={`${order.id}:${order.assignmentVersion}`} order={order}/>}
     {customer && order.courierName && <div className="courier-contact"><span className="avatar">{initials(order.courierName)}</span><div><strong>{order.courierName}</strong><small>Ваш курьер</small></div></div>}
     <RouteCard pickup={order.pickupAddress} destination={order.destinationAddress}/>

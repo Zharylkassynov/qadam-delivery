@@ -30,6 +30,6 @@ test('Telegram still signs in automatically when demo login is disabled', async 
   await miniApp(page, proof, 700, origin);
   await expect(page.getByRole('heading', { name: /^(Куда доставить\?|Текущая доставка)$/ })).toBeVisible();
   await expect(page.getByRole('link', { name: 'Открыть в Telegram' })).toHaveCount(0);
-  await expect(page.getByRole('button', { name: /^Выйти/ })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: /^Выйти(?: из аккаунта)?$/ })).toHaveCount(0);
   await expect(page.locator('body')).not.toContainText(/демонстрац|учебн|тестов/i);
 });

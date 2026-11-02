@@ -1,4 +1,10 @@
-import type { Page } from '@playwright/test';
+import type { BrowserContext,Page } from '@playwright/test';
+
+// Browser-only flows have no Telegram client and must not depend on its CDN.
+// Mini App scenarios use their own signed SDK through miniApp below.
+export async function mockBrowserTelegram(context:BrowserContext){
+  await context.route('https://telegram.org/js/telegram-web-app.js?64',route=>route.fulfill({contentType:'application/javascript',body:'/* No Telegram client in a regular browser. */'}));
+}
 
 // Test SDK and signed test-bot identities are used only against the local _test DB.
 export async function miniApp(page: Page, proof: string, height = 700, origin = '', options: { query?: string; contact?: 'allow' | 'deny'; location?:'allow'|'deny' } = {}) {

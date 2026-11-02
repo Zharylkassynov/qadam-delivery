@@ -14,6 +14,8 @@ import { checkBusinessSnapshot } from './business-profiles';
 import {proofEnabled} from './proof-settings';
 import {initialiseCode} from './order-codes';
 import {lockCouriers,requireCourierAccess,notBlocked} from './trust-core';
+import {requireReadyCourier} from './courier-readiness';
+import {locationConsentVersion} from './location-consent';
 
 export const pointSchema = z.object({ latitude: z.number().min(-90).max(90), longitude: z.number().min(-180).max(180) }).strict();
 export const createOrderSchema = z.object({
@@ -51,6 +53,9 @@ export const selectOrder = `SELECT o.id,o.number::text,o.customer_id AS "custome
   CASE WHEN o.pickup_latitude IS NOT NULL THEN jsonb_build_object('latitude',o.pickup_latitude,'longitude',o.pickup_longitude) END AS "pickupPoint",
   CASE WHEN o.destination_latitude IS NOT NULL THEN jsonb_build_object('latitude',o.destination_latitude,'longitude',o.destination_longitude) END AS "destinationPoint",
   (SELECT jsonb_build_object('latitude',l.latitude,'longitude',l.longitude,'accuracy',l.accuracy,'capturedAt',l.captured_at,'receivedAt',l.received_at,'source',l.location_source)
+    || jsonb_build_object('sharingStopped',NOT EXISTS(SELECT 1 FROM qadam.courier_status s JOIN qadam.courier_presence p ON p.user_id=s.user_id
+      WHERE s.user_id=l.courier_id AND s.online AND s.updated_at>clock_timestamp()-interval '8 hours' AND p.sharing
+      AND p.auto_consent_version='${locationConsentVersion}'))
     FROM qadam.courier_locations l WHERE l.order_id=o.id AND l.courier_id=o.courier_id) AS "courierLocation",
   COALESCE((SELECT jsonb_agg(jsonb_build_object('id',e.id,'status',e.status,'at',e.created_at,'actor',u.name,'kind',e.kind,'reason',CASE WHEN e.kind IN ('ASSIGN','RELEASE','CANCEL') THEN e.reason END) ORDER BY e.id)
     FROM qadam.order_events e JOIN qadam.users u ON u.id=e.actor_id WHERE e.order_id=o.id),'[]'::jsonb) AS events
@@ -211,6 +216,7 @@ export async function acceptOrder(actor: User, id: string,shareContact=false): P
     if (order.courier_id === actor.id && order.status !== 'CANCELLED') return readOrder(client, id, actor);
     if (order.status !== 'SEARCHING_FOR_COURIER' || order.courier_id) throw new AppError(409, 'Заказ уже принят другим курьером или больше недоступен.');
     if(order.deliver_before&&new Date(order.deliver_before).getTime()<=Date.now())throw new AppError(409,'Интервал доставки истёк. Клиенту нужно указать новое время в новом заказе.');
+    await requireReadyCourier(client,actor.id);
     const occupied=await client.query(`SELECT 1 FROM qadam.orders WHERE courier_id=$1
       AND status IN ('ACCEPTED','PICKED_UP','IN_TRANSIT') AND ($2::boolean OR price_kzt IS NOT NULL) LIMIT 1`,[actor.id,order.price_kzt!==null]);
     if(occupied.rowCount)throw new AppError(409,'Сначала завершите активную доставку. Заказ с фиксированной ценой выполняется отдельно.');
@@ -223,8 +229,8 @@ export async function acceptOrder(actor: User, id: string,shareContact=false): P
     }else if(shareContact)courierPhone=(await phoneProfile(actor,client)).phone;
     await client.query("UPDATE qadam.orders SET courier_id=$1,status='ACCEPTED',updated_at=now(),courier_phone=$3,assignment_version=assignment_version+1 WHERE id=$2", [actor.id, id,courierPhone]);
     await event(client, id, actor, 'ACCEPTED');
-    await client.query(`INSERT INTO qadam.courier_locations(order_id,courier_id,latitude,longitude,accuracy,captured_at)
-      SELECT $1,p.user_id,p.latitude,p.longitude,p.accuracy,p.captured_at FROM qadam.courier_presence p
+    await client.query(`INSERT INTO qadam.courier_locations(order_id,courier_id,latitude,longitude,accuracy,captured_at,received_at)
+      SELECT $1,p.user_id,p.latitude,p.longitude,p.accuracy,p.captured_at,p.received_at FROM qadam.courier_presence p
       JOIN qadam.courier_status s ON s.user_id=p.user_id WHERE p.user_id=$2 AND p.sharing AND p.consent_at IS NOT NULL
         AND s.online AND s.updated_at>now()-interval '8 hours' AND p.received_at>=s.updated_at
         AND p.captured_at>now()-interval '90 seconds' AND p.received_at>now()-interval '90 seconds'

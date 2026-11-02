@@ -18,6 +18,7 @@ import type {Order,User} from '../src/lib/types';
 import {POST as preferencesAPI} from '../src/app/api/courier/location-preferences/route';
 import {POST as streamAPI} from '../src/app/api/orders/[id]/location-stream/route';
 import {readFile} from 'node:fs/promises';
+import {readyCourier} from './courier-ready-fixture';
 
 const url=process.env.TEST_DATABASE_URL;
 if(!url||!new URL(url).pathname.endsWith('_test')||!['127.0.0.1','localhost'].includes(new URL(url).hostname))throw new Error('Local isolated _test database required');
@@ -27,7 +28,7 @@ const next=()=>++counter;
 const reject=(value:Promise<unknown>,status:number)=>assert.rejects(value,e=>e instanceof AppError&&e.status===status);
 const payload=()=>({requestKey:randomUUID(),pickupAddress:'Синтетический адрес забора',destinationAddress:'Синтетический адрес доставки',recipientName:'Получатель',recipientPhone:'+77000000000',notes:''});
 const start=(order:Order,key=randomUUID())=>({action:'START',requestKey:key,expectedVersion:order.assignmentVersion,consentVersion:locationConsentVersion});
-async function assigned(){const order=await createOrder(customer,payload());return acceptOrder(courier,order.id);}
+async function assigned(){await readyCourier(courier);const order=await createOrder(customer,payload());return acceptOrder(courier,order.id);}
 function message(overrides:Record<string,unknown>={}){
   const date=Math.floor(Date.now()/1000)+2;
   return {message_id:100,date,from:{id:Number(courier.telegramId),is_bot:false},chat:{id:Number(courier.telegramId),type:'private'},location:{latitude:43.24,longitude:76.9,horizontal_accuracy:25,live_period:900},...overrides};
@@ -102,7 +103,7 @@ test('static points, forwarded locations, another sender and pre-consent streams
   const order=await assigned();await changeLocationStream(courier,order.id,start(order));
   const m=message();
   for(const value of [message({location:{latitude:43.24,longitude:76.9}}),message({forward_origin:{}}),message({from:{id:Number(replacement.telegramId)}}),message({date:m.date-60}),message({edit_date:m.date})])await receive(value);
-  assert.equal((await streamStatus(courier,order.id)).stream?.state,'WAITING');assert.equal((await getOrder(customer,order.id)).courierLocation,null);
+  assert.equal((await streamStatus(courier,order.id)).stream?.state,'WAITING');assert.equal((await getOrder(customer,order.id)).courierLocation?.source,'MINI_APP');
 });
 
 test('duplicates, another message and out-of-order edits cannot move the marker or increase its counter',async()=>{
@@ -142,7 +143,7 @@ test('Mini App cannot overwrite Telegram coordinates and private stream position
 test('shift off, blocking, revocation and reassignment close the previous binding',async()=>{
   for(const end of ['SHIFT','BLOCK','REVOKE','ASSIGN']){
     const order=await assigned(),{m}=await bind(order);
-    if(end==='SHIFT')await setCourierStatus(courier,{online:false});
+    if(end==='SHIFT'){await setCourierStatus(courier,{online:false});await database().query("UPDATE qadam.courier_status SET online=false WHERE user_id=$1",[courier.id]);}
     if(end==='BLOCK')await changeCourierBlock(admin,courier.id,{requestKey:randomUUID(),blocked:true,expectedBlocked:false,reason:'Согласованная проверка доступа'});
     if(end==='REVOKE')await saveLocationSettings(courier,{revoke:true});
     if(end==='ASSIGN')await manageOrder(admin,order.id,{action:'ASSIGN',requestKey:randomUUID(),expectedVersion:order.assignmentVersion,expectedStatus:order.status,expectedCourierId:courier.id,courierId:replacement.id,reason:'Проверка смены назначения'});

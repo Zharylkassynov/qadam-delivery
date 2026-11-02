@@ -47,7 +47,9 @@ export async function changeLocationStream(actor:User,id:string,input:unknown){
     if(!active.includes(order.status))throw new AppError(409,'Подключение доступно только для активной доставки.');
     const identity=(await db.query('SELECT telegram_user_id::text AS id FROM qadam.telegram_identities WHERE user_id=$1',[actor.id])).rows[0];
     if(!identity)throw new AppError(409,'Откройте Qadam из Telegram.');
-    const shift=(await db.query("SELECT updated_at+interval '8 hours' AS expires FROM qadam.courier_status WHERE user_id=$1 AND online AND updated_at>clock_timestamp()-interval '8 hours'",[actor.id])).rows[0];
+    const shift=(await db.query(`SELECT s.updated_at+interval '8 hours' AS expires FROM qadam.courier_status s
+      JOIN qadam.courier_presence p ON p.user_id=s.user_id WHERE s.user_id=$1 AND s.online AND s.updated_at>clock_timestamp()-interval '8 hours'
+      AND p.sharing AND p.auto_consent_version=$2`,[actor.id,locationConsentVersion])).rows[0];
     if(!shift)throw new AppError(409,'Сначала включите режим «Я на линии».');
     await expireStreams(db,actor.id);
     const previous=await db.query('SELECT id FROM qadam.order_location_streams WHERE order_id=$1 AND courier_id=$2 AND request_key=$3',[id,actor.id,data.requestKey]);
@@ -74,7 +76,9 @@ export async function receiveLiveLocation(point:TelegramLocationInput){
     const order=await lockedOrder(db,found.order_id);
     const session=(await db.query("SELECT * FROM qadam.order_location_streams WHERE courier_id=$1 AND state IN ('WAITING','LIVE') FOR UPDATE",[identity.id])).rows[0];
     if(!session)return;
-    const eligible=(await db.query("SELECT 1 FROM qadam.courier_status WHERE user_id=$1 AND online AND updated_at>clock_timestamp()-interval '8 hours'",[identity.id])).rowCount;
+    const eligible=(await db.query(`SELECT 1 FROM qadam.courier_status s JOIN qadam.courier_presence p ON p.user_id=s.user_id
+      WHERE s.user_id=$1 AND s.online AND s.updated_at>clock_timestamp()-interval '8 hours' AND p.sharing
+      AND p.auto_consent_version=$2`,[identity.id,locationConsentVersion])).rowCount;
     if(!eligible||!await canPilot(db,identity.id)||order.courier_id!==identity.id||order.assignment_version!==session.assignment_version||!active.includes(order.status)
       ||new Date(session.expires_at).getTime()<=Date.now()||(session.state==='WAITING'&&Date.now()-new Date(session.created_at).getTime()>300000)){
       await db.query("UPDATE qadam.order_location_streams SET state='STOPPED',stopped_at=clock_timestamp() WHERE id=$1",[session.id]);return;

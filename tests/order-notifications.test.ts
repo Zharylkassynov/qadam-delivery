@@ -14,6 +14,7 @@ import { verifyTelegramData } from '../src/lib/telegram';
 import { signedTelegramData, testBotToken } from './telegram-fixture';
 import { AppError } from '../src/lib/errors';
 import type { User } from '../src/lib/types';
+import {readyCourier} from './courier-ready-fixture';
 
 const url = process.env.TEST_DATABASE_URL;
 if (!url || !new URL(url).pathname.endsWith('_test')) throw new Error('Separate _test database required');
@@ -89,6 +90,7 @@ test('new-order notices require a fresh shift and permission, omit contacts and 
 
 test('acceptance edits other couriers messages, preserves message IDs and queues each customer status once', async () => {
   await setCourierStatus(courier,{online:true}); await setCourierStatus(other,{online:true});
+  await readyCourier(courier);await readyCourier(other);
   const order = await createOrder(customer,payload()); let messageId=100;
   await drainBotOutbox(async () => ({message_id:++messageId}),200);
   const saved = (await db().query('SELECT message_id FROM qadam.order_notifications WHERE order_id=$1',[order.id])).rows;
@@ -113,7 +115,7 @@ test('acceptance while sendMessage is in flight still schedules the closing edit
   const methods: string[] = [];
   await drainBotOutbox(async (m,b) => {
     methods.push(m);
-    if (m==='sendMessage' && String(b.chat_id)===courier.telegramId) await acceptOrder(other,order.id);
+    if (m==='sendMessage' && String(b.chat_id)===courier.telegramId){await readyCourier(other);await acceptOrder(other,order.id);}
     return {message_id:650};
   },200);
   assert.ok(methods.includes('editMessageText'));
@@ -123,7 +125,7 @@ test('acceptance while sendMessage is in flight still schedules the closing edit
 
 test('a queued availability notice is suppressed after acceptance; cancellation reaches the customer once', async () => {
   await setCourierStatus(courier,{online:true}); const a = await createOrder(customer,payload());
-  await acceptOrder(other,a.id); const chats: string[] = [];
+  await readyCourier(other);await acceptOrder(other,a.id); const chats: string[] = [];
   await drainBotOutbox(async (_m,b) => { chats.push(String(b.chat_id)); return {message_id:1}; },200);
   assert.ok(!chats.includes(courier.telegramId!));
   const b = await createOrder(customer,payload()); await transitionOrder(customer,b.id,'CANCELLED'); await transitionOrder(customer,b.id,'CANCELLED');
@@ -131,7 +133,7 @@ test('a queued availability notice is suppressed after acceptance; cancellation 
 });
 
 test('429 retries keep customer statuses ordered and 403 revokes permission without leaking transport errors', async () => {
-  const a = await createOrder(customer,payload()); await acceptOrder(courier,a.id); await transitionOrder(courier,a.id,'PICKED_UP');
+  const a = await createOrder(customer,payload());await readyCourier(courier); await acceptOrder(courier,a.id); await transitionOrder(courier,a.id,'PICKED_UP');
   const failed: string[] = []; await drainBotOutbox(async (_m,b) => { failed.push(String(b.text)); throw new BotApiError(429,30); },200);
   assert.equal(failed.length,1); assert.match(failed[0],/Курьер назначен/);
   assert.equal((await jobs(a.id))[1].attempts,0);
@@ -154,7 +156,7 @@ test('waiting-order alerts atomically claim ten-minute orders, retry when no adm
   assert.match(queued[0].body.reply_markup.inline_keyboard[0][0].web_app.url,/screen=adminOrders/);
   assert.ok((await db().query('SELECT alerted_at FROM qadam.orders WHERE id=$1',[a.id])).rows[0].alerted_at);
   const young = await createOrder(customer,payload()); await alertWaitingOrders(); assert.equal((await jobs(young.id)).length,0);
-  await acceptOrder(courier,a.id);
+  await readyCourier(courier);await acceptOrder(courier,a.id);
   const sentToAdmin: unknown[]=[];
   // Other old synthetic orders can legitimately alert this new administrator.
   // Only the accepted order's stale notification must be suppressed.
@@ -168,7 +170,7 @@ test('deep links validate UUIDs and signed start parameters, resolve old orders 
   const visible = await getOrder(courier,a.id); assert.equal(visible.recipientPhone,null);
   await reject(getOrder({...stranger,isAdmin:true},a.id),404);
   await reject(getOrder(customer,'9223372036854775808'),404);
-  await acceptOrder(courier,a.id); await reject(getOrder(other,a.number),404);
+  await readyCourier(courier);await acceptOrder(courier,a.id); await reject(getOrder(other,a.number),404);
   await db().query('INSERT INTO qadam.administrators(user_id) VALUES($1)',[admin.id]);
   assert.equal((await getOrder(admin,a.id)).recipientPhone,payload().recipientPhone);
   await db().query('DELETE FROM qadam.administrators WHERE user_id=$1',[admin.id]); await reject(getOrder(admin,a.id),404);
@@ -194,6 +196,9 @@ test('production RLS grants allow the restricted role to save availability, mess
     await client.query('DROP POLICY IF EXISTS order_location_streams_server ON qadam.order_location_streams');
     const streams=await readFile(new URL('../db/migrations/20261101103834_courier_location_streams.sql',import.meta.url),'utf8');
     await client.query(streams.match(/DO \$\$ DECLARE api_role text; BEGIN[\s\S]*?END; \$\$;/)![0]);
+    await client.query('DROP POLICY IF EXISTS courier_presence_server ON qadam.courier_presence');
+    const presence=await readFile(new URL('../db/migrations/20261028053350_courier_presence.sql',import.meta.url),'utf8');
+    await client.query(presence.slice(presence.indexOf('ALTER TABLE qadam.courier_presence ENABLE ROW LEVEL SECURITY;')));
     await client.query('SET LOCAL ROLE qadam_app');
     await client.query('INSERT INTO qadam.courier_status(user_id,online) VALUES($1,true)',[courier.id]);
     await client.query('UPDATE qadam.courier_status SET online=false WHERE user_id=$1',[courier.id]);

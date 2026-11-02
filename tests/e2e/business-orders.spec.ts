@@ -3,6 +3,7 @@ import pg from 'pg';
 import { signedTelegramData } from '../telegram-fixture';
 import { miniApp } from './telegram-browser-fixture';
 import { mockMapTiles } from './map-fixture';
+import { enableShiftGps } from './courier-gps-fixture';
 import { saveTelegramContact } from '../../src/lib/user-profiles';
 import { closeDatabase } from '../../src/lib/db';
 test.skip(Boolean(process.env.E2E_ORIGIN),'Synthetic local business accounts only');
@@ -94,6 +95,7 @@ test('one customer can save a shop, schedule a private delivery, remove the shop
     const courierPage=await courierContext.newPage();courierPage.on('pageerror',e=>errors.push(e.message));await miniApp(courierPage,courier.proof,760);await maps(courierContext,courierPage);
     await courierPage.getByRole('button',{name:`Открыть заказ QD-${order.number.padStart(4,'0')}`,exact:true}).click();
     await expect(courierPage.getByText(order.cardText,{exact:true})).toHaveCount(0);
+    await enableShiftGps(courierPage);
     await courierPage.getByRole('button',{name:'Принять заказ',exact:true}).click();
     await courierPage.getByText('Текст открытки',{exact:true}).click();await expect(courierPage.getByText(order.cardText,{exact:true})).toBeVisible();
     await page.getByRole('button',{name:'Назад',exact:true}).click();await nav(page,'Профиль');await page.getByRole('button',{name:'Мой магазин',exact:true}).click();

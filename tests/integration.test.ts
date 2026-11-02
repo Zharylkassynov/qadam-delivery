@@ -1,4 +1,5 @@
-import { after, before, test } from 'node:test';
+import { after, before, beforeEach,test } from 'node:test';
+import {readyCourier} from './courier-ready-fixture';
 import { ZodError } from 'zod';
 import assert from 'node:assert/strict';
 import { randomUUID, createHash } from 'node:crypto';
@@ -46,6 +47,7 @@ before(async () => {
   [customer, otherCustomer, courier, otherCourier] = users;
 });
 
+beforeEach(async()=>{await readyCourier(courier);await readyCourier(otherCourier);});
 after(async () => {
   const ids = users.map((user) => user.id);
   if (ids.length) await transaction(async (client) => {
@@ -350,7 +352,7 @@ test('revoked or disabled admin loses order observation with an existing session
   const application = await submitApplication(candidate.user, { ...applicationInput(), transport: 'ELECTRIC_MOPED' });
   await reviewApplication(admin.user, application.id, { decision: 'APPROVED', reason: '' });
   const courierSession = await getSession(candidate.token); assert.equal(courierSession?.role, 'COURIER');
-  const order = await createOrder(customer, input()); await acceptOrder(courierSession!, order.id);
+  await readyCourier(courierSession!);const order = await createOrder(customer, input()); await acceptOrder(courierSession!, order.id);
   assert.equal((await getAdminOrder(admin.user, order.id)).courierTransport, 'ELECTRIC_MOPED');
   const saved = { ...admin.user, isAdmin: true as const };
   await database().query('DELETE FROM qadam.administrators WHERE user_id=$1', [admin.user.id]);
@@ -466,7 +468,7 @@ test('admin approval grants courier delivery access to existing and reopened ses
   await rejectsStatus(submitApplication(applicant.user, applicationInput()), 409);
   const approvedUser = (await getSession(applicant.token))!; assert.equal(approvedUser.role, 'COURIER');
   assert.equal((await database().query('SELECT role FROM qadam.users WHERE id=$1', [applicant.user.id])).rows[0].role, 'CUSTOMER');
-  const order = await createOrder(adminSession, input()); await acceptOrder(approvedUser, order.id);
+  await readyCourier(approvedUser);const order = await createOrder(adminSession, input()); await acceptOrder(approvedUser, order.id);
   for (const status of ['PICKED_UP', 'IN_TRANSIT', 'DELIVERED'] as const) await transitionOrder(approvedUser, order.id, status);
   await closeDatabase();
   assert.equal((await loginTelegram(applicant.proof)).user.role, 'COURIER');

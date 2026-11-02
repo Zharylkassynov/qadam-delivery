@@ -54,6 +54,7 @@ test('shift GPS survives navigation and reload, pauses on hide, resumes, and cha
     await client.screenshot({path:info.outputPath('customer-assigned-courier.png'),fullPage:true});
     await courier.getByRole('switch',{name:'Я на линии'}).click();await expect(courier.getByRole('switch',{name:'Я на линии'})).toHaveAttribute('aria-checked','false');
     for(const s of ['PICKED_UP','IN_TRANSIT','DELIVERED'])expect((await request.post(`/api/orders/${order.id}/status`,{headers:headers(f.courier.sessionToken),data:{status:s}})).status()).toBe(200);
+    await courier.evaluate(()=>window.dispatchEvent(new Event('focus')));await expect(courier.getByRole('button',{name:'Выйти на линию',exact:true})).toBeVisible();
     const after=fixes;await courier.clock.fastForward(16000);expect(fixes).toBe(after);
     await expect(client.getByRole('heading',{name:'Посылка у получателя',exact:true})).toBeVisible();
   }finally{await clientContext.close();await courierContext.close();await f.cleanup();}
@@ -62,12 +63,12 @@ test('denied GPS requests no repeating permission dialogs and preserves the shif
   const f=await fixture(request);await mockMapTiles(page.context());
   try{
     await miniApp(page,f.courier.proof,844,'',{location:'deny'});await page.getByRole('switch',{name:'Я на линии'}).click();await enableShiftGps(page,false);
-    await expect(page.locator('.courier-gps')).toContainText('Геолокация не разрешена');
+    await expect(page.locator('.courier-gps')).toContainText('Доступ к геолокации не предоставлен');
     expect(await page.evaluate(()=>document.documentElement.dataset.locationRequests)).toBe('1');
     await page.clock.install();await page.clock.fastForward(20000);
     expect(await page.evaluate(()=>document.documentElement.dataset.locationRequests)).toBe('1');
     await page.getByRole('button',{name:'Открыть настройки геолокации'}).click();expect(await page.evaluate(()=>document.documentElement.dataset.locationSettings)).toBe('opened');
-    await page.reload();await expect(page.locator('.courier-gps')).toContainText('Геолокация не разрешена');
+    await page.reload();await expect(page.getByRole('button',{name:'Выйти на линию',exact:true})).toBeVisible();
     expect(await page.evaluate(()=>document.documentElement.dataset.locationRequests)).toBeUndefined();
     await expect(page.getByRole('heading',{name:'Можно принять',exact:true})).toBeVisible();
     for(const width of [320,360,390,1440]){await page.setViewportSize({width,height:844});expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);}

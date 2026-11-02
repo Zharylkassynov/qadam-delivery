@@ -5,6 +5,7 @@ import { AppError } from './errors';
 import { pointSchema } from './orders';
 import type { CourierLocation, User } from './types';
 import {lockCouriers,requireCourierAccess} from './trust-core';
+import {locationConsentVersion} from './location-consent';
 
 export const locationSchema = pointSchema.extend({
   accuracy: z.number().min(0).max(100000).nullable(),
@@ -34,6 +35,9 @@ export async function reportLocation(actor: User, id: string, input: z.infer<typ
     if (!order) throw new AppError(404, 'Заказ не найден.');
     if (order.courier_id !== actor.id) throw new AppError(403, 'Этот заказ вам не назначен.');
     if (!['ACCEPTED', 'PICKED_UP', 'IN_TRANSIT'].includes(order.status)) throw new AppError(409, 'Передача позиции для этого заказа завершена.');
+    if(!(await client.query(`SELECT 1 FROM qadam.courier_status s JOIN qadam.courier_presence p ON p.user_id=s.user_id
+      WHERE s.user_id=$1 AND s.online AND s.updated_at>clock_timestamp()-interval '8 hours' AND p.sharing
+        AND p.auto_consent_version=$2`,[actor.id,locationConsentVersion])).rowCount)throw new AppError(403,'Разрешите геопозицию в действующей смене.');
     const stream=await client.query("SELECT 1 FROM qadam.order_location_streams WHERE order_id=$1 AND state IN ('WAITING','LIVE') AND expires_at>clock_timestamp() AND (state='LIVE' OR created_at>clock_timestamp()-interval '5 minutes')",[id]);
     if(stream.rowCount)throw new AppError(409,'Для заказа выбрана трансляция Telegram. Сначала остановите её использование в Qadam.');
     const previous = (await client.query(`SELECT latitude,longitude,accuracy,captured_at AS "capturedAt",received_at AS "receivedAt",

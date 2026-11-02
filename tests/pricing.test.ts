@@ -1,4 +1,5 @@
 import { after,before,beforeEach,mock,test } from 'node:test';
+import {readyCourier} from './courier-ready-fixture';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { calculatePrice,type Tariff } from '../src/lib/pricing';
@@ -42,6 +43,7 @@ before(async()=>{
 });
 beforeEach(async()=>{
   mock.restoreAll();await database().query('UPDATE qadam.pricing_settings SET active=false,config=NULL');
+  await readyCourier(courier);await readyCourier(foot);
   await database().query('DELETE FROM qadam.service_limits');
   await database().query('DELETE FROM qadam.orders WHERE customer_id=ANY($1::uuid[])',[users.map(u=>u.id)]);
 });

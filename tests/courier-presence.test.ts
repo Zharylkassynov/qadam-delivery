@@ -8,6 +8,8 @@ import {setCourierStatus,getCourierStatus} from '../src/lib/courier-status';
 import {updateCourierPresence,nearbyCouriers} from '../src/lib/courier-presence';
 import {createOrder,acceptOrder,transitionOrder,getOrder} from '../src/lib/orders';
 import {AppError} from '../src/lib/errors';
+import {saveLocationSettings} from '../src/lib/courier-location-settings';
+import {locationConsentVersion} from '../src/lib/location-consent';
 import type {User} from '../src/lib/types';
 const url=process.env.TEST_DATABASE_URL;
 if(!url||!new URL(url).pathname.endsWith('_test')||!['localhost','127.0.0.1'].includes(new URL(url).hostname))throw new Error('Separate local _test database required');
@@ -18,7 +20,7 @@ const fix=(offset=0)=>({latitude:43.181123,longitude:76.795678,accuracy:18,captu
 const fixtureCell=(p:{latitude:number;longitude:number})=>Math.abs(p.latitude-fix().latitude)<.002&&Math.abs(p.longitude-fix().longitude)<.002;
 const reject=(p:Promise<unknown>,status:number)=>assert.rejects(p,e=>e instanceof AppError&&e.status===status);
 const input=()=>({requestKey:randomUUID(),pickupAddress:'Алматы, Абая 10',destinationAddress:'Алматы, Ауэзова 20',recipientName:'Получатель GPS',recipientPhone:'+77000000000',notes:''});
-const begin=async()=>{await setCourierStatus(courier,{online:true});await updateCourierPresence(courier,{sharing:true,consent:true});};
+const begin=async()=>{await saveLocationSettings(courier,{autoEnabled:true,consentVersion:locationConsentVersion});await setCourierStatus(courier,{online:true});await updateCourierPresence(courier,{sharing:true,consent:true});};
 const relax=()=>database().query("UPDATE qadam.courier_presence SET received_at=clock_timestamp()-interval '6 seconds' WHERE user_id=$1",[courier.id]);
 before(async()=>{await migrate();for(const role of ['CUSTOMER','COURIER','CUSTOMER'] as const){people.push((await database().query("INSERT INTO qadam.users(email,name,role,password_hash) VALUES($1,'GPS fixture',$2,'unused') RETURNING id,email,name,role",[`presence-${randomUUID()}@qadam.demo`,role])).rows[0]);}[customer,courier,other]=people;});
 beforeEach(async()=>{const ids=people.map(u=>u.id);await database().query('DELETE FROM qadam.orders WHERE customer_id=ANY($1::uuid[])',[ids]);await database().query('DELETE FROM qadam.courier_presence WHERE user_id=ANY($1::uuid[])',[ids]);await database().query('DELETE FROM qadam.courier_status WHERE user_id=ANY($1::uuid[])',[ids]);await database().query('UPDATE qadam.users SET active=true WHERE id=ANY($1::uuid[])',[ids]);});
@@ -30,6 +32,7 @@ test('GPS needs an active approved courier, fresh shift and explicit consent, ne
   await setCourierStatus(courier,{online:true});await reject(updateCourierPresence(courier,fix()),403);
   await assert.rejects(updateCourierPresence(courier,{sharing:true,consent:false}));
   await assert.rejects(updateCourierPresence(courier,{...fix(),userId:other.id}));
+  await saveLocationSettings(courier,{autoEnabled:true,consentVersion:locationConsentVersion});
   await updateCourierPresence(courier,{sharing:true,consent:true});await updateCourierPresence(courier,fix());
   const state=await getCourierStatus(courier);assert.equal(state.locationSharing,true);assert.ok(state.locationConsentAt);assert.equal(state.location?.latitude,fix().latitude);
   await database().query('UPDATE qadam.users SET active=false WHERE id=$1',[courier.id]);await reject(updateCourierPresence(courier,fix()),403);

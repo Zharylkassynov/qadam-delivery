@@ -72,7 +72,7 @@ test('Telegram administrator observes self-accepted delivery, history, search, p
     await expect(admin.getByRole('button', { name:'Назначить курьера',exact:true })).toBeVisible();
     await expect(admin.getByRole('button', { name: /Принять заказ|Посылка у меня|Передавать геопозицию/ })).toHaveCount(0);
     await courier.getByRole('button', { name: `Открыть заказ ${number}`, exact: true }).click();
-    await courier.getByRole('button', { name: 'Принять заказ', exact: true }).click();
+    await enableShiftGps(courier);await courier.getByRole('button', { name: 'Принять заказ', exact: true }).click();
     await expect(admin.getByRole('heading', { name: 'Курьер забирает посылку', exact: true })).toBeVisible();
     await expect(admin.getByText('Электромопед', { exact: true })).toBeVisible();
     await expect(admin.getByText('Автомаршрут · 4,3 км', { exact: true })).toBeVisible();

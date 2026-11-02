@@ -18,6 +18,20 @@
   --danger-soft: #fff0f1;
   --radius: 14px;
 }
+.checkout-couriers{border-block:1px solid var(--line);padding:12px 0;min-width:0}
+.checkout-couriers summary{display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:48px;cursor:pointer;list-style:none}
+.checkout-couriers summary::-webkit-details-marker{display:none}
+.checkout-couriers summary small{display:block;color:var(--muted);font-size:13px;line-height:20px;margin-top:4px}
+.checkout-couriers summary>span:last-child{color:var(--brand);font-size:24px}
+.checkout-couriers[open] summary>span:last-child{transform:rotate(180deg)}
+.checkout-couriers-map{margin-top:12px;min-width:0}
+.checkout-couriers .customer-map-status{position:static;max-width:none;box-shadow:none;padding:12px 0;border:0;background:transparent}
+.checkout-couriers .delivery-map{min-height:220px;height:220px}
+.checkout-couriers summary:focus-visible{outline:3px solid var(--brand);outline-offset:3px}
+.geo-consent h2{font-size:28px;line-height:34px;letter-spacing:-.4px;margin-bottom:16px}
+.geo-consent .button{margin-top:16px}
+.geo-consent p{line-height:22px}
+.courier-gps.gps-live{border-left:3px solid var(--success);background:var(--success-soft);border-radius:0 8px 8px 0;padding:16px}
 .quote-price{border-top:2px solid var(--ink);padding-top:18px;display:grid;gap:12px;min-width:0}
 .quote-price-row{display:flex;align-items:baseline;justify-content:space-between;gap:12px}
 .quote-price-row strong{font-size:30px;line-height:38px;letter-spacing:-.5px;white-space:nowrap;font-weight:600;font-variant-numeric:tabular-nums}
