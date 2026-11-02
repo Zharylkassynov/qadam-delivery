@@ -5,6 +5,8 @@ import { locationSchema, persistOrderLocation } from './locations';
 import type { CourierLocation, User } from './types';
 import {courierMapBounds} from './courier-map';
 import {lockCouriers,requireCourierAccess,notBlocked} from './trust-core';
+import {locationConsentVersion} from './location-consent';
+import {freshCourierPosition} from './courier-readiness';
 
 export const presenceSettingsSchema = z.union([
   z.object({ sharing: z.literal(true), consent: z.literal(true) }).strict(),
@@ -17,11 +19,16 @@ export async function updateCourierPresence(actor: User, input: unknown): Promis
   const data = presenceInputSchema.parse(input);
   return transaction(async db => {
     await lockCouriers(db,[actor.id]);await requireCourierAccess(db,actor.id);
+    // Customer cancellation locks orders too. Always lock orders before shift
+    // and presence rows, matching the ending-shift trigger lock order.
+    const orders=await db.query(`SELECT id FROM qadam.orders WHERE courier_id=$1 AND status IN ('ACCEPTED','PICKED_UP','IN_TRANSIT') ORDER BY id FOR UPDATE`,[actor.id]);
     // A shift-off request and a GPS write serialize on the same shift row.
     const shift = (await db.query(`SELECT s.online AND s.updated_at>clock_timestamp()-interval '8 hours' AS online
       FROM qadam.courier_status s JOIN qadam.users u ON u.id=s.user_id
       WHERE s.user_id=$1 AND u.active AND ${courierRole} FOR UPDATE OF s`,[actor.id])).rows[0];
     if (!shift) throw new AppError(403,'Геолокация доступна только одобренному курьеру со сменой.');
+    const agreed=await db.query('SELECT 1 FROM qadam.courier_presence WHERE user_id=$1 AND auto_consent_version=$2 AND auto_consent_at IS NOT NULL',[actor.id,locationConsentVersion]);
+    if((!('sharing' in data)||data.sharing)&&!agreed.rowCount)throw new AppError(403,'Подтвердите обновлённые условия геопозиции перед передачей.');
     if ('sharing' in data) {
       if (data.sharing && !shift.online) throw new AppError(409,'Сначала включите режим «Я на линии».');
       await db.query(`INSERT INTO qadam.courier_presence(user_id,sharing,consent_at) VALUES($1,$2,CASE WHEN $2 THEN now() END)
@@ -44,7 +51,6 @@ export async function updateCourierPresence(actor: User, input: unknown): Promis
       WHERE user_id=$1 RETURNING latitude,longitude,accuracy,captured_at AS "capturedAt",received_at AS "receivedAt"`,
     [actor.id,data.latitude,data.longitude,data.accuracy,data.capturedAt])).rows[0];
     // Lock active orders in stable order. Completion cannot race a location write.
-    const orders=await db.query(`SELECT id FROM qadam.orders WHERE courier_id=$1 AND status IN ('ACCEPTED','PICKED_UP','IN_TRANSIT') ORDER BY id FOR UPDATE`,[actor.id]);
     for(const order of orders.rows) await persistOrderLocation(db,order.id,actor.id,data);
     return {location:saved};
   });
@@ -62,9 +68,7 @@ export async function nearbyCouriers(actor: User, input: unknown = nearbyBounds)
     SELECT round((p.latitude/0.0027)::numeric)::float8*0.0027 AS latitude,
       round((p.longitude/0.0037)::numeric)::float8*0.0037 AS longitude,p.captured_at
     FROM qadam.courier_presence p JOIN qadam.courier_status s ON s.user_id=p.user_id JOIN qadam.users u ON u.id=p.user_id
-    WHERE p.sharing AND p.consent_at IS NOT NULL AND s.online AND s.updated_at>now()-interval '8 hours'
-      AND p.received_at>=s.updated_at AND p.received_at>now()-interval '90 seconds' AND p.captured_at>now()-interval '90 seconds'
-      AND p.captured_at<=now()+interval '30 seconds' AND u.active AND ${courierRole}
+    WHERE s.accepting_orders AND ${freshCourierPosition()} AND u.active AND ${courierRole}
       AND EXISTS(SELECT 1 FROM qadam.users viewer WHERE viewer.id=$1 AND viewer.active)
       AND NOT EXISTS(SELECT 1 FROM qadam.orders o WHERE o.courier_id=u.id AND o.status IN ('ACCEPTED','PICKED_UP','IN_TRANSIT'))
   ) SELECT latitude,longitude,count(*)::int AS count,max(captured_at) AS "capturedAt" FROM rounded

@@ -3,7 +3,7 @@
 import { useRef, useState, type FormEvent, type InputHTMLAttributes } from 'react';
 import { AddressRow, Button, Feedback, PriceNote, RouteCard } from './delivery-ui';
 import type { MapPoint } from '../lib/types';
-import { DeliveryMap } from './delivery-map';
+import {CustomerCourierMap} from './customer-courier-map';
 import { deliveryPilot } from '../lib/delivery-pilot';
 import { almatyInput,deliveryWindow,parcelLabels,scheduleError,repeatedParcel,type ParcelType } from '../lib/order-details';
 import type { Order } from '../lib/types';
@@ -87,6 +87,7 @@ export function OrderForm({ draft, onChange, onReview, onPoint, busy }: { draft:
       <div className="screen-heading"><h1 tabIndex={-1}>Получатель и посылка</h1><p>Шаг 2 из 3 · детали доставки</p></div>
       <div className="recipient-route" aria-label="Адреса доставки">{(['pickup', 'destination'] as const).map((kind) => <div key={kind}><button type="button" className="address-edit" aria-label={kind === 'pickup' ? 'Изменить адрес отправления' : 'Изменить адрес доставки'} aria-invalid={!!errors[`${kind}Address`]} onClick={() => onPoint(kind)}><AddressRow kind={kind} address={draft[`${kind}Address`] || 'Укажите адрес'}/></button>{errors[`${kind}Address`] && <small className="field-error">{errors[`${kind}Address`]}</small>}</div>)}</div>
       <div className="divider"/>
+      <CheckoutCouriers draft={draft}/>
       <p className="form-required-note">Имя и телефон обязательны.</p>
       <Field label="Имя получателя" name="recipientName" autoComplete="name" placeholder="Кому передать посылку" required minLength={2} maxLength={100} value={draft.recipientName} error={errors.recipientName} onChange={(e) => change('recipientName', e.target.value)}/>
       <Field label="Телефон получателя" name="recipientPhone" type="tel" autoComplete="tel" inputMode="tel" placeholder="+7 700 123 45 67" required minLength={7} maxLength={30} value={draft.recipientPhone} error={errors.recipientPhone} onChange={(e) => change('recipientPhone', e.target.value)} hint="Курьер позвонит, чтобы передать посылку."/>
@@ -119,14 +120,18 @@ export function OrderReview({ draft, onEdit, busy,pricing }: { draft: OrderDraft
     <RouteCard pickup={draft.pickupAddress} destination={draft.destinationAddress}/>
     {(draft.businessName||draft.pickupDetails)&&<section className="review-section"><h2>{draft.businessName||'Как найти отправителя'}</h2>{draft.pickupDetails&&<p className="pre-wrap">{draft.pickupDetails}</p>}</section>}
     <section className="review-section"><h2>Когда доставить</h2><p className="delivery-window">{draft.timing==='window'?deliveryWindow(orderPayload(draft)):'Как можно скорее'}</p>{draft.timing==='window'&&<p className="muted">Время Алматы · желаемый интервал. Заказ сразу увидят курьеры; назначение не гарантировано.</p>}{draft.urgent&&<p>Важно без задержки · автоматической доплаты нет.</p>}</section>
-    {(draft.pickupPoint || draft.destinationPoint) && <DeliveryMap markers={[
-      ...(draft.pickupPoint ? [{ ...draft.pickupPoint, kind: 'pickup' as const, label: `А · ${draft.pickupAddress}` }] : []),
-      ...(draft.destinationPoint ? [{ ...draft.destinationPoint, kind: 'destination' as const, label: `Б · ${draft.destinationAddress}` }] : []),
-    ]}/>}
+    <CheckoutCouriers draft={draft}/>
     <section className="review-section"><h2>Получатель</h2><p>{draft.recipientName}<br/>{draft.recipientPhone}</p></section>
     <section className="review-section"><h2>{draft.parcelType}</h2>{draft.parcelDescription && <p>{draft.parcelDescription}</p>}{draft.fragile&&<p>Хрупкое — не переворачивать.</p>}{draft.surprise&&<p>Сюрприз — сначала связаться с отправителем.</p>}{draft.addCard&&draft.cardText&&<><h3>Текст открытки</h3><p className="pre-wrap">{draft.cardText}</p></>}</section>
     {draft.notes && <section className="review-section"><h2>Комментарий курьеру</h2><p className="pre-wrap">{draft.notes}</p></section>}
     {pricing??<><PriceNote/><Feedback title="Заказ появится у курьеров">После подтверждения сохраним доставку. Стоимость согласовывается отдельно.</Feedback></>}
     <Button variant="secondary" className="wide" onClick={onEdit} disabled={busy}>Изменить данные</Button>
   </div>;
+}
+
+function CheckoutCouriers({draft}:{draft:OrderDraft}){
+  return <CustomerCourierMap compact key={`${draft.pickupPoint?.latitude}:${draft.pickupPoint?.longitude}`} markers={[
+    ...(draft.pickupPoint?[{...draft.pickupPoint,kind:'pickup' as const,label:`А · ${draft.pickupAddress}`}]:[]),
+    ...(draft.destinationPoint?[{...draft.destinationPoint,kind:'destination' as const,label:`Б · ${draft.destinationAddress}`}]:[]),
+  ]}/>;
 }

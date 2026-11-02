@@ -1,3 +1,4 @@
+import {enableShiftGps} from './courier-gps-fixture';
 import {test,expect,type APIRequestContext,type Browser,type BrowserContext,type Page} from '@playwright/test';
 import {randomUUID} from 'node:crypto';
 import pg from 'pg';
@@ -73,7 +74,7 @@ test('photo and optional code complete the real browser/API/database flow, inclu
     await expect(customerPage.locator('.delivery-code')).toHaveText(code);await customerPage.locator('.delivery-code').scrollIntoViewIfNeeded();await customerPage.screenshot({path:info.outputPath('customer-code-mobile.png')});
     expect((await request.get(`/api/orders/${order.id}/code`,{headers:authenticated(other)})).status()).toBe(404);
     const courierPage=await f.page(browser,courier,`order=${order.id}`);
-    await courierPage.getByRole('button',{name:'Принять заказ',exact:true}).click();
+    await enableShiftGps(courierPage);await courierPage.getByRole('button',{name:'Принять заказ',exact:true}).click();
     await courierPage.getByRole('button',{name:'Посылка у меня',exact:true}).click();await courierPage.getByRole('button',{name:'Начать доставку',exact:true}).click();
     await courierPage.getByRole('button',{name:'Завершить доставку',exact:true}).click();
     await expect(courierPage.getByRole('heading',{name:'Передайте посылку',exact:true})).toBeVisible();
@@ -115,7 +116,7 @@ test('courier release and dispatcher assignment/block/unblock are usable on mobi
     const owner=await f.account('Клиент диспетчера'),courier=await f.account('Курьер до отказа'),replacement=await f.account('Курьер после смены'),admin=await f.account('Диспетчер Qadam');
     await f.approve(courier,admin);await f.approve(replacement,admin);await f.db.query('INSERT INTO qadam.administrators(user_id) VALUES($1)',[admin.user.id]);
     const created=await request.post('/api/orders',{headers:authenticated(owner),data:payload()}),order=(await created.json()).order;
-    const courierPage=await f.page(browser,courier,`order=${order.id}`);await courierPage.getByRole('button',{name:'Принять заказ',exact:true}).click();
+    const courierPage=await f.page(browser,courier,`order=${order.id}`);await enableShiftGps(courierPage);await courierPage.getByRole('button',{name:'Принять заказ',exact:true}).click();
     await courierPage.getByRole('button',{name:'Отказаться до забора',exact:true}).click();await courierPage.getByLabel('Причина отказа',{exact:true}).fill('Не успеваю на место забора');await courierPage.getByRole('checkbox',{name:'Я ещё не забрал посылку',exact:true}).check();
     await courierPage.getByRole('heading',{name:'Вернуть заказ в поиск?',exact:true}).scrollIntoViewIfNeeded();await courierPage.screenshot({path:info.outputPath('courier-release-mobile.png')});await courierPage.getByRole('button',{name:'Вернуть в поиск',exact:true}).click();
     await expect.poll(async()=>((await request.get(`/api/orders/${order.id}`,{headers:authenticated(owner)})).json()).then(x=>x.order.status)).toBe('SEARCHING_FOR_COURIER');

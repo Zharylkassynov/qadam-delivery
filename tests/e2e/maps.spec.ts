@@ -59,14 +59,16 @@ test('map pins and simulated GPS persist through delivery, stop on hide and show
     await customer.getByLabel('Телефон получателя', { exact: true }).fill('+7 700 000 00 00');
     await customer.getByLabel('Комментарий курьеру', { exact: true }).fill('Автотест: точки выбраны на карте, геопозиция курьера симулирована браузером.');
     await customer.getByRole('button', { name: 'Проверить заказ', exact: true }).click();
-    await expect(customer.locator('.qadam-map-marker')).toHaveCount(2);
+    await customer.locator('.checkout-couriers summary').click();
+    await expect(customer.locator('.qadam-map-marker.pickup')).toHaveCount(1);
+    await expect(customer.locator('.qadam-map-marker.destination')).toHaveCount(1);
     const created = customer.waitForResponse((response) => response.url().endsWith('/api/orders') && response.request().method() === 'POST');
     await customer.getByRole('button', { name: 'Подтвердить заказ', exact: true }).click();
     const { order } = await (await created).json();
     expect(order.pickupPoint.latitude).toBeCloseTo(43.2389, 3); expect(order.destinationPoint).not.toEqual(order.pickupPoint);
     await expect(customer.locator('.qadam-map-marker')).toHaveCount(2);
     const card = courier.getByRole('button', { name: /^Открыть заказ/ }).filter({ hasText: pickup }); await card.click();
-    await courier.getByRole('button', { name: 'Принять заказ', exact: true }).click();
+    await enableShiftGps(courier);await courier.getByRole('button', { name: 'Принять заказ', exact: true }).click();
     await enableShiftGps(courier);
     await expect(courier.getByText(/^Позиция сохранена:/)).toBeVisible();
     await expect(customer.locator('.qadam-map-marker.courier')).toHaveCount(1);
@@ -101,11 +103,11 @@ test('map pins and simulated GPS persist through delivery, stop on hide and show
 });
 
 test('denied geolocation and tile outage preserve order actions', async ({ browser }) => {
-  const context = await browser.newContext({ viewport: { width: 360, height: 800 } });
+  const context = await browser.newContext({ viewport: { width: 360, height: 800 },permissions:['geolocation'],geolocation:{latitude:43.24,longitude:76.9,accuracy:22} });
   const page = await context.newPage();
   const pickup = `E2E отказ GPS ${randomUUID().slice(0, 8)}, Алматы, Абая 10`;
   await context.route(/(?:https:\/\/tile\.openstreetmap\.org\/|\/api\/map-tiles\/)/, (route) => route.abort());
-  await page.addInitScript(() => { navigator.geolocation.getCurrentPosition = (_success, failure) => failure?.({ code: 1, message: 'Test permission denied' } as GeolocationPositionError); });
+  await page.addInitScript(() => { navigator.geolocation.getCurrentPosition = (success, failure) => document.documentElement.dataset.denyGps==='true'?failure?.({ code: 1, message: 'Test permission denied' } as GeolocationPositionError):success({coords:{latitude:43.24,longitude:76.9,accuracy:22},timestamp:Date.now()} as GeolocationPosition);navigator.geolocation.watchPosition=()=>0;navigator.geolocation.clearWatch=()=>{}; });
   try {
     await login(page, 'customer2@qadam.demo');
     const created = await page.request.post('/api/orders', { headers: { Origin: origin }, data: { requestKey: randomUUID(), pickupAddress: pickup, destinationAddress: 'Алматы, Ауэзова 20', recipientName: 'Тест карты', recipientPhone: '+77000000000', notes: 'Автотест отказа GPS и карты', pickupPoint: { latitude: 43.2389, longitude: 76.8897 }, destinationPoint: null } });
@@ -113,13 +115,14 @@ test('denied geolocation and tile outage preserve order actions', async ({ brows
     await page.getByRole('button', { name: 'Выйти', exact: true }).click();
     await login(page, 'courier2@qadam.demo');
     await page.getByRole('button', { name: /^Открыть заказ/ }).filter({ hasText: pickup }).click();
-    await page.getByRole('button', { name: 'Принять заказ', exact: true }).click();
+    await enableShiftGps(page);await page.getByRole('button', { name: 'Принять заказ', exact: true }).click();
     await expect(page.getByText('Карта недоступна', { exact: true })).toBeVisible();
+    await page.evaluate(()=>{document.documentElement.dataset.denyGps='true';});
     await enableShiftGps(page,false);
-    await expect(page.locator('.courier-gps')).toContainText('Геолокация не разрешена');
+    await expect(page.locator('.courier-gps')).toContainText('Геолокация не разрешена',{timeout:25000});
     for (const action of ['Посылка у меня', 'Начать доставку', 'Завершить доставку']) await page.getByRole('button', { name: action, exact: true }).click();
     await expect(page.getByRole('heading', { name: 'Доставка завершена', exact: true })).toBeVisible();
     const persisted = (await (await page.request.get('/api/orders')).json()).orders.find((value: { id: string }) => value.id === order.id);
-    expect(persisted.status).toBe('DELIVERED'); expect(persisted.courierLocation).toBeNull();
+    expect(persisted.status).toBe('DELIVERED'); expect(persisted.courierLocation).not.toBeNull();
   } finally { await context.close(); }
 });

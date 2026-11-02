@@ -4,6 +4,7 @@ import pg from 'pg';
 import { signedTelegramData } from '../telegram-fixture';
 import { miniApp } from './telegram-browser-fixture';
 import { mockMapTiles } from './map-fixture';
+import { enableShiftGps } from './courier-gps-fixture';
 
 test.skip(Boolean(process.env.E2E_ORIGIN), 'Local synthetic accounts only');
 const origin = 'http://127.0.0.1:3100';
@@ -44,8 +45,9 @@ test('courier shift persists, failed saves retain the switch, retries work and e
     await miniApp(page,f.courier.proof,844);
     const toggle=page.getByRole('switch',{name:'Я на линии'}), section=page.getByRole('region',{name:'Готовность к заказам'});
     await expect(toggle).toBeEnabled(); await expect(toggle).toHaveAttribute('aria-checked','false'); await toggle.click();
+    await enableShiftGps(page);
     await expect(toggle).toHaveAttribute('aria-checked','true'); await expect(section.getByRole('button',{name:'Разрешить сообщения'})).toBeVisible();
-    await section.getByRole('button',{name:'Разрешить сообщения'}).click(); await expect(section.getByRole('status')).toContainText('Уведомления выключены');
+    await section.getByRole('button',{name:'Разрешить сообщения'}).click(); await expect(section.locator('.availability-permission').getByRole('status')).toContainText('Уведомления выключены');
     await page.reload(); await expect(toggle).toHaveAttribute('aria-checked','true');
     await page.route('**/api/courier/status',async route => {
       if(route.request().method()==='POST') await route.fulfill({status:503,json:{error:'Временная ошибка'}}); else await route.continue();
@@ -80,6 +82,7 @@ test('UUID and signed order-number links open deliveries and revoked administrat
     await expect(page.locator('.app-bar')).toContainText(`QD-${order.number.padStart(4,'0')}`);
     await miniApp(page,f.courier.proof,844,'',{query:`order=${order.id}`});
     await expect(page.getByRole('region',{name:'Детали заказа'})).toContainText('Контакты получателя откроются');
+    await enableShiftGps(page);
     await page.getByRole('button',{name:'Принять заказ',exact:true}).click();
     await expect(page.getByRole('region',{name:'Детали заказа'})).toContainText('Получатель ссылки');
     await miniApp(page,f.admin.proof,844,'',{query:`screen=adminOrders&order=${order.id}`});

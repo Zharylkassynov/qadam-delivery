@@ -5,6 +5,7 @@ import { migrate } from '../scripts/migrate';
 import { closeDatabase, database, transaction } from '../src/lib/db';
 import { hashPassword } from '../src/lib/auth';
 import { acceptOrder, createOrder } from '../src/lib/orders';
+import {readyCourier} from './courier-ready-fixture';
 import { orderRoute } from '../src/lib/routing';
 import { takeMapBudget } from '../src/lib/map-services';
 import { AppError } from '../src/lib/errors';
@@ -66,7 +67,7 @@ test('order access is checked before every provider/cache read, including after 
   await status(calculate(users[0], randomUUID()), 404); await status(calculate(users[0], '../unsafe'), 400);
   assert.equal(fetcher.mock.calls.length, 0);
   assert.ok(await calculate(users[2], order.id)); // Available deliveries follow list visibility.
-  await acceptOrder(users[2], order.id);
+  await readyCourier(users[2]);await acceptOrder(users[2], order.id);
   await status(calculate(users[3], order.id), 404);
   assert.ok(await calculate(users[0], order.id)); assert.ok(await calculate(users[2], order.id));
 });
@@ -82,7 +83,7 @@ test('missing pins, missing configuration and unsupported service areas do not c
 });
 
 test('administrator route access is read only, rechecks membership and never trusts an isAdmin flag', async () => {
-  const order = await create(); await acceptOrder(users[2], order.id);
+  const order = await create();await readyCourier(users[2]); await acceptOrder(users[2], order.id);
   mock.method(globalThis, 'fetch', async () => answer());
   await status(calculate({ ...users[1], isAdmin: true }, order.id), 404);
   await database().query('INSERT INTO qadam.telegram_identities(telegram_user_id,user_id) VALUES($1,$2)', [4100000000000 + Math.floor(Math.random() * 1000000000), users[1].id]);

@@ -1,6 +1,8 @@
+import {enableShiftGps} from './courier-gps-fixture';
 import { expect, test, type Page } from '@playwright/test';
 import { randomUUID } from 'node:crypto';
 import { mockMapTiles } from './map-fixture';
+import { mockBrowserTelegram } from './telegram-browser-fixture';
 
 const origin = process.env.E2E_ORIGIN ?? 'http://127.0.0.1:3100';
 
@@ -53,6 +55,7 @@ test('customer and courier complete a delivery; polling, reopening and history r
   const courierContext = await browser.newContext({ viewport: { width: 390, height: 844 } });
   await mockMapTiles(customerContext);
   await mockMapTiles(courierContext);
+  await mockBrowserTelegram(customerContext);await mockBrowserTelegram(courierContext);
   const customer = await customerContext.newPage();
   const courier = await courierContext.newPage();
   const pickup = `E2E ${randomUUID().slice(0, 8)}, улица Абая, 10`;
@@ -77,7 +80,7 @@ test('customer and courier complete a delivery; polling, reopening and history r
     const orderButton = (await card.getAttribute('aria-label'))!;
     await card.click();
     await expect(courier.getByText(/Платит получатель · наличными/)).toBeVisible();
-    await courier.getByRole('button', { name: 'Принять заказ', exact: true }).click();
+    await enableShiftGps(courier);await courier.getByRole('button', { name: 'Принять заказ', exact: true }).click();
     await expect(courier.getByRole('button', { name: 'Посылка у меня', exact: true })).toBeInViewport();
     await courier.screenshot({ path: testInfo.outputPath('courier-mobile-accepted.png'), fullPage: true });
     const customerDetail = customer.getByRole('region', { name: 'Детали заказа' });

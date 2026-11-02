@@ -46,7 +46,7 @@ export function DeliveryMap({ markers, onPick, focusCourier = false, center, rou
       map.on('moveend',boundsChanged);
       const points = latest.current.markers.filter((point) => point.kind !== 'courier');
       const bounds = (points.length ? points : latest.current.markers).map((point): [number, number] => [point.latitude, point.longitude]);
-      if (bounds.length) map.fitBounds(L.latLngBounds(bounds), { padding: [48, 48], maxZoom: 16, animate: false });
+      if (bounds.length&&(!latest.current.center||onPick)) map.fitBounds(L.latLngBounds(bounds), { padding: [48, 48], maxZoom: 16, animate: false });
       observer = new ResizeObserver(() => { if (!disposed) map.invalidateSize({ animate: false, pan: false }); }); observer.observe(container.current);
       setReady(true);
     }).catch(() => { if (!disposed) setError('Не удалось открыть карту. Проверьте интернет и повторите.'); });
@@ -67,7 +67,7 @@ export function DeliveryMap({ markers, onPick, focusCourier = false, center, rou
     }
     // Fit the first courier fix too, once; subsequent polling must not reset a
     // customer's chosen zoom or interrupt panning.
-    if (!onPick && !courierShown.current && markers.some((point) => point.kind === 'courier')) {
+    if (!onPick && !center && !courierShown.current && markers.some((point) => point.kind === 'courier')) {
       courierShown.current = true;
       map.fitBounds(L.latLngBounds([...markers.map((point): [number, number] => [point.latitude, point.longitude]), ...(latest.current.route?.paths.flat() ?? [])]), { padding: [48, 48], maxZoom: 16, animate: false });
     }

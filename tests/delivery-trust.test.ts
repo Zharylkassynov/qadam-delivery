@@ -17,6 +17,7 @@ import {rateOrder} from '../src/lib/order-ratings';
 import {saveTelegramContact} from '../src/lib/user-profiles';
 import {getSession} from '../src/lib/auth';
 import {getCourierStatus,setCourierStatus} from '../src/lib/courier-status';
+import {readyCourier} from './courier-ready-fixture';
 import {updateCourierPresence,nearbyCouriers} from '../src/lib/courier-presence';
 import {reportLocation} from '../src/lib/locations';
 import {orderRoute} from '../src/lib/routing';
@@ -67,8 +68,10 @@ beforeEach(async()=>{
   await database().query('DELETE FROM qadam.courier_status WHERE user_id=ANY($1::uuid[])',[users.map(u=>u.id)]);
   await database().query('DELETE FROM qadam.courier_applications WHERE user_id=ANY($1::uuid[])',[users.map(u=>u.id)]);
   await database().query('DELETE FROM qadam.telegram_outbox WHERE telegram_user_id=ANY($1::bigint[])',[users.map(u=>u.telegramId)]);
+  await readyCourier(courier);await readyCourier(replacement);
 });
 after(async()=>{
+  await database().query('DELETE FROM qadam.courier_block_events WHERE user_id=ANY($1::uuid[]) OR actor_id=ANY($1::uuid[])',[users.map(u=>u.id)]);
   await database().query('UPDATE qadam.pricing_settings SET active=false,config=NULL');
   await database().query('DELETE FROM qadam.orders WHERE customer_id=ANY($1::uuid[])',[users.map(u=>u.id)]);
   await database().query('DELETE FROM qadam.telegram_outbox WHERE telegram_user_id=ANY($1::bigint[])',[users.map(u=>u.telegramId)]);

@@ -34,7 +34,7 @@ export async function queueAvailableOrder(db: Db, id: string) {
   const order = await noticeOrder(db,id);
   const recipients = (await db.query(`SELECT u.id,t.telegram_user_id::text AS chat FROM qadam.courier_status s
     JOIN qadam.users u ON u.id=s.user_id JOIN qadam.telegram_identities t ON t.user_id=u.id
-    WHERE s.online AND s.updated_at>now()-interval '8 hours' AND u.active AND ${courier}
+    WHERE s.online AND s.accepting_orders AND s.updated_at>now()-interval '8 hours' AND u.active AND ${courier}
       AND t.allows_write AND t.bot_blocked_at IS NULL AND u.id<>$1
       AND ($2::integer IS NULL OR EXISTS(SELECT 1 FROM qadam.courier_applications ca WHERE ca.user_id=u.id AND ca.status='APPROVED' AND ca.transport='CAR'))`, [order.customer_id,order.price_kzt])).rows;
   for (const recipient of recipients) {
@@ -111,7 +111,7 @@ export async function shouldSendOrderJob(job: BotJob) {
       AND o.status='SEARCHING_FOR_COURIER' AND o.courier_id IS NULL AND u.active AND ${courier}
       AND (o.deliver_before IS NULL OR o.deliver_before>now())
       AND (o.price_kzt IS NULL OR EXISTS(SELECT 1 FROM qadam.courier_applications ca WHERE ca.user_id=u.id AND ca.status='APPROVED' AND ca.transport='CAR'))
-      AND s.online AND s.updated_at>now()-interval '8 hours' AND t.telegram_user_id=$2
+      AND s.online AND s.accepting_orders AND s.updated_at>now()-interval '8 hours' AND t.telegram_user_id=$2
       AND t.allows_write AND t.bot_blocked_at IS NULL`,[job.notificationId,job.telegramId]);
     return Boolean(row.rowCount);
   }

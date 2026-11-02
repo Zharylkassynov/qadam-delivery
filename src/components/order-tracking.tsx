@@ -11,7 +11,8 @@ export function OrderTracking({ order, user, readOnly = false }: { order: Order;
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => { const timer = setInterval(() => setNow(Date.now()), 10000); return () => clearInterval(timer); }, []);
   const location = order.courierLocation;
-  const stale = !!location && now - Date.parse(location.capturedAt) > 90000;
+  const stopped=location?.sharingStopped===true;
+  const stale = !!location && (stopped||now - Date.parse(location.capturedAt) > 90000);
   const telegramSource=location?.source==='TELEGRAM_LIVE';
   const markers: MapMarker[] = [];
   if (order.pickupPoint) markers.push({ ...order.pickupPoint, kind: 'pickup', label: `А · ${order.pickupAddress}` });
@@ -24,9 +25,9 @@ export function OrderTracking({ order, user, readOnly = false }: { order: Order;
     <p className="map-legend">А — отправление · Б — доставка</p>
     <a href={navigation} target="_blank" rel="noopener noreferrer">Открыть навигацию</a>
     {(!order.pickupPoint || !order.destinationPoint) && markers.length > 0 && <p className="muted">{!order.pickupPoint ? 'Точка отправления не указана. ' : ''}{!order.destinationPoint ? 'Точка доставки не указана.' : ''}</p>}
-    {location ? <Feedback tone={stale || finished(order) ? 'warning' : 'info'} title={finished(order) ? 'Доставка завершена · последняя точка' : stale ? 'Позиция курьера устарела' : 'Последняя позиция курьера'}>
+    {location ? <Feedback tone={stale || finished(order) ? 'warning' : 'info'} title={finished(order) ? 'Доставка завершена · последняя точка' : stopped?'Передача геопозиции остановлена':stale ? 'Позиция курьера устарела' : 'Последняя позиция курьера'}>
       <p>{telegramSource?'Обновлено в Telegram':'Измерено'}: {formatTime(location.capturedAt)}. Получено сервером: {formatTime(location.receivedAt)}.</p>
-      <p>{location.accuracy === null ? 'Точность не указана устройством.' : `Точность: около ${Math.round(location.accuracy)} м.`} {stale && !finished(order) ? 'Новых координат нет более 90 секунд. Курьер мог переместиться.' : ''}</p>
+      <p>{location.accuracy === null ? 'Точность не указана устройством.' : `Точность: около ${Math.round(location.accuracy)} м.`} {stopped?'Показана последняя известная точка.':stale && !finished(order) ? 'Новых координат нет более 90 секунд. Курьер мог переместиться.' : ''}</p>
       <p>{finished(order) ? 'Новые координаты для этого заказа больше не принимаются.' : telegramSource?'Источник — трансляция Telegram. Частота обновлений зависит от телефона и связи.':'Новые точки поступают, пока курьер на линии, Qadam открыт и геолокация разрешена.'}</p>
     </Feedback> : order.courierId ? <Feedback title="Курьер ещё не передал позицию">Координаты появятся, когда курьер включит смену и разрешит передачу позиции.</Feedback> : null}
     {!readOnly && user.role === 'COURIER' && order.courierId === user.id && !finished(order) && <CourierGpsStatus/>}

@@ -23,7 +23,9 @@ try {
   // Exercise production permissions without reading personal data or changing rows.
   await client.query('BEGIN');
   try {
-    await client.query('SELECT user_id,online,updated_at FROM qadam.courier_status LIMIT 0');
+    await client.query('SELECT user_id,online,accepting_orders,end_after_delivery,updated_at FROM qadam.courier_status LIMIT 0');
+    await client.query('UPDATE qadam.courier_status SET accepting_orders=false,end_after_delivery=false WHERE false');
+    await client.query('INSERT INTO qadam.courier_status(user_id,online,accepting_orders,end_after_delivery) SELECT gen_random_uuid(),false,false,false WHERE false');
     await client.query('SELECT id,message_id,closed_at FROM qadam.order_notifications LIMIT 0');
     await client.query('UPDATE qadam.courier_status SET online=online WHERE false');
     await client.query('UPDATE qadam.order_notifications SET message_id=message_id,closed_at=closed_at WHERE false');

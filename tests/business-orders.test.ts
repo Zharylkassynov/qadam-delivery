@@ -5,6 +5,7 @@ import { database,closeDatabase } from '../src/lib/db';
 import { migrate } from '../scripts/migrate';
 import { businessProfile,saveBusinessProfile,deleteBusinessProfile,businessProfileSchema } from '../src/lib/business-profiles';
 import { createOrder,createOrderSchema,getOrder,listOrders,acceptOrder } from '../src/lib/orders';
+import {readyCourier} from './courier-ready-fixture';
 import { createQuote,quoteFingerprint,type QuoteInput } from '../src/lib/order-quotes';
 import { almatyInput,scheduleError,deliveryWindow,repeatedParcel } from '../src/lib/order-details';
 import { alertWaitingOrders } from '../src/lib/order-notifications';
@@ -42,6 +43,7 @@ beforeEach(async()=>{
   await database().query('DELETE FROM qadam.user_profiles WHERE user_id=ANY($1::uuid[])',[users.map(x=>x.id)]);
   await database().query('DELETE FROM qadam.administrators WHERE user_id=ANY($1::uuid[])',[users.map(x=>x.id)]);
   await saveTelegramContact(customer.telegramId!,'+77000000042',Date.now());
+  await readyCourier(courier);
 });
 after(async()=>{
   await database().query('UPDATE qadam.pricing_settings SET active=false,config=NULL');

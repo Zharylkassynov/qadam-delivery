@@ -1,3 +1,4 @@
+import {enableShiftGps} from './courier-gps-fixture';
 import { expect, test, type Page } from '@playwright/test';
 import { randomUUID } from 'node:crypto';
 import { mockMapTiles } from './map-fixture';
@@ -49,7 +50,7 @@ test('client and courier see the road route, retain it through status changes an
     await login(courier, 'courier1@qadam.demo');
     await courier.getByRole('button', { name: /^Открыть заказ/ }).filter({ hasText: order.pickup }).click();
     await expect(courier.locator('path.qadam-route-line')).toHaveCount(1);
-    await courier.getByRole('button', { name: 'Принять заказ', exact: true }).click();
+    await enableShiftGps(courier);await courier.getByRole('button', { name: 'Принять заказ', exact: true }).click();
     await courier.screenshot({ path: info.outputPath('route-courier-mobile.png') });
     for (const action of ['Посылка у меня', 'Начать доставку', 'Завершить доставку']) await courier.getByRole('button', { name: action, exact: true }).click();
     await expect(page.getByRole('heading', { name: 'Посылка у получателя', exact: true })).toBeVisible();
