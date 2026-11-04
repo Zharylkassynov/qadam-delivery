@@ -259,14 +259,14 @@ function OrderDetail({ order, user, busy, onCancel,onReleased }: { order: Order;
     <div className="screen-heading"><h1 tabIndex={-1}>{heading}</h1><p>{complete ? `${orderNumber(order)} · ${formatTime(order.updatedAt)}` : order.status === 'SEARCHING_FOR_COURIER' ? customer ? 'Заказ создан. Курьер увидит адреса и сможет принять доставку.' : 'Проверьте адреса и условия перед принятием заказа.' : `Создан ${formatTime(order.createdAt)}`}</p></div>
     <OrderTracking order={order} user={user}/>
     {!customer&&order.status==='SEARCHING_FOR_COURIER'&&<CourierAvailability telegram={!!user.telegramId}/>}
-    {order.courierId===user.id&&['ACCEPTED','PICKED_UP','IN_TRANSIT'].includes(order.status)&&<OrderLocationStream key={`${order.id}:${order.assignmentVersion}`} order={order}/>}
+    {order.courierId===user.id&&['ACCEPTED','PICKED_UP','IN_TRANSIT'].includes(order.status)&&<OrderLocationStream key={`location-stream:${order.id}:${order.assignmentVersion}`} order={order}/>}
     {customer && order.courierName && <div className="courier-contact"><span className="avatar">{initials(order.courierName)}</span><div><strong>{order.courierName}</strong><small>Ваш курьер</small></div></div>}
     <RouteCard pickup={order.pickupAddress} destination={order.destinationAddress}/>
     <OrderRequirements order={order}/>
     {!complete && <Recipient order={order}/>}
     <SavedOrderPrice order={order} courier={!customer}/>
     <OrderContacts order={order} customer={customer}/>
-    {(order.customerId===user.id||order.courierId===user.id)&&(order.photoRequired||order.codeRequired||complete)&&<OrderTrustPanel key={`${order.id}:${order.assignmentVersion}`} order={order} user={user}/>}
+    {(order.customerId===user.id||order.courierId===user.id)&&(order.photoRequired||order.codeRequired||complete)&&<OrderTrustPanel key={`trust:${order.id}:${order.assignmentVersion}`} order={order} user={user}/>}
     {order.courierId===user.id&&order.status==='ACCEPTED'&&<CourierRelease order={order} onReleased={onReleased}/>}
     {!customer&&order.status==='SEARCHING_FOR_COURIER'&&<p className="muted">Принимая заказ, вы разрешаете показать свой подтверждённый номер клиенту для связи по доставке.</p>}
     {order.status === 'SEARCHING_FOR_COURIER' && <Feedback title={customer ? 'Можно закрыть приложение' : order.pricing?'Цена зафиксирована':'Оплата по согласованию'}>{customer ? 'Заказ сохранён. При следующем открытии загрузим актуальный статус с сервера.' : order.pricing?'Вся стоимость доставки причитается курьеру. Способ и момент расчёта уточните со сторонами.':'Уточните стоимость и условия до передачи посылки.'}</Feedback>}
