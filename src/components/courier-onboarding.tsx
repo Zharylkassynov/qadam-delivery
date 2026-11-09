@@ -15,9 +15,9 @@ export function ApplicationScreen({ title, children, actions, onBack, busy, wide
   useEffect(() => { main.current?.scrollTo({ top: 0 }); main.current?.focus({ preventScroll: true }); }, [title, scrollKey]);
   return <div className={`app-shell application-shell ${wide ? 'application-wide' : ''} ${courier ? 'courier-onboarding' : ''}`}><div className="workspace with-action">
     <header className="product-header"><span className="product-header-mark"><Icon type="box"/></span><span>Qadam Delivery</span><span/></header>
-    <div className="app-bar"><button className="icon-button" aria-label={backLabel} disabled={busy} onClick={onBack}><Icon type="back"/></button><p>{title}</p><span/></div>
+    <div className="app-bar"><button data-telegram-back className="icon-button" aria-label={backLabel} disabled={busy} onClick={onBack}><Icon type="back"/></button><p>{title}</p><span/></div>
     <main className={`screen-body screen-application ${wide ? 'screen-wide' : ''}`} ref={main} tabIndex={-1}><div className="screen-content">{children}</div></main>
-    <footer className="sticky-action application-actions">{actions}</footer>
+    <footer data-telegram-actions className="sticky-action application-actions">{actions}</footer>
   </div></div>;
 }
 

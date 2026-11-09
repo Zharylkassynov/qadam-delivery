@@ -24,6 +24,9 @@
   --brand-soft: #eaf0ff;
   --canvas: #f3f6fa;
   --surface: #fff;
+  --button-text: #fff;
+  --action: #2455db;
+  --action-pressed: #1740b5;
   --line: #dce5ef;
   --warning: #a54b21;
   --warning-soft: #fff1e8;
@@ -107,8 +110,8 @@ fieldset { margin: 0; border: 0; padding: 0; min-width: 0; }
 .icon { display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; flex: 0 0 24px; vertical-align: middle; }
 .icon img { display: block; max-width: none; flex-shrink: 0; }
 .button { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 56px; padding: 16px; border: 1px solid transparent; border-radius: 10px; font-size: 16px; line-height: 24px; font-weight: 600; text-align: center; text-decoration: none; transition: background-color .15s; overflow-wrap: anywhere; }
-.primary { background: var(--brand); color: var(--surface); }
-.primary:hover:not(:disabled), .primary:active:not(:disabled) { background: var(--brand-pressed); }
+.primary { background: var(--action); color: var(--button-text); }
+.primary:hover:not(:disabled), .primary:active:not(:disabled) { background: var(--action-pressed); }
 .secondary { background: var(--brand-soft); color: var(--brand); }
 .secondary:hover:not(:disabled) { background: #dee7ff; }
 .ghost { background: var(--surface); color: var(--brand); }
@@ -174,7 +177,7 @@ html[data-telegram="true"] .app-shell { height: var(--tg-viewport-stable-height,
 .product-header { height: 48px; flex: 0 0 48px; background: var(--surface); display: grid; grid-template-columns: 44px minmax(0, 1fr) 44px; align-items: center; padding: 0 16px; text-align: center; font-size: 14px; line-height: 20px; font-weight: 500; }
 .product-header-mark { display: flex; align-items: center; justify-content: center; }
 .app-bar { height: 64px; flex: 0 0 64px; display: grid; grid-template-columns: 44px minmax(0, 1fr) 44px; align-items: center; gap: 8px; padding: 0 20px; background: var(--surface); }
-.app-bar > p { text-align: center; font-size: 18px; font-weight: 600; line-height: 24px; overflow-wrap: anywhere; }
+.app-bar > p { grid-column: 2; text-align: center; font-size: 18px; font-weight: 600; line-height: 24px; overflow-wrap: anywhere; }
 .app-bar-city { width: 44px; height: 44px; display: flex; align-items: center; justify-content: center; }
 .app-bar-balance { width: 44px; }
 .screen-body { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior-y: contain; scrollbar-gutter: stable; }
@@ -435,6 +438,38 @@ html[data-telegram="true"] .app-shell { height: var(--tg-viewport-stable-height,
 .trust-rating input{position:absolute;inset:0;width:100%;height:100%;margin:0;opacity:0;z-index:1;cursor:pointer}.trust-rating span{font-size:26px;line-height:30px}.trust-rating small{font-size:12px}
 .trust-rating label:has(:checked){color:var(--brand);background:var(--brand-soft);border-color:var(--brand)}.trust-rating label:has(:focus-visible){outline:3px solid var(--brand);outline-offset:3px}
 .trust-rating-result{font-size:24px;font-weight:600}.trust-audit summary{cursor:pointer;min-height:44px;padding:10px 0;color:var(--brand)}.trust-audit>div{display:grid;gap:6px;padding:12px 0;border-top:1px solid var(--line)}
-.trust-audit small{color:var(--muted)}.courier-access-label.courier-access-blocked{color:var(--danger);background:#fff0f1}
+.trust-audit small{color:var(--muted)}.courier-access-label.courier-access-blocked{color:var(--danger);background:var(--danger-soft)}
+
+/* Telegram owns only the declared primary action and the declared back action. */
+.telegram-main-target,.telegram-back-target,.sticky-action.telegram-main-only{display:none!important}
+html[data-native-controls=true] .product-header{display:none}
+html[data-native-back=true] [data-telegram-root] .icon-button{visibility:hidden;pointer-events:none}
+.home-screen-shortcut{border-top:1px solid var(--line);padding-top:20px;display:grid;gap:12px}
+.home-screen-shortcut>p{font-size:14px;line-height:22px}
+.courier-queue-hint{color:var(--muted);font-size:13px;line-height:20px;margin:12px 0 20px}
+.courier-pickup-distance{font-size:20px;line-height:28px;font-weight:600;margin:8px 0 16px}
+.courier-pickup-distance small{display:block;color:var(--muted);font-size:12px;line-height:18px;font-weight:400}
+.navigation-picker{border-top:1px solid var(--line);padding-top:14px;min-width:0}
+.navigation-picker summary{color:var(--brand);cursor:pointer;min-height:44px;padding:10px 0}
+.navigation-picker summary:focus-visible{outline:3px solid var(--brand);outline-offset:3px}
+.navigation-picker-body{display:grid;gap:12px;padding:12px 0;overflow-wrap:anywhere}
+.navigation-links{display:grid}
+.navigation-links a{display:flex;justify-content:space-between;gap:16px;align-items:center;min-height:58px;padding:14px 0;border-bottom:1px solid var(--line);text-decoration:none}
+.navigation-links a>span:last-child{font-size:24px}
+.qadam-confirm{color:var(--ink);background:var(--surface);border:1px solid var(--line);border-radius:14px;width:min(420px,calc(100vw - 32px));padding:24px;overflow-wrap:anywhere}
+.qadam-confirm::backdrop{background:#06111b99}
+.qadam-confirm-actions{display:flex;gap:12px;margin-top:24px;flex-wrap:wrap}.qadam-confirm-actions .button{flex:1;min-width:110px}
+.qadam-confirm-backdrop{position:fixed;inset:0;z-index:10000;display:grid;place-items:center;background:#06111b99}
+.qadam-confirm.qadam-confirm-fallback{position:static;margin:auto;display:block}
+.recipient-page,.recipient-steps li:before,.availability-switch span,.map-controls,.map-controls button,.map-loading,.qadam-map-marker.courier{background:var(--surface)}
+.qadam-map-marker{background:var(--action);border-color:var(--action);color:var(--button-text)}
+.qadam-map-marker.destination{background:var(--ink);border-color:var(--ink);color:var(--surface)}
+.map-crosshair{color:#122f43}
+.secondary:hover:not(:disabled){background:var(--brand-soft);filter:brightness(.95)}
+.courier-onboarding .feedback-warning{background:var(--warning-soft);border-color:var(--warning);color:var(--warning)}
+.leaflet-control-attribution{color:#122f43!important}.leaflet-control-attribution a{color:#2455db!important}
+html[data-color-scheme=dark] .icon img,html[data-color-scheme=dark] .qadam-map-marker.courier img{filter:brightness(0) invert(1)}
+html[data-color-scheme=dark] .map-unavailable{background:var(--canvas)}
+@media(prefers-color-scheme:dark){:root{color-scheme:dark;--ink:#edf4fb;--muted:#aabdd0;--brand:#80bdff;--brand-pressed:#a0ceff;--brand-soft:#203c58;--canvas:#101b26;--surface:#172737;--line:#354a5e;--button-text:#ffffff;--action:#2b6cbb;--action-pressed:#245b9e;--warning:#ffbe97;--warning-soft:#422e28;--success:#9ed8b8;--success-soft:#183a31;--danger:#ffb3ba;--danger-soft:#422b34}}
 .screen-create .choice-row[aria-label="Тип отправления"]{flex-wrap:wrap}
 .screen-create .choice-row[aria-label="Тип отправления"]>.choice{flex:1 0 95px;min-width:95px}

@@ -26,6 +26,9 @@ import {OrderTrustPanel} from './order-trust';
 import {CourierRelease,DeliveryHandoff} from './delivery-handoff';
 import {OrderLocationStream} from './order-location-stream';
 import {useCourierPresence} from './courier-presence';
+import {confirmAction} from '../lib/telegram-ui';
+import {CourierHomeScreen} from './telegram-shell';
+import {freshLocation} from '../lib/geo-distance';
 
 type View = 'home' | 'orders' | 'profile' | 'create' | 'review' | 'detail' | 'handoff' | 'point' | 'courierApplication' | 'adminApplications' | 'adminOrders' | 'couriers' | 'phone' | 'business';
 type Filter = 'all' | 'active' | 'history';
@@ -37,6 +40,7 @@ type Props = {
   onSelect: (id: string) => void; onSignOut: () => Promise<void>; onRefresh: () => void; onClearMessages: () => void;
   onMutate: (path: string, body: unknown, success: string) => Promise<boolean>;
   onCreate: (input: ReturnType<typeof orderPayload>) => Promise<boolean>;
+  shortDeliveries: boolean; onShortDeliveries: (short: boolean) => void;
 };
 
 export function DeliveryWorkspace(props: Props) {
@@ -191,7 +195,7 @@ export function DeliveryWorkspace(props: Props) {
     </aside>
     <div className={`workspace ${hasFooter ? 'with-action' : ''} ${showNav ? 'with-nav' : ''} ${customer && view === 'home' ? 'workspace-customer-home' : ''}`}>
       <header className="product-header"><span className="product-header-mark"><Icon type="box"/></span><span>Qadam Delivery</span>{!props.telegram && <button type="button" className="icon-button" aria-label="Выйти" title="Выйти" onClick={() => void props.onSignOut()} disabled={busy}><Icon type="logout"/></button>}</header>
-      {!(view === 'home' && customer) && <div className={`app-bar ${view === 'point' ? 'address-app-bar' : ''}`}>{view === 'home' ? <span className="app-bar-city"><Icon type="pin"/></span> : <button type="button" className="icon-button" aria-label="Назад" disabled={busy} onClick={back}><Icon type="back"/></button>}<p>{title}</p><span className="app-bar-balance"/></div>}
+      {!(view === 'home' && customer) && <div data-telegram-root={showNav||undefined} className={`app-bar ${view === 'point' ? 'address-app-bar' : ''}`}>{view === 'home' ? <span className="app-bar-city"><Icon type="pin"/></span> : <button data-telegram-back={!showNav||undefined} type="button" className="icon-button" aria-label="Назад" disabled={busy} onClick={back}><Icon type="back"/></button>}<p>{title}</p><span className="app-bar-balance"/></div>}
       <main className={`screen-body screen-${view}`} ref={bodyRef} id="main-content">
         <div className="screen-content">
           {error && <Feedback tone="error" title={error} role="alert" action={<button type="button" className="feedback-dismiss" aria-label="Закрыть сообщение" onClick={props.onClearMessages}>×</button>}/>}
@@ -203,7 +207,9 @@ export function DeliveryWorkspace(props: Props) {
 
           {view === 'home' && !customer && <><CourierAvailability telegram={props.telegram}/><div className="screen-heading"><h1 tabIndex={-1}>Можно принять</h1><p>Доступные заказы. Условия доставки уточняются до начала заказа.</p></div><p className="city-label"><Icon type="locate"/>{serviceCity}</p>
             {activeOrders.length > 0 && <Button variant="secondary" onClick={() => { setFilter('active'); navigate('orders'); }} disabled={busy}>Мои активные доставки · {activeOrders.length}</Button>}
-            {loading ? <Skeletons/> : available.length ? <div className="order-list courier-list">{available.map((order) => <OrderCard key={order.id} order={order} onOpen={() => open(order)} onAccept={() => void accept(order)} busy={busy}/>)}</div> : <EmptyState title="Пока нет заказов" action={refresh}>Новые доставки появятся в этом списке. Можно обновить его вручную.</EmptyState>}
+            {courierPresence.status?.transport==='FOOT'&&<><div className="choice-row" role="group" aria-label="Длина доставки"><button type="button" className={`choice ${props.shortDeliveries?'selected':''}`} aria-pressed={props.shortDeliveries} onClick={()=>props.onShortDeliveries(true)}>Короткие</button><button type="button" className={`choice ${!props.shortDeliveries?'selected':''}`} aria-pressed={!props.shortDeliveries} onClick={()=>props.onShortDeliveries(false)}>Все</button></div><p className="field-hint">{props.shortDeliveries?'До 4 км от А до Б по прямой. Пеший маршрут может быть длиннее. Заказы без точек остаются в списке.':'Все доступные доставки, включая заказы без точек на карте.'}</p></>}
+            <p className="courier-queue-hint">{courierPresence.status?.online&&courierPresence.status.locationSharing&&courierPresence.status.consentCurrent&&freshLocation(courierPresence.status.location)?'Сначала ближе к забору, с учётом времени и срочности.':'Нет свежей позиции. Расстояние до забора пока не определено.'}</p>
+            {loading ? <Skeletons/> : available.length ? <div className="order-list courier-list">{available.map((order) => <OrderCard key={order.id} order={order} onOpen={() => open(order)} onAccept={() => void accept(order)} busy={busy} distances={{pickupM:courierPresence.status?.online&&courierPresence.status.locationSharing&&courierPresence.status.consentCurrent&&freshLocation(courierPresence.status.location)?order.pickupDistanceM??null:null,deliveryM:order.deliveryDistanceM??null}}/>)}</div> : <EmptyState title={courierPresence.status?.transport==='FOOT'&&props.shortDeliveries?'Коротких доставок пока нет':'Пока нет заказов'} action={<>{courierPresence.status?.transport==='FOOT'&&props.shortDeliveries&&<Button variant="secondary" onClick={()=>props.onShortDeliveries(false)}>Посмотреть все заказы</Button>}{refresh}</>}>Новые доставки появятся в этом списке. Можно обновить его вручную.</EmptyState>}
             <SyncTime value={syncedAt} offline={!!syncError}/></>}
 
           {view === 'orders' && <><h1 className="sr-only" tabIndex={-1}>Мои заказы</h1>{!customer && <h2 className="list-title">Ваши доставки</h2>}<div className="choice-row order-filters" role="group" aria-label="Фильтр заказов">{(customer ? ['all', 'active', 'history'] as const : ['active', 'history'] as const).map((value) => <button type="button" className={`choice ${filter === value ? 'selected' : ''}`} aria-pressed={filter === value} key={value} onClick={() => setFilter(value)} disabled={busy}>{{ all: 'Все', active: 'Активные', history: 'Завершённые' }[value]}</button>)}</div>
@@ -220,8 +226,9 @@ export function DeliveryWorkspace(props: Props) {
           </>}/>}
           {view==='phone'&&<PhoneProfilePanel profile={phone.profile} busy={phone.busy} notice={phone.notice}/>}
           {view==='business'&&customer&&<BusinessProfilePanel profile={business.profile} draft={businessDraft} onChange={setBusinessDraft} mode={businessMode} onMode={changeBusinessMode} phone={phone.profile} onPhone={()=>{setPhoneReturn('business');navigate('phone');}} onPoint={businessAddress} loading={business.loading} busy={business.busy} error={businessValidation||business.error} onRetry={business.refresh}/>}
-          {view === 'detail' && (detail ? <OrderDetail key={detail.id} order={detail} user={user} onCancel={async () => { if (window.confirm('Отменить этот заказ?')) await props.onMutate(`/api/orders/${detail.id}/status`, { status: 'CANCELLED' }, 'Заказ отменён и сохранён в истории.'); }} onReleased={()=>{props.onRefresh();navigate('orders');}} busy={busy}/> : <EmptyState title="Заказ больше недоступен" action={<Button variant="secondary" onClick={() => navigate('home')}>К списку заказов</Button>}>Возможно, его уже принял другой курьер. Обновите список и выберите другую доставку.</EmptyState>)}
+          {view === 'detail' && (detail ? <OrderDetail key={detail.id} order={detail} user={user} onCancel={async () => { if (await confirmAction(`Отменить заказ ${orderNumber(detail)}? После отмены курьеры больше не смогут его принять.`)) await props.onMutate(`/api/orders/${detail.id}/status`, { status: 'CANCELLED' }, 'Заказ отменён и сохранён в истории.'); }} onReleased={()=>{props.onRefresh();navigate('orders');}} busy={busy}/> : <EmptyState title="Заказ больше недоступен" action={<Button variant="secondary" onClick={() => navigate('home')}>К списку заказов</Button>}>Возможно, его уже принял другой курьер. Обновите список и выберите другую доставку.</EmptyState>)}
           {view === 'profile' && <><h1 className="sr-only" tabIndex={-1}>Профиль</h1><div className="profile-card"><span className="avatar large">{initials(user.name)}</span><h2>{user.name}</h2><p className="muted">{customer ? 'Клиент' : 'Курьер'}{user.telegramId && ' · Telegram'}</p><p>{user.telegramId ? `Telegram ID: ${user.telegramId}` : user.email}</p></div><div className="profile-stats"><div><strong>{activeOrders.length}</strong><span>Активные</span></div><div><strong>{completed.length}</strong><span>Доставлены</span></div></div>
+            {!customer&&props.telegram&&<CourierHomeScreen/>}
             {customer&&<Button variant="secondary" onClick={()=>{changeBusinessMode('view');business.refresh();navigate('business');}}>Мой магазин</Button>}
             {user.telegramId&&<Button variant="secondary" onClick={()=>{setPhoneReturn('profile');navigate('phone');}}>Мой телефон</Button>}
             {user.telegramId && <><Feedback title={customer ? 'Доставляй с Qadam' : 'Доступ курьера открыт'}>{customer ? 'Подай заявку. Администратор проверит её и откроет доступ к заказам.' : 'Принимай заказы и отмечай каждый шаг доставки.'}</Feedback><Button onClick={() => navigate('courierApplication')} disabled={busy}>{customer ? 'Стать курьером' : 'Моя заявка курьера'}</Button></>}
@@ -229,7 +236,7 @@ export function DeliveryWorkspace(props: Props) {
             {!props.telegram && <Button variant="secondary" onClick={() => void props.onSignOut()} disabled={busy}>Выйти из аккаунта</Button>}</>}
         </div>
       </main>
-      {hasFooter&&<footer key={view} className={`sticky-action ${view==='point'?'address-action':''}`}>
+      {hasFooter&&<footer data-telegram-actions key={view} className={`sticky-action ${view==='point'?'address-action':''}`}>
         {view==='business'?businessMode==='delete'?<><Button className="wide" disabled={business.busy} onClick={()=>void business.remove().then(ok=>{if(ok){setBusinessMode('view');setPickupSource('other');setDraft(current=>({...current,businessName:null}));}})}>{business.busy?'Удаляем…':'Удалить профиль'}</Button><Button variant="secondary" className="wide" disabled={business.busy} onClick={()=>changeBusinessMode('view')}>Оставить магазин</Button></>:businessMode==='edit'?<Button className="wide" disabled={business.busy||business.loading} onClick={()=>void saveBusiness()}>{business.busy?'Сохраняем…':'Сохранить магазин'}</Button>:<Button className="wide" disabled={business.loading||!!business.error} onClick={()=>business.profile?newDelivery():changeBusinessMode('edit')}>{business.profile?'Заказать из магазина':'Добавить магазин'}</Button>
         :view==='phone'?<Button className="wide" disabled={phone.busy} onClick={()=>phone.profile.phoneVerified?navigate(phoneReturn):void phone.request()}>{phone.busy?'Проверяем номер…':phone.profile.phoneVerified?phoneReturn==='business'?'Вернуться к магазину':phoneReturn==='profile'?'Вернуться в профиль':'Вернуться к заказу':'Поделиться номером'}</Button>
         :view==='point'?<Button className="wide" disabled={busy||pointAddress.trim().length<5||pointAddress.trim().length>200||((pointMode==='map'||pointOrigin==='business')&&!point)} onClick={confirmAddress}>{pointMode==='map'?'Подтвердить точку':'Выбрать адрес'}</Button>

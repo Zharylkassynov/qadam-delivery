@@ -11,6 +11,7 @@ import { validSource } from '../lib/courier-options';
 import { api, ApiError, setTelegramSessionToken } from '../lib/client-api';
 import { orderReference } from '../lib/order-links';
 import { CourierPresenceProvider } from './courier-presence';
+import { haptic } from '../lib/telegram-ui';
 
 const message = (error: unknown) => error instanceof Error ? error.message : 'Произошла ошибка. Попробуйте ещё раз.';
 
@@ -33,6 +34,8 @@ export function DeliveryApp() {
   const [busy, setBusy] = useState(false);
   const [selected, setSelected] = useState<string | null>(null);
   const [refresh, setRefresh] = useState(0);
+  const [shortDeliveries,setShortDeliveries]=useState(true);
+  const loadedShortDeliveries=useRef(true);
   const revision = useRef(0);
   const busyRef = useRef(false);
   const pendingCreate = useRef<{ payload: string; key: string; uncertain?:boolean } | null>(null);
@@ -76,9 +79,10 @@ export function DeliveryApp() {
       fetching = true;
       const current = revision.current;
       try {
-        const data = await api<{ orders: Order[]; user?: User }>('/api/orders', undefined, controller.signal);
+        const data = await api<{ orders: Order[]; user?: User }>(user!.role==='COURIER'&&!shortDeliveries?'/api/orders?short=0':'/api/orders', undefined, controller.signal);
         if (alive && current === revision.current) {
           setOrders(data.orders); setSyncError(''); setSyncedAt(new Date().toISOString());
+          loadedShortDeliveries.current=shortDeliveries;
           if (data.user && (data.user.role !== user!.role || data.user.isAdmin !== user!.isAdmin || data.user.courierBlocked!==user!.courierBlocked)) {
             setSelected(null); setUser(data.user);
           }
@@ -86,6 +90,7 @@ export function DeliveryApp() {
       } catch (error) {
         if (alive && current === revision.current) {
           setSyncError(message(error));
+          if(user!.role==='COURIER'&&shortDeliveries!==loadedShortDeliveries.current)setShortDeliveries(loadedShortDeliveries.current);
           if (error instanceof ApiError && error.status === 401) { setUser(null); setOrders([]); }
         }
       } finally { fetching = false; if (alive) setLoading(false); }
@@ -96,7 +101,7 @@ export function DeliveryApp() {
     document.addEventListener('visibilitychange', onFocus);
     window.addEventListener('focus', onFocus);
     return () => { alive = false; controller.abort(); clearInterval(timer); document.removeEventListener('visibilitychange', onFocus); window.removeEventListener('focus', onFocus); };
-  }, [user, refresh]);
+  }, [user, refresh,shortDeliveries]);
 
   useEffect(() => {
     if (!user || !entry.order) return;
@@ -156,10 +161,12 @@ export function DeliveryApp() {
       setOrders((previous) => [order, ...previous.filter((item) => item.id !== order.id)]);
       setDetailOrder(order);
       setSelected(order.id); setNotice(success);
+      haptic('success');
       return true;
     } catch (error) {
       lastMutationStatus.current=error instanceof ApiError?error.status:0;
       setError(message(error));
+      haptic('error');
       if (error instanceof ApiError && error.status === 401) { setUser(null); setOrders([]); }
       return false;
     } finally { setBusy(false); busyRef.current = false; setRefresh((value) => value + 1); }
@@ -189,7 +196,7 @@ export function DeliveryApp() {
   if (!user) return demo ? <Login onLogin={signIn}/> : <TelegramEntry/>;
 
   return <CourierPresenceProvider key={user.id} user={user}><DeliveryWorkspace user={user} telegram={telegram} initialScreen={entry.screen} initialOrderId={linkedId} detailOrder={detailOrder} onDetailChange={setOpenDetailId} source={entry.source} orders={orders} loading={loading} busy={busy} error={error} notice={notice} syncError={syncError} syncedAt={syncedAt} selected={selected}
-    onSelect={setSelected} onSignOut={signOut} onMutate={mutate} onCreate={create}
+    onSelect={setSelected} onSignOut={signOut} onMutate={mutate} onCreate={create} shortDeliveries={shortDeliveries} onShortDeliveries={value=>{if(value!==shortDeliveries){setLoading(true);setShortDeliveries(value);}}}
     onRefresh={() => setRefresh((value) => value + 1)} onClearMessages={() => { setError(''); setNotice(''); }}/></CourierPresenceProvider>;
 }
 
