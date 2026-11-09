@@ -2,6 +2,7 @@ import type { ButtonHTMLAttributes, ReactNode } from 'react';
 import { statusLabels, type Order, type Status } from '../lib/types';
 import { serviceTimezone } from '../lib/service-area';
 import { deliveryWindow,parcelLabels,windowExpired } from '../lib/order-details';
+import {formatDistance} from '../lib/geo-distance';
 
 type IconName = 'box' | 'clock' | 'person' | 'locate' | 'phone' | 'check' | 'pin' | 'back' | 'arrow' | 'logout' | 'refresh';
 const assetSizes = { box: [19.8, 20.8], clock: [19.8, 19.8], person: [17.8, 18.8], locate: [18.1667, 18.1667], phone: [19.8, 19.8], check: [18.4, 14.4] } as const;
@@ -50,11 +51,13 @@ export const finished = (order: Order) => order.status === 'DELIVERED' || order.
 export const formatTime = (at: string) => new Intl.DateTimeFormat('ru-KZ', { day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit', timeZone: serviceTimezone }).format(new Date(at));
 export const initials = (name: string) => name.trim().split(/\s+/).slice(0, 2).map((word) => word[0]).join('').toUpperCase();
 
-export function OrderCard({ order, onOpen, onAccept,onRepeat, busy, meta }: { order: Order; onOpen: () => void; onAccept?: () => void;onRepeat?:()=>void; busy?: boolean; meta?: string }) {
+export function OrderCard({ order, onOpen, onAccept,onRepeat, busy, meta,distances }: { order: Order; onOpen: () => void; onAccept?: () => void;onRepeat?:()=>void; busy?: boolean; meta?: string;distances?:{pickupM:number|null;deliveryM:number|null} }) {
   return <article className={`order-card ${onAccept ? 'available-card' : ''}`}>
     <button type="button" className="order-card-open" aria-label={`Открыть заказ ${orderNumber(order)}`} onClick={onOpen} disabled={busy}>
       <div className="order-card-heading"><strong>{orderNumber(order)}</strong><Badge status={order.status}/></div>
+      {distances&&<div className="courier-pickup-distance">{distances.pickupM===null?'Расстояние неизвестно':`До забора ≈ ${formatDistance(distances.pickupM)}`}{distances.pickupM!==null&&<small>по прямой</small>}</div>}
       <AddressRow kind="pickup" address={order.pickupAddress}/><AddressRow kind="destination" address={order.destinationAddress}/>
+      {distances&&distances.deliveryM!==null&&<p className="card-meta">А → Б ≈ {formatDistance(distances.deliveryM)} по прямой</p>}
       <p className="card-meta">{meta ?? `${formatTime(order.createdAt)}${order.courierName ? ` · ${order.courierName}` : ''}`}</p>
       {order.businessName&&<p className="card-meta">{order.businessName}</p>}
       {deliveryWindow(order)&&<p className="card-window">{windowExpired(order)&&order.status==='SEARCHING_FOR_COURIER'?'Интервал истёк: ':'Ко времени: '}{deliveryWindow(order)} · Алматы</p>}

@@ -6,6 +6,7 @@ import { CourierGpsStatus } from './courier-presence';
 import type { DeliveryRoute, Order, User } from '../lib/types';
 import { Button, Feedback, finished, formatTime } from './delivery-ui';
 import { DeliveryMap, type MapMarker } from './delivery-map';
+import {OrderNavigation} from './order-navigation';
 
 export function OrderTracking({ order, user, readOnly = false }: { order: Order; user: User; readOnly?: boolean }) {
   const [now, setNow] = useState(() => Date.now());
@@ -18,12 +19,11 @@ export function OrderTracking({ order, user, readOnly = false }: { order: Order;
   if (order.pickupPoint) markers.push({ ...order.pickupPoint, kind: 'pickup', label: `А · ${order.pickupAddress}` });
   if (order.destinationPoint) markers.push({ ...order.destinationPoint, kind: 'destination', label: `Б · ${order.destinationAddress}` });
   if (location) markers.push({ ...location, kind: 'courier', label: `Курьер · ${formatTime(location.capturedAt)}${stale ? ' · точка устарела' : ''}`, stale });
-  const navigation = `https://www.google.com/maps/dir/?${new URLSearchParams({ api: '1', origin: order.pickupPoint ? `${order.pickupPoint.latitude},${order.pickupPoint.longitude}` : order.pickupAddress, destination: order.destinationPoint ? `${order.destinationPoint.latitude},${order.destinationPoint.longitude}` : order.destinationAddress })}`;
   return <section className="order-tracking" aria-label="Отслеживание доставки">
     <h2>Доставка на карте</h2>
     {markers.length > 0 ? <OrderRoute key={`route-${order.id}`} order={order} markers={markers}/> : <Feedback title="Точки ещё не указаны">В этом заказе сохранены только текстовые адреса. В новом заказе можно отметить отправление и доставку на карте.</Feedback>}
     <p className="map-legend">А — отправление · Б — доставка</p>
-    <a href={navigation} target="_blank" rel="noopener noreferrer">Открыть навигацию</a>
+    <OrderNavigation order={order} user={user}/>
     {(!order.pickupPoint || !order.destinationPoint) && markers.length > 0 && <p className="muted">{!order.pickupPoint ? 'Точка отправления не указана. ' : ''}{!order.destinationPoint ? 'Точка доставки не указана.' : ''}</p>}
     {location ? <Feedback tone={stale || finished(order) ? 'warning' : 'info'} title={finished(order) ? 'Доставка завершена · последняя точка' : stopped?'Передача геопозиции остановлена':stale ? 'Позиция курьера устарела' : 'Последняя позиция курьера'}>
       <p>{telegramSource?'Обновлено в Telegram':'Измерено'}: {formatTime(location.capturedAt)}. Получено сервером: {formatTime(location.receivedAt)}.</p>

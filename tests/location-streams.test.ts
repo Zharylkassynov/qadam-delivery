@@ -52,6 +52,7 @@ beforeEach(async()=>{
   process.env.DELIVERY_PROOF_ENABLED='false';process.env.TELEGRAM_LIVE_LOCATION_ENABLED='true';process.env.TELEGRAM_LIVE_LOCATION_PILOT_ONLY='true';process.env.TELEGRAM_LIVE_LOCATION_PILOT_IDS=courier.telegramId;
   await database().query('UPDATE qadam.pricing_settings SET active=false,config=NULL');
   await database().query('DELETE FROM qadam.orders WHERE customer_id=$1',[customer.id]);
+  await database().query('DELETE FROM qadam.courier_block_events WHERE user_id=ANY($1::uuid[]) OR actor_id=ANY($1::uuid[])',[users.map(u=>u.id)]);
   await database().query('DELETE FROM qadam.courier_blocks WHERE user_id=ANY($1::uuid[])',[users.map(u=>u.id)]);
   await database().query('DELETE FROM qadam.courier_presence WHERE user_id=ANY($1::uuid[])',[users.map(u=>u.id)]);
   await setCourierStatus(courier,{online:true});await setCourierStatus(replacement,{online:true});
@@ -59,6 +60,7 @@ beforeEach(async()=>{
 after(async()=>{
   await database().query('DELETE FROM qadam.telegram_updates WHERE update_id=ANY($1::bigint[])',[updates]);
   await database().query('DELETE FROM qadam.orders WHERE customer_id=$1',[customer.id]);
+  await database().query('DELETE FROM qadam.courier_block_events WHERE user_id=ANY($1::uuid[]) OR actor_id=ANY($1::uuid[])',[users.map(u=>u.id)]);
   await database().query('DELETE FROM qadam.users WHERE id=ANY($1::uuid[])',[users.map(u=>u.id)]);await closeDatabase();
 });
 

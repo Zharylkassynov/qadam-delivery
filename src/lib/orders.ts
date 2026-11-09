@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import {courierQueueQuery} from './courier-queue';
 import type { PoolClient } from 'pg';
 import { database, transaction } from './db';
 import { AppError } from './errors';
@@ -82,7 +83,7 @@ async function event(client: PoolClient, id: string, actor: User, status: Status
   await client.query('INSERT INTO qadam.order_events(order_id,actor_id,status) VALUES($1,$2,$3)', [id, actor.id, status]);
 }
 
-export async function listOrders(actor: User): Promise<Order[]> {
+export async function listOrders(actor: User,shortDeliveries=true): Promise<Order[]> {
   if(actor.role==='COURIER')await requireCourierAccess(database(),actor.id);
   await alertWaitingOrders();
   const where = actor.role === 'CUSTOMER'
@@ -101,18 +102,8 @@ export async function listOrders(actor: User): Promise<Order[]> {
   // Bound each queue independently: a backlog of immediate jobs must not hide the
   // courier's own history or every scheduled delivery. Select before sorting the
   // combined response, within one statement snapshot.
-  const query=actor.role==='CUSTOMER'?`${selectOrder} WHERE ${where} ORDER BY ${sort} LIMIT 100`:`
-    WITH visible AS (
-      (SELECT o.id FROM qadam.orders o WHERE o.courier_id=$1
-        ORDER BY CASE WHEN o.status IN ('ACCEPTED','PICKED_UP','IN_TRANSIT') THEN 0 ELSE 1 END,o.created_at DESC,o.id LIMIT 100)
-      UNION ALL
-      (SELECT o.id FROM qadam.orders o WHERE o.courier_id IS NULL AND o.status='SEARCHING_FOR_COURIER'
-        AND o.deliver_after IS NULL AND (o.price_kzt IS NULL OR ${eligibleCar}) ORDER BY o.urgent DESC,o.created_at DESC,o.id LIMIT 100)
-      UNION ALL
-      (SELECT o.id FROM qadam.orders o WHERE o.courier_id IS NULL AND o.status='SEARCHING_FOR_COURIER'
-        AND o.deliver_after IS NOT NULL AND (o.price_kzt IS NULL OR ${eligibleCar}) ORDER BY ${sort} LIMIT 100)
-    ) ${selectOrder} WHERE o.id IN (SELECT id FROM visible) AND EXISTS(SELECT 1 FROM qadam.users u WHERE u.id=$1 AND u.active AND ${notBlocked()}) ORDER BY ${sort}`;
-  const result = await database().query(query, [actor.id]);
+  const query=actor.role==='CUSTOMER'?`${selectOrder} WHERE ${where} ORDER BY ${sort} LIMIT 100`:courierQueueQuery(selectOrder,eligibleCar,where);
+  const result = await database().query(query, actor.role==='CUSTOMER'?[actor.id]:[actor.id,shortDeliveries]);
   return protectRecipientContacts(database(), actor, result.rows);
 }
 

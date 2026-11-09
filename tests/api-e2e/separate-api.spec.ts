@@ -9,6 +9,10 @@ import {locationConsentVersion} from '../../src/lib/location-consent';
 
 const api = 'http://127.0.0.1:3102';
 const frontend = 'http://127.0.0.1:3103';
+async function nativeMain(page:import('@playwright/test').Page,text:string){
+  await expect.poll(()=>page.evaluate(()=>window.__qadamTelegram!.main)).toMatchObject({text,visible:true,active:true});
+  await page.evaluate(()=>window.__qadamTelegram!.pressMain());
+}
 
 test('frontend exposes no API; the standalone API preserves CORS, authentication and streamed body limits', async ({ request }) => {
   expect((await request.get('/api/session')).status()).toBe(404);
@@ -44,7 +48,7 @@ test('Mini App completes a delivery through a separate API without cookies and r
   await mockMapTiles(page.context());
   const proof = signedTelegramData({ id: 7400000000000 + Math.floor(Math.random() * 1000000000), first_name: 'Отдельный API' });
   const loginResponse = page.waitForResponse(response => response.url() === `${api}/api/auth/telegram` && response.request().method() === 'POST');
-  await miniApp(page, proof);
+  await miniApp(page, proof,760,'',{native:{}});
   expect((await loginResponse).status()).toBe(200);
   await expect(page.getByRole('heading', { name: 'Куда доставить?', exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'Указать адреса', exact: true }).click();
@@ -59,15 +63,15 @@ test('Mini App completes a delivery through a separate API without cookies and r
   await page.getByRole('button', { name: 'Указать вручную на карте', exact: true }).click();
   await page.getByRole('button', { name: 'Выбрать точку в центре', exact: true }).click();
   await expect(page.getByRole('region', { name: 'Проверка точки' })).toContainText(pickup);
-  await page.getByRole('button', { name: 'Подтвердить точку', exact: true }).click();
+  await nativeMain(page,'Подтвердить точку');
   await page.getByLabel('Адрес доставки', { exact: true }).fill('Алматы, улица Абая, 20');
-  await page.getByRole('button', { name: 'Выбрать адрес', exact: true }).click();
+  await nativeMain(page,'Выбрать адрес');
   await page.getByRole('button', { name: 'Далее — получатель', exact: true }).click();
   await page.getByLabel('Имя получателя', { exact: true }).fill('Проверка отдельного API');
   await page.getByLabel('Телефон получателя', { exact: true }).fill('+7 700 000 00 00');
-  await page.getByRole('button', { name: 'Проверить заказ', exact: true }).click();
+  await nativeMain(page,'Проверить заказ');
   const created = page.waitForResponse(response => response.url() === `${api}/api/orders` && response.request().method() === 'POST');
-  await page.getByRole('button', { name: 'Подтвердить заказ', exact: true }).click();
+  await nativeMain(page,'Подтвердить заказ');
   const response = await created;
   expect(response.status()).toBe(201);
   expect((await response.request().allHeaders()).authorization).toMatch(/^Bearer /);

@@ -44,6 +44,9 @@ before(async()=>{
 beforeEach(async()=>{
   mock.restoreAll();await database().query('UPDATE qadam.pricing_settings SET active=false,config=NULL');
   await readyCourier(courier);await readyCourier(foot);
+  // The visibility assertion below concerns a nearby eligible paid job. The
+  // available queue now ranks by the courier's position before its row limit.
+  await database().query('UPDATE qadam.courier_presence SET latitude=$2,longitude=$3 WHERE user_id=$1',[courier.id,a.latitude,a.longitude]);
   await database().query('DELETE FROM qadam.service_limits');
   await database().query('DELETE FROM qadam.orders WHERE customer_id=ANY($1::uuid[])',[users.map(u=>u.id)]);
 });

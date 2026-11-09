@@ -10,6 +10,7 @@ import {freshCourierPosition} from './courier-readiness';
 
 export const courierStatusSchema = z.object({ online: z.boolean() }).strict();
 export type CourierStatus = { online: boolean; expired: boolean; updatedAt: string | null; expiresAt: string | null; allowsWrite: boolean; hasTelegram: boolean;
+  transport?:import('./types').CourierTransport|'BICYCLE'|null;
   locationSharing:boolean; locationConsentAt:string|null; location:CourierLocation|null; autoLocationEnabled?:boolean;
   acceptingOrders:boolean;canAccept:boolean;endingAfterDelivery:boolean;activeDeliveries:number;consentCurrent:boolean };
 
@@ -25,6 +26,7 @@ async function readStatus(db: Db, actor: User): Promise<CourierStatus> {
     coalesce(p.auto_consent_version=$2 AND p.auto_consent_at IS NOT NULL,false) AS "consentCurrent",
     (SELECT count(*)::int FROM qadam.orders o WHERE o.courier_id=u.id AND o.status IN ('ACCEPTED','PICKED_UP','IN_TRANSIT')) AS "activeDeliveries",
     coalesce(p.auto_location_enabled AND p.auto_consent_version=$2,false) AS "autoLocationEnabled",
+    (SELECT a.transport FROM qadam.courier_applications a WHERE a.user_id=u.id AND a.status='APPROVED' ORDER BY a.reviewed_at DESC NULLS LAST,a.submitted_at DESC,a.id LIMIT 1) AS transport,
     CASE WHEN p.latitude IS NOT NULL THEN jsonb_build_object('latitude',p.latitude,'longitude',p.longitude,'accuracy',p.accuracy,'capturedAt',p.captured_at,'receivedAt',p.received_at) END AS location
     FROM qadam.users u LEFT JOIN qadam.courier_status s ON s.user_id=u.id
     LEFT JOIN qadam.telegram_identities t ON t.user_id=u.id
@@ -32,7 +34,7 @@ async function readStatus(db: Db, actor: User): Promise<CourierStatus> {
     WHERE u.id=$1 AND u.active AND ${notBlocked()} AND (u.role='COURIER' OR EXISTS
       (SELECT 1 FROM qadam.courier_applications a WHERE a.user_id=u.id AND a.status='APPROVED'))`, [actor.id,locationConsentVersion])).rows[0];
   if (!row) throw new AppError(403, 'Режим доступен только одобренному курьеру.');
-  return { online: row.online, expired: row.expired, updatedAt: row.updatedAt ? new Date(row.updatedAt).toISOString() : null,
+  return { online: row.online, expired: row.expired,transport:row.transport, updatedAt: row.updatedAt ? new Date(row.updatedAt).toISOString() : null,
     expiresAt: row.expiresAt ? new Date(row.expiresAt).toISOString() : null, allowsWrite: row.allowsWrite, hasTelegram: row.hasTelegram,
     locationSharing:row.locationSharing,autoLocationEnabled:row.autoLocationEnabled,locationConsentAt:row.locationConsentAt?new Date(row.locationConsentAt).toISOString():null,location:row.location,
     acceptingOrders:row.acceptingOrders,canAccept:row.canAccept,consentCurrent:row.consentCurrent,activeDeliveries:row.activeDeliveries,

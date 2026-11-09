@@ -5,7 +5,7 @@ import { scheduleTelegramJobs } from '../../../lib/telegram-jobs';
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 export async function GET(request: Request) {
-  return handle(async () => { const user = await requireUser(request); const orders = await listOrders(user); scheduleTelegramJobs(); return json({ orders, user }); });
+  return handle(async () => { const user = await requireUser(request); const orders = await listOrders(user,new URL(request.url).searchParams.get('short')!=='0'); scheduleTelegramJobs(); return json({ orders, user }); });
 }
 export async function POST(request: Request) {
   return handle(async () => {
