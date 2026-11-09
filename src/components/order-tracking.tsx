@@ -15,26 +15,27 @@ export function OrderTracking({ order, user, readOnly = false }: { order: Order;
   const stopped=location?.sharingStopped===true;
   const stale = !!location && (stopped||now - Date.parse(location.capturedAt) > 90000);
   const telegramSource=location?.source==='TELEGRAM_LIVE';
+  const courierControls=!readOnly&&user.role==='COURIER'&&order.courierId===user.id&&!finished(order);
+  const routeControls=!readOnly&&user.role==='COURIER'&&!finished(order);
   const markers: MapMarker[] = [];
   if (order.pickupPoint) markers.push({ ...order.pickupPoint, kind: 'pickup', label: `А · ${order.pickupAddress}` });
   if (order.destinationPoint) markers.push({ ...order.destinationPoint, kind: 'destination', label: `Б · ${order.destinationAddress}` });
   if (location) markers.push({ ...location, kind: 'courier', label: `Курьер · ${formatTime(location.capturedAt)}${stale ? ' · точка устарела' : ''}`, stale });
   return <section className="order-tracking" aria-label="Отслеживание доставки">
     <h2>Доставка на карте</h2>
-    {markers.length > 0 ? <OrderRoute key={`route-${order.id}`} order={order} markers={markers}/> : <Feedback title="Точки ещё не указаны">В этом заказе сохранены только текстовые адреса. В новом заказе можно отметить отправление и доставку на карте.</Feedback>}
+    {markers.length > 0 ? <OrderRoute key={`route-${order.id}`} order={order} markers={markers} controls={routeControls}/> : <p className="muted">Точки ещё не указаны</p>}
     <p className="map-legend">А — отправление · Б — доставка</p>
-    <OrderNavigation order={order} user={user}/>
+    {courierControls&&<OrderNavigation order={order} user={user}/>}
     {(!order.pickupPoint || !order.destinationPoint) && markers.length > 0 && <p className="muted">{!order.pickupPoint ? 'Точка отправления не указана. ' : ''}{!order.destinationPoint ? 'Точка доставки не указана.' : ''}</p>}
     {location ? <Feedback tone={stale || finished(order) ? 'warning' : 'info'} title={finished(order) ? 'Доставка завершена · последняя точка' : stopped?'Передача геопозиции остановлена':stale ? 'Позиция курьера устарела' : 'Последняя позиция курьера'}>
-      <p>{telegramSource?'Обновлено в Telegram':'Измерено'}: {formatTime(location.capturedAt)}. Получено сервером: {formatTime(location.receivedAt)}.</p>
-      <p>{location.accuracy === null ? 'Точность не указана устройством.' : `Точность: около ${Math.round(location.accuracy)} м.`} {stopped?'Показана последняя известная точка.':stale && !finished(order) ? 'Новых координат нет более 90 секунд. Курьер мог переместиться.' : ''}</p>
-      <p>{finished(order) ? 'Новые координаты для этого заказа больше не принимаются.' : telegramSource?'Источник — трансляция Telegram. Частота обновлений зависит от телефона и связи.':'Новые точки поступают, пока курьер на линии, Qadam открыт и геолокация разрешена.'}</p>
-    </Feedback> : order.courierId ? <Feedback title="Курьер ещё не передал позицию">Координаты появятся, когда курьер включит смену и разрешит передачу позиции.</Feedback> : null}
-    {!readOnly && user.role === 'COURIER' && order.courierId === user.id && !finished(order) && <CourierGpsStatus/>}
+      <p>{telegramSource?'Telegram':'Обновлено'}: {formatTime(location.capturedAt)}. {location.accuracy === null ? '' : `Точность: около ${Math.round(location.accuracy)} м.`}</p>
+      {(stopped||stale)&&<p>Показана последняя известная точка.</p>}
+    </Feedback> : order.courierId ? <p className="muted">Ждём позицию курьера</p> : null}
+    {courierControls&&<CourierGpsStatus/>}
   </section>;
 }
 
-function OrderRoute({ order, markers }: { order: Order; markers: MapMarker[] }) {
+function OrderRoute({ order, markers,controls }: { order: Order; markers: MapMarker[];controls:boolean }) {
   const [route, setRoute] = useState<DeliveryRoute | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -53,9 +54,8 @@ function OrderRoute({ order, markers }: { order: Order; markers: MapMarker[] }) 
   const distance = route && (route.distanceMeters < 1000 ? `${Math.round(route.distanceMeters)} м` : `${new Intl.NumberFormat('ru-KZ', { maximumFractionDigits: 1 }).format(route.distanceMeters / 1000)} км`);
   return <>
     <DeliveryMap markers={markers} route={route} focusCourier/>
-    {busy && <Feedback role="status" title="Строим маршрут…">Адреса и действия с заказом доступны во время расчёта.</Feedback>}
-    {route && <Feedback role="status" title={`Автомаршрут · ${distance}`}>{order.pricing?'Текущий план дороги А → Б. Он может отличаться от первоначального; сохранённая цена заказа не меняется.':'По дорогам от А к Б. Без учёта пробок.'}</Feedback>}
-    {error && <Feedback tone="warning" role="alert" title="Не удалось построить маршрут">{error} Точки А и Б сохранены.<Button variant="secondary" className="wide" onClick={() => setAttempt(value => value + 1)}>Повторить маршрут</Button></Feedback>}
-    {!hasPoints && <p className="muted">Для маршрута нужны обе точки: отправление и доставка. Можно открыть навигацию по адресам.</p>}
+    {busy&&controls&&<p role="status" className="muted">Строим маршрут…</p>}
+    {route&&<p role="status" className="muted">Автомаршрут · {distance}</p>}
+    {error&&controls&&<Feedback tone="warning" role="alert" title="Не удалось построить маршрут"><Button variant="secondary" className="wide" onClick={() => setAttempt(value => value + 1)}>Повторить маршрут</Button></Feedback>}
   </>;
 }

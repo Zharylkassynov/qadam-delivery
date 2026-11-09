@@ -231,7 +231,7 @@ export function DeliveryWorkspace(props: Props) {
             {!customer&&props.telegram&&<CourierHomeScreen/>}
             {customer&&<Button variant="secondary" onClick={()=>{changeBusinessMode('view');business.refresh();navigate('business');}}>Мой магазин</Button>}
             {user.telegramId&&<Button variant="secondary" onClick={()=>{setPhoneReturn('profile');navigate('phone');}}>Мой телефон</Button>}
-            {user.telegramId && <><Feedback title={customer ? 'Доставляй с Qadam' : 'Доступ курьера открыт'}>{customer ? 'Подай заявку. Администратор проверит её и откроет доступ к заказам.' : 'Принимай заказы и отмечай каждый шаг доставки.'}</Feedback><Button onClick={() => navigate('courierApplication')} disabled={busy}>{customer ? 'Стать курьером' : 'Моя заявка курьера'}</Button></>}
+            {user.telegramId&&<Button variant="ghost" onClick={()=>navigate('courierApplication')} disabled={busy}>{customer?'Стать курьером':'Моя заявка курьера'}</Button>}
             {user.isAdmin && <><h2>Администрирование</h2><Button variant="secondary" onClick={() => navigate('adminOrders')} disabled={busy}>Все заказы</Button><Button variant="secondary" onClick={() => navigate('adminApplications')} disabled={busy}>Заявки курьеров</Button><Button variant="secondary" onClick={() => navigate('couriers')} disabled={busy}>Курьеры</Button></>}
             {!props.telegram && <Button variant="secondary" onClick={() => void props.onSignOut()} disabled={busy}>Выйти из аккаунта</Button>}</>}
         </div>
@@ -264,25 +264,22 @@ function OrderDetail({ order, user, busy, onCancel,onReleased }: { order: Order;
   }[order.status];
   return <section className="order-detail" aria-label="Детали заказа">
     {complete ? <div className="success-symbol"><Icon type="check"/></div> : <Badge status={order.status}/>}
-    <div className="screen-heading"><h1 tabIndex={-1}>{heading}</h1><p>{complete ? `${orderNumber(order)} · ${formatTime(order.updatedAt)}` : order.status === 'SEARCHING_FOR_COURIER' ? customer ? 'Заказ создан. Курьер увидит адреса и сможет принять доставку.' : 'Проверьте адреса и условия перед принятием заказа.' : `Создан ${formatTime(order.createdAt)}`}</p></div>
+    <div className="screen-heading"><h1 tabIndex={-1}>{heading}</h1><p>{complete?`${orderNumber(order)} · ${formatTime(order.updatedAt)}`:`Создан ${formatTime(order.createdAt)}`}</p></div>
     <OrderTracking order={order} user={user}/>
     {!customer&&order.status==='SEARCHING_FOR_COURIER'&&<CourierAvailability telegram={!!user.telegramId}/>}
-    {order.courierId===user.id&&['ACCEPTED','PICKED_UP','IN_TRANSIT'].includes(order.status)&&<OrderLocationStream key={`location-stream:${order.id}:${order.assignmentVersion}`} order={order}/>}
-    {customer && order.courierName && <div className="courier-contact"><span className="avatar">{initials(order.courierName)}</span><div><strong>{order.courierName}</strong><small>Ваш курьер</small></div></div>}
+    {!customer&&order.courierId===user.id&&['ACCEPTED','PICKED_UP','IN_TRANSIT'].includes(order.status)&&<OrderLocationStream key={`location-stream:${order.id}:${order.assignmentVersion}`} order={order}/>}
     <RouteCard pickup={order.pickupAddress} destination={order.destinationAddress}/>
     <OrderRequirements order={order}/>
     {!complete && <Recipient order={order}/>}
     <SavedOrderPrice order={order} courier={!customer}/>
     <OrderContacts order={order} customer={customer}/>
-    {order.customerId===user.id&&<RecipientShare key={`recipient-share:${order.id}`} order={order}/>}
+    {customer&&order.customerId===user.id&&<RecipientShare key={`recipient-share:${order.id}`} order={order}/>}
     {(order.customerId===user.id||order.courierId===user.id)&&(order.photoRequired||order.codeRequired||complete)&&<OrderTrustPanel key={`trust:${order.id}:${order.assignmentVersion}`} order={order} user={user}/>}
     {order.courierId===user.id&&order.status==='ACCEPTED'&&<CourierRelease order={order} onReleased={onReleased}/>}
     {!customer&&order.status==='SEARCHING_FOR_COURIER'&&<p className="muted">Принимая заказ, вы разрешаете показать свой подтверждённый номер клиенту для связи по доставке.</p>}
-    {order.status === 'SEARCHING_FOR_COURIER' && <Feedback title={customer ? 'Можно закрыть приложение' : order.pricing?'Цена зафиксирована':'Оплата по согласованию'}>{customer ? 'Заказ сохранён. При следующем открытии загрузим актуальный статус с сервера.' : order.pricing?'Вся стоимость доставки причитается курьеру. Способ и момент расчёта уточните со сторонами.':'Уточните стоимость и условия до передачи посылки.'}</Feedback>}
+    {!customer&&order.status==='SEARCHING_FOR_COURIER'&&<p className="muted">{order.pricing?'Сумма зафиксирована. Оплата напрямую вам.':'Стоимость согласуйте до передачи посылки.'}</p>}
     <Timeline order={order}/>
     {complete && <Recipient order={order}/>}
-    {complete && <p className="muted">Все изменения сохранены. Заказ останется в истории после повторного открытия.</p>}
-    {order.status === 'CANCELLED' && <Feedback tone="warning" title="Доставка отменена">Заказ сохранён в истории. Можно создать новую доставку.</Feedback>}
     {customer && ['CREATED', 'SEARCHING_FOR_COURIER'].includes(order.status) && <Button variant="danger" className="wide" disabled={busy} onClick={() => void onCancel()}>Отменить заказ</Button>}
   </section>;
 }

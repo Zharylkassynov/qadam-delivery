@@ -14,8 +14,17 @@ export async function enableShiftGps(page:Page,waitForFix=true){
   const consent=page.getByRole('checkbox',{name:courierLocationConsent});
   if(await consent.isVisible()){await consent.check();await page.getByRole('button',{name:'Разрешить геопозицию',exact:true}).click();}
   if(waitForFix){
+    const saved=page.getByText(/^Позиция сохранена:/);
     const retry=page.getByRole('button',{name:'Повторить геолокацию',exact:true});
-    if(await retry.isVisible())await retry.click();
-    await expect(page.getByText(/^Позиция сохранена:/)).toBeVisible();
+    // A saved consent starts GPS automatically. Let that finish before trying
+    // recovery: the temporary retry button can disappear during a click.
+    try{await expect(saved).toBeVisible({timeout:3000});}
+    catch{
+      if(await retry.isVisible()&&await retry.isEnabled()){
+        try{await retry.click({timeout:3000});}
+        catch(error){if(!await saved.isVisible())throw error;}
+      }
+      await expect(saved).toBeVisible();
+    }
   }
 }
