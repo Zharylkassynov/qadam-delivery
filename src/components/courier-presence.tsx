@@ -7,6 +7,7 @@ import type { CourierLocation,User } from '../lib/types';
 import { currentLocation,locationPermission,nativeLocationManager,type DeviceFix } from '../lib/device-location';
 import { Button,Feedback,formatTime } from './delivery-ui';
 import {locationConsentVersion,courierLocationConsent} from '../lib/location-consent';
+import {RecipientSharingConsent} from './recipient-sharing';
 
 type Phase='off'|'pending'|'live'|'permission'|'unavailable'|'network'|'paused';
 type Presence={status:CourierStatus|null;busy:boolean;error:string;phase:Phase;geoError:string;saved:string|null;
@@ -149,6 +150,7 @@ export function CourierGpsStatus(){
       {geo.error&&<Feedback title={geo.error} tone="error" role="alert"/>}
       <Button variant="secondary" disabled={geo.busy} onClick={()=>void geo.saveSettings({revoke:true}).then(ok=>{if(ok){setOpen(false);setNotice('Передача в Qadam остановлена. Остановите трансляцию также в чате Telegram.');}})}>Отозвать согласие и остановить</Button>
       <Button variant="ghost" disabled={geo.busy} onClick={()=>setOpen(false)}>Закрыть настройки</Button>
+      <RecipientSharingConsent/>
     </>}{notice&&<p role="status">{notice}</p>}
   </div></>;
 }

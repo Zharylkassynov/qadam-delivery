@@ -10,6 +10,7 @@ import { CourierDirectory } from './courier-directory';
 import { AddressPicker, type AddressPickerMode } from './address-picker';
 import { CustomerHome } from './customer-home';
 import { OrderTracking } from './order-tracking';
+import {RecipientShare} from './recipient-sharing';
 import { AdminOrders } from './admin-orders';
 import { CourierAvailability } from './courier-availability';
 import { PhoneProfilePanel,usePhoneProfile } from './phone-profile';
@@ -266,6 +267,7 @@ function OrderDetail({ order, user, busy, onCancel,onReleased }: { order: Order;
     {!complete && <Recipient order={order}/>}
     <SavedOrderPrice order={order} courier={!customer}/>
     <OrderContacts order={order} customer={customer}/>
+    {order.customerId===user.id&&<RecipientShare key={`recipient-share:${order.id}`} order={order}/>}
     {(order.customerId===user.id||order.courierId===user.id)&&(order.photoRequired||order.codeRequired||complete)&&<OrderTrustPanel key={`trust:${order.id}:${order.assignmentVersion}`} order={order} user={user}/>}
     {order.courierId===user.id&&order.status==='ACCEPTED'&&<CourierRelease order={order} onReleased={onReleased}/>}
     {!customer&&order.status==='SEARCHING_FOR_COURIER'&&<p className="muted">Принимая заказ, вы разрешаете показать свой подтверждённый номер клиенту для связи по доставке.</p>}

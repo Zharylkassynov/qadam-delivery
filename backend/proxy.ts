@@ -11,7 +11,8 @@ export function proxy(request: NextRequest) {
   if (preflight) {
     const method = request.headers.get('access-control-request-method');
     const headers = (request.headers.get('access-control-request-headers') ?? '').split(',').map(value => value.trim().toLowerCase()).filter(Boolean);
-    if (!allowed || !methods.includes(method ?? '') || headers.some(header => !['content-type', 'authorization'].includes(header))) {
+    const publicTracking=request.nextUrl.pathname==='/api/recipient-tracking'||request.nextUrl.pathname.startsWith('/api/recipient-tiles/');
+    if (!allowed || !methods.includes(method ?? '') || headers.some(header => !['content-type', 'authorization',...(publicTracking?['x-qadam-tracking']:[])].includes(header))) {
       return NextResponse.json({ error: 'Недопустимый предварительный запрос.' }, { status: 403 });
     }
   }
@@ -21,7 +22,7 @@ export function proxy(request: NextRequest) {
     response.headers.set('Access-Control-Allow-Credentials', 'true');
     if (preflight) {
       response.headers.set('Access-Control-Allow-Methods', [...methods,'OPTIONS'].join(', '));
-      response.headers.set('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+      response.headers.set('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Qadam-Tracking');
       response.headers.set('Access-Control-Max-Age', '600');
     }
   }
