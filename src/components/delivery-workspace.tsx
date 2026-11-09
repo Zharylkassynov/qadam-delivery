@@ -231,7 +231,7 @@ export function DeliveryWorkspace(props: Props) {
             {!customer&&props.telegram&&<CourierHomeScreen/>}
             {customer&&<Button variant="secondary" onClick={()=>{changeBusinessMode('view');business.refresh();navigate('business');}}>Мой магазин</Button>}
             {user.telegramId&&<Button variant="secondary" onClick={()=>{setPhoneReturn('profile');navigate('phone');}}>Мой телефон</Button>}
-            {user.telegramId&&<Button variant="ghost" onClick={()=>navigate('courierApplication')} disabled={busy}>{customer?'Стать курьером':'Моя заявка курьера'}</Button>}
+            {user.telegramId&&!user.isAdmin&&<Button variant="ghost" onClick={()=>navigate('courierApplication')} disabled={busy}>{customer?'Стать курьером':'Моя заявка курьера'}</Button>}
             {user.isAdmin && <><h2>Администрирование</h2><Button variant="secondary" onClick={() => navigate('adminOrders')} disabled={busy}>Все заказы</Button><Button variant="secondary" onClick={() => navigate('adminApplications')} disabled={busy}>Заявки курьеров</Button><Button variant="secondary" onClick={() => navigate('couriers')} disabled={busy}>Курьеры</Button></>}
             {!props.telegram && <Button variant="secondary" onClick={() => void props.onSignOut()} disabled={busy}>Выйти из аккаунта</Button>}</>}
         </div>
