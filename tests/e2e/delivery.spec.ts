@@ -72,7 +72,7 @@ test('customer and courier complete a delivery; polling, reopening and history r
     await customer.getByRole('radio', { name: 'Получатель', exact: true }).check();
     await customer.getByRole('radio', { name: /Наличные/ }).check();
     await customer.getByRole('button', { name: 'Подтвердить заказ', exact: true }).click();
-    await expect(customer.getByRole('status')).toContainText('Заказ создан');
+    await expect(customer.getByRole('status').filter({hasText:'Заказ создан'})).toBeVisible();
     await expect(customer.getByText(/Платит получатель · наличными/)).toBeVisible();
     await customer.screenshot({ path: testInfo.outputPath('customer-desktop.png'), fullPage: true });
     const card = courier.getByRole('button', { name: /^Открыть заказ/ }).filter({ hasText: pickup });
@@ -231,7 +231,7 @@ test('review preserves the draft and a lost create response can be retried witho
   await expect(page.getByRole('main').getByRole('alert')).toContainText('Нет связи с сервером');
   await expect(page.getByRole('heading', { name: 'Всё верно?', exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'Подтвердить заказ', exact: true }).click();
-  await expect(page.getByRole('status')).toContainText('Заказ создан');
+  await expect(page.getByRole('status').filter({hasText:'Заказ создан'})).toBeVisible();
   expect(requestKeys).toHaveLength(2);
   expect(requestKeys[0]).toBe(requestKeys[1]);
   const { orders } = await (await page.request.get('/api/orders')).json();

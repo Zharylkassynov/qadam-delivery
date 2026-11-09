@@ -1,6 +1,21 @@
 @import "tailwindcss";
 @import "leaflet/dist/leaflet.css";
 
+/* Recipient pages also work outside Telegram, with no Mini App navigation. */
+.recipient-page{max-width:600px;min-height:100dvh;background:white;margin:0 auto;overflow-wrap:anywhere}
+.recipient-brand{padding:20px 24px;display:flex;align-items:center;gap:12px;border-bottom:1px solid var(--line);font-size:15px}
+.recipient-brand>.icon{color:var(--brand)}.recipient-brand>span:last-child{margin-left:auto;color:var(--muted);font-size:12px}
+.recipient-body{padding:28px 24px 32px;display:grid;gap:24px;min-height:60dvh;align-content:start}
+.recipient-body .feedback p+p{margin-top:8px}.recipient-window,.recipient-position,.recipient-steps{display:grid;gap:12px}
+.recipient-window>p:first-of-type{font-size:20px;line-height:28px;font-weight:600}.recipient-window>.muted,.recipient-position>p{font-size:14px;line-height:21px}
+.recipient-position,.recipient-steps{border-top:1px solid var(--line);padding-top:20px}
+.recipient-map{min-width:0;border:1px solid var(--line);border-radius:12px;overflow:hidden}.recipient-map .delivery-map{height:260px;min-height:260px}.recipient-map .delivery-map[hidden]{display:none}.recipient-map .feedback{margin:0;border-radius:0}
+.recipient-steps ol{list-style:none;padding:0;margin:0;display:grid}.recipient-steps li{position:relative;padding:0 0 22px 28px;font-size:14px;line-height:21px;color:var(--muted)}.recipient-steps li:last-child{padding-bottom:0}
+.recipient-steps li:before{content:'';position:absolute;left:1px;top:6px;width:10px;height:10px;border:2px solid #95a8b7;border-radius:50%;background:white;z-index:1}.recipient-steps li:not(:last-child):after{content:'';position:absolute;left:5px;top:17px;height:calc(100% - 8px);border-left:2px solid var(--line)}.recipient-steps li.done:before{background:var(--success);border-color:var(--success)}.recipient-steps li.current{font-weight:600;color:var(--ink)}.recipient-steps li.current:before{background:var(--brand);border-color:var(--brand)}
+.recipient-caption{font-size:13px;line-height:20px;color:var(--muted)}.recipient-footer{display:flex;flex-wrap:wrap;gap:14px;padding:20px 24px;border-top:1px solid var(--line);font-size:13px;line-height:20px}.recipient-footer span{color:var(--muted)}
+.recipient-share,.recipient-consent{display:grid;gap:14px}.recipient-share .button,.recipient-consent .button{width:100%}.recipient-url{display:grid;gap:6px;font-size:14px}.recipient-url input{min-width:0;width:100%;padding:12px;border:1px solid var(--line);border-radius:8px;background:var(--canvas);font:inherit;color:var(--ink)}
+@media(max-width:375px){.recipient-body{padding:24px 16px}.recipient-brand,.recipient-footer{padding:18px 16px}.recipient-brand{gap:8px;font-size:14px}}
+
 :root {
   --ink: #122f43;
   --muted: #526779;

@@ -13,7 +13,12 @@ const config: NextConfig = {
       { key: 'X-Content-Type-Options', value: 'nosniff' },
       { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },
       { key: 'Content-Security-Policy', value: "frame-ancestors 'self' https://web.telegram.org" },
-    ] }];
+    ] },{source:'/t/:path*',headers:[
+      {key:'Cache-Control',value:'private, no-store'},
+      {key:'Referrer-Policy',value:'no-referrer'},
+      {key:'X-Robots-Tag',value:'noindex, nofollow, noarchive'},
+      {key:'Content-Security-Policy',value:"frame-ancestors 'none'; base-uri 'self'"},
+    ]}];
   },
 };
 export default config;

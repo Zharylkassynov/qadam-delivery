@@ -11,7 +11,7 @@ const queue: (() => void)[] = [];
 async function acquire() { if (active < 4) active++; else await new Promise<void>((resolve) => queue.push(resolve)); }
 function release() { const next = queue.shift(); if (next) next(); else active--; }
 
-export function sessionTileLayer(L: typeof Leaflet, url: string, options: Leaflet.TileLayerOptions) {
+export function sessionTileLayer(L: typeof Leaflet, url: string, options: Leaflet.TileLayerOptions, publicHeaders?:Record<string,string>) {
   const resources = new WeakMap<HTMLImageElement, { controller: AbortController; url?: string; removed: boolean }>();
   class SessionTiles extends L.TileLayer {
     createTile(coords: Leaflet.Coords, done: Leaflet.DoneCallback): HTMLElement {
@@ -23,7 +23,7 @@ export function sessionTileLayer(L: typeof Leaflet, url: string, options: Leafle
         try {
           if (resource.removed) return;
           const tile = this.getTileUrl(coords);
-          const response = await fetch(tile.startsWith('/api/') ? apiPath(tile) : tile, { headers: sessionHeaders(), signal: resource.controller.signal, credentials: sessionCredentials() });
+          const response = await fetch(tile.startsWith('/api/') ? apiPath(tile) : tile, { headers: publicHeaders??sessionHeaders(), signal: resource.controller.signal, credentials: publicHeaders?'omit':sessionCredentials(),...(publicHeaders?{referrerPolicy:'no-referrer' as const,cache:'no-store' as const}: {}) });
           if (!response.ok || !response.headers.get('content-type')?.startsWith('image/')) throw new Error('Map tile unavailable');
           const blob = await response.blob(); if (resource.removed) return;
           resource.url = URL.createObjectURL(blob);
