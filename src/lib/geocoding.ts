@@ -5,13 +5,45 @@ import type { MapPoint, User } from './types';
 
 export type AddressResult = MapPoint & { id: string; address: string; fullAddress?: string; detail: string; precision: 'building' | 'street' | 'area' };
 export const addressSearchSchema = z.object({ query: z.string().trim().min(5).max(200).refine((s) => !/[\u0000-\u001f]/.test(s)) }).strict();
+export const reverseAddressSchema = z.object({
+  latitude: z.number().min(42.9).max(43.6),
+  longitude: z.number().min(76.4).max(77.4),
+}).strict();
 const providerResult = z.object({ results: z.array(z.object({
   lat: z.number(), lon: z.number(), country_code: z.string(),
   formatted: z.string().max(500), address_line1: z.string().max(300).optional(), address_line2: z.string().max(300).optional(),
   city: z.string().max(150).optional(),
   place_id: z.string().max(1000).optional(), housenumber: z.string().optional(), street: z.string().optional(),
   result_type: z.string().optional(), rank: z.object({ confidence_building_level: z.number().optional() }).optional(),
+  distance: z.number().nonnegative().optional(),
 }).passthrough()).max(10) });
+
+export async function reverseAddress(actor: User, input: z.infer<typeof reverseAddressSchema>): Promise<AddressResult | null> {
+  if (actor.role !== 'CUSTOMER') throw new AppError(403, 'Поиск адресов доступен при создании заказа клиентом.');
+  const point = reverseAddressSchema.parse(input);
+  const key = geoapifyKey();
+  await takeMapBudget(actor.id, 'geocode');
+  const url = new URL('https://api.geoapify.com/v1/geocode/reverse');
+  url.search = new URLSearchParams({ lat: String(point.latitude), lon: String(point.longitude), type: 'building', lang: 'ru', limit: '1', format: 'json', apiKey: key }).toString();
+  let response: Response;
+  try { response = await fetch(url, { cache: 'no-store', signal: AbortSignal.timeout(7000), redirect: 'error' }); }
+  catch { throw new AppError(503, 'Не удалось определить адрес точки. Повторите попытку или вернитесь к поиску.'); }
+  if (!response.ok) throw new AppError(response.status === 429 ? 429 : 503, 'Не удалось определить адрес точки. Повторите попытку позже или вернитесь к поиску.');
+  const data = providerResult.safeParse(await response.json().catch(() => null));
+  if (!data.success) throw new AppError(503, 'Не удалось прочитать адрес точки. Повторите попытку или вернитесь к поиску.');
+  const item = data.data.results[0];
+  // A reverse lookup can return a street or a remote nearest building. Neither
+  // confirms the house at the selected point. Keep the pin unconfirmed then.
+  if (!item || item.country_code !== 'kz' || item.lat < 42.9 || item.lat > 43.6 || item.lon < 76.4 || item.lon > 77.4
+    || !item.street?.trim() || !item.housenumber?.trim() || !['building', 'amenity'].includes(item.result_type ?? '')
+    || item.distance === undefined || item.distance > 100) return null;
+  const address = `${item.street.trim()}, ${item.housenumber.trim()}`;
+  const detail = item.city ? /^(almaty|alma-ata)$/i.test(item.city) ? 'Алматы' : item.city : item.address_line2 || 'Алматы и окрестности';
+  const fullAddress = `${address}, ${detail}`;
+  if (fullAddress.length > 200) return null;
+  return { id: `${item.street.toLocaleLowerCase('ru')}:${item.housenumber.toLocaleLowerCase('ru')}`,
+    latitude: point.latitude, longitude: point.longitude, address, fullAddress, detail, precision: 'building' };
+}
 
 export async function searchAddresses(actor: User, input: z.infer<typeof addressSearchSchema>): Promise<AddressResult[]> {
   if (actor.role !== 'CUSTOMER') throw new AppError(403, 'Поиск адресов доступен при создании заказа клиентом.');

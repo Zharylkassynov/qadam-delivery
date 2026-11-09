@@ -30,8 +30,12 @@ export function AddressPicker({ address, kind, point, onChange, onAddress, mode,
   const [busy, setBusy] = useState(false);
   const [searched, setSearched] = useState(false);
   const [error, setError] = useState('');
+  const [mapPoint, setMapPoint] = useState(point);
+  const [resolving, setResolving] = useState(false);
+  const [mapError, setMapError] = useState('');
   const generation = useRef(0);
   const request = useRef<AbortController | null>(null);
+  const reverseTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const initial = useRef({ address, point, mode });
   const validQuery = query.trim().length >= 5 && query.trim().length <= 200;
 
@@ -40,6 +44,7 @@ export function AddressPicker({ address, kind, point, onChange, onAddress, mode,
     const fullAddress = result.fullAddress || `${result.address}, ${result.detail}`;
     const label = fullAddress.length <= 200 ? fullAddress : result.address.length <= 200 ? result.address : query.trim();
     setQuery(label); onAddress(label);
+    setMapPoint(result.precision === 'building' ? result : null);
     onChange(result.precision === 'building' ? { latitude: result.latitude, longitude: result.longitude } : null);
     if (result.precision !== 'building') onModeChange('map');
   }
@@ -65,25 +70,56 @@ export function AddressPicker({ address, kind, point, onChange, onAddress, mode,
     const timer = setTimeout(() => {
       if (current === generation.current && initial.current.mode === 'search' && !initial.current.point) void search(initial.current.address);
     }, 100);
-    return () => { clearTimeout(timer); generation.current++; request.current?.abort(); };
+    return () => { clearTimeout(timer); clearTimeout(reverseTimer.current); generation.current++; request.current?.abort(); };
     // Search once on entering this screen; subsequent searches require submission.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+  useEffect(() => {
+    if (mode !== 'map') return;
+    // Back also comes from the app header. A lookup must not change an address
+    // after leaving the map, even if the provider finishes later.
+    return () => { generation.current++; request.current?.abort(); clearTimeout(reverseTimer.current); };
+  }, [mode]);
+  function pick(next: MapPoint) {
+    request.current?.abort(); clearTimeout(reverseTimer.current);
+    const current = ++generation.current;
+    const controller = new AbortController(); request.current = controller;
+    setMapPoint(next); setSelected(null); setResolving(true); setMapError('');
+    // The previous address and the new coordinates are never confirmable together.
+    onChange(null);
+    reverseTimer.current = setTimeout(() => { void resolvePoint(); }, 350);
+    async function resolvePoint() {
+      try {
+        const data = await api<{ result: AddressResult | null }>('/api/geocoding/reverse', next, controller.signal);
+        if (current !== generation.current) return;
+        if (!data.result || data.result.precision !== 'building') throw new Error('Не удалось определить улицу и номер дома. Выберите точку ближе к дому или вернитесь к поиску.');
+        const label = data.result.fullAddress || `${data.result.address}, ${data.result.detail}`;
+        if (label.length < 5 || label.length > 200) throw new Error('Не удалось определить адрес дома. Выберите другую точку или вернитесь к поиску.');
+        setQuery(label); onAddress(label); onChange(next); setPrecision('manual');
+      } catch (failure) {
+        if (current === generation.current && !(failure instanceof Error && failure.name === 'AbortError')) setMapError(failure instanceof Error ? failure.message : 'Не удалось определить адрес точки.');
+      } finally { if (current === generation.current) setResolving(false); }
+    }
+  }
   function submit(event: FormEvent) { event.preventDefault(); if (validQuery) void search(query); }
   function openMap() {
     generation.current++; request.current?.abort(); setBusy(false); setError('');
+    setMapPoint(point); setResolving(false); setMapError('');
     if (!precision) setPrecision('manual');
     onModeChange('map');
   }
 
   if (mode === 'map') return <div className="address-picker address-picker-map">
     <h1 className="sr-only" tabIndex={-1}>Уточните точку {kind === 'pickup' ? 'А' : 'Б'}</h1>
-    <div className="address-picker-map-view"><DeliveryMap key={`${center?.latitude ?? ''},${center?.longitude ?? ''}`} center={center} markers={point ? [{ ...point, kind, label: query }] : []} onPick={(next) => { setPrecision('manual'); setSelected(null); onChange(next); }}/></div>
+    <div className="address-picker-map-view"><DeliveryMap key={`${center?.latitude ?? ''},${center?.longitude ?? ''}`} center={center} markers={mapPoint ? [{ ...mapPoint, kind, label: point ? query : 'Выбранная точка — адрес не подтверждён' }] : []} onPick={pick}/></div>
     <section className="address-picker-map-panel" aria-label="Проверка точки">
       <h2>Где встретить курьера?</h2>
-      <AddressRow kind={kind} address={query}/>
+      <AddressRow kind={kind} address={point ? query : resolving ? 'Определяем адрес точки…' : 'Выберите точку у нужного дома'}/>
       <p>Нажмите на карту или переместите её и выберите точку в центре, чтобы указать место у дома или подъезда.</p>
-      {precision === 'street' || precision === 'area' ? <Feedback tone="warning" title="Дом не определён">Показана {precision === 'street' ? 'улица' : 'область поиска'}. Уточните место у нужного дома.</Feedback> : <p className="address-picker-hint" role="status">{point ? 'Точка выбрана. Проверьте её перед подтверждением.' : 'Выберите точку, чтобы подтвердить её.'}</p>}
+      <p className="address-picker-hint">При выборе другой точки адрес обновится автоматически.</p>
+      {resolving ? <p className="address-picker-hint" role="status">Проверяем улицу и номер дома…</p>
+        : mapError ? <Feedback tone="warning" title="Адрес точки не подтверждён" role="alert" action={mapPoint ? <button type="button" className="text-button" onClick={() => pick(mapPoint)}>Повторить определение адреса</button> : undefined}>{mapError}</Feedback>
+        : precision === 'street' || precision === 'area' ? <Feedback tone="warning" title="Дом не определён">Показана {precision === 'street' ? 'улица' : 'область поиска'}. Уточните место у нужного дома.</Feedback> : <p className="address-picker-hint" role="status">{point ? 'Точка выбрана. Проверьте адрес перед подтверждением.' : 'Выберите точку, чтобы подтвердить её.'}</p>}
       <button className="text-button address-picker-return" type="button" onClick={() => onModeChange('search')}>Вернуться к поиску</button>
       <p className="address-picker-hint">В поиске можно выбрать текстовый адрес без точки на карте.</p>
     </section>

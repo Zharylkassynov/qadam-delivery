@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { migrate } from '../scripts/migrate';
 import { closeDatabase, database } from '../src/lib/db';
-import { addressSearchSchema, searchAddresses } from '../src/lib/geocoding';
+import { addressSearchSchema, reverseAddress, reverseAddressSchema, searchAddresses } from '../src/lib/geocoding';
 import { takeMapBudget } from '../src/lib/map-services';
 import { AppError } from '../src/lib/errors';
 import type { User } from '../src/lib/types';
@@ -71,4 +71,66 @@ test('parallel authenticated requests share a persistent quota across users and 
   assert.equal(attempts.filter((result) => result.status === 'fulfilled').length, 1);
   for (const result of attempts) if (result.status === 'rejected') assert.ok(result.reason instanceof AppError && result.reason.status === 429);
   assert.equal((await database().query('SELECT hits FROM qadam.service_limits WHERE bucket=$1', [bucket])).rows[0].hits, 1000);
+});
+
+const pin = { latitude: 43.24195, longitude: 76.9469 };
+test('reverse lookup resolves the selected house and preserves the actual entrance point, using only server credentials', async () => {
+  const fetcher = mock.method(globalThis, 'fetch', async (input: string | URL | Request, init?: RequestInit) => {
+    const url = new URL(String(input));
+    assert.equal(url.origin, 'https://api.geoapify.com'); assert.equal(url.pathname, '/v1/geocode/reverse');
+    assert.equal(url.searchParams.get('lat'), String(pin.latitude)); assert.equal(url.searchParams.get('lon'), String(pin.longitude));
+    assert.equal(url.searchParams.get('type'), 'building'); assert.equal(url.searchParams.get('lang'), 'ru');
+    assert.equal(url.searchParams.get('apiKey'), key); assert.equal(url.searchParams.has('userId'), false);
+    assert.equal(init?.cache, 'no-store');
+    return answer([{ ...building, distance: 8 }]);
+  });
+  const found = await reverseAddress(customer, pin);
+  assert.ok(found); assert.equal(found.fullAddress, 'проспект Абая, 10, Алматы');
+  assert.equal(found.precision, 'building'); assert.equal(found.latitude, pin.latitude); assert.equal(found.longitude, pin.longitude);
+  assert.equal(JSON.stringify(found).includes(key), false); assert.equal(fetcher.mock.calls.length, 1);
+});
+
+test('reverse lookup never confirms a street, missing house, remote building, foreign or out-of-area result', async () => {
+  for (const result of [undefined,
+    { ...building, distance: 0, result_type: 'street' }, { ...building, distance: 0, housenumber: undefined },
+    { ...building, distance: 0, street: ' ' }, { ...building, distance: 101 }, building,
+    { ...building, distance: 0, country_code: 'us' }, { ...building, distance: 0, lat: 51 },
+  ]) {
+    // Each provider shape is independent of the shared request-rate limit.
+    await database().query('DELETE FROM qadam.service_limits');
+    mock.method(globalThis, 'fetch', async () => answer(result ? [result] : []));
+    assert.equal(await reverseAddress(customer, pin), null);
+  }
+});
+
+test('reverse lookup rejects roles and invalid coordinates before calling the provider', async () => {
+  const fetcher = mock.method(globalThis, 'fetch', async () => answer([]));
+  await rejectsStatus(reverseAddress({ ...customer, role: 'COURIER' }, pin), 403);
+  for (const value of [{ latitude: 51, longitude: 71 }, { ...pin, longitude: 180 }, { ...pin, latitude: NaN }, { ...pin, latitude: '43.24' }, { ...pin, url: 'https://attacker.invalid' }]) {
+    assert.equal(reverseAddressSchema.safeParse(value).success, false);
+    await assert.rejects(reverseAddress(customer, value as typeof pin));
+  }
+  delete process.env.GEOAPIFY_API_KEY;
+  await rejectsStatus(reverseAddress(customer, pin), 503);
+  assert.equal(fetcher.mock.calls.length, 0);
+});
+
+test('reverse lookup handles provider failures without echoing credentials or accepting the pin', async () => {
+  for (const code of [503, 429]) {
+    mock.method(globalThis, 'fetch', async () => new Response(`upstream ${key}`, { status: code }));
+    await rejectsStatus(reverseAddress(customer, pin), code);
+  }
+  mock.method(globalThis, 'fetch', async () => new Response('not json'));
+  await rejectsStatus(reverseAddress(customer, pin), 503);
+  mock.method(globalThis, 'fetch', async () => { throw new Error(`Network error ${key}`); });
+  await assert.rejects(reverseAddress(customer, pin), (error: unknown) => error instanceof AppError && error.status === 503 && !error.message.includes(key));
+});
+
+test('reverse lookup shares the forward geocoding quota and cannot bypass an exhausted budget', async () => {
+  const now = Number((await database().query('SELECT extract(epoch FROM clock_timestamp())::bigint AS seconds')).rows[0].seconds);
+  await database().query('INSERT INTO qadam.service_limits(bucket,hits,expires_at) VALUES($1,1000,to_timestamp($2))', [`geo:day:${Math.floor(now / 86400)}`, now + 86400]);
+  const fetcher = mock.method(globalThis, 'fetch', async () => answer([{ ...building, distance: 0 }]));
+  await rejectsStatus(reverseAddress(customer, pin), 429);
+  await rejectsStatus(searchAddresses(customer, { query: 'Алматы, Абая 10' }), 429);
+  assert.equal(fetcher.mock.calls.length, 0);
 });

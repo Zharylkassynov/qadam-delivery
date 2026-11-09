@@ -30,6 +30,13 @@ test('map pins and simulated GPS persist through delivery, stop on hide and show
   let locationPosts = 0;
   courier.on('request', (request) => { if (request.method() === 'POST' && /\/location$/.test(request.url())) locationPosts++; });
   const pickup = `E2E карта ${randomUUID().slice(0, 8)}, Алматы, Абая 10`;
+  let picks = 0;
+  // Synthetic reverse lookup; the test verifies map selection and persistence,
+  // without sending test coordinates to a public geocoding service.
+  await customerContext.route('**/api/geocoding/reverse', (route) => route.fulfill({ json: { result: {
+    ...route.request().postDataJSON(), id: `map-${++picks}`, precision: 'building', detail: 'Алматы',
+    address: picks < 3 ? pickup : 'улица Ауэзова, 20', fullAddress: picks < 3 ? pickup : 'улица Ауэзова, 20, Алматы',
+  } } }));
   try {
     await login(customer, 'customer1@qadam.demo'); await login(courier, 'courier1@qadam.demo');
     await expect(customer.getByRole('heading', { name: /^(Куда доставить\?|Текущая доставка)$/ })).toBeVisible();
