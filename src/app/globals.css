@@ -233,8 +233,13 @@ html[data-telegram="true"] .app-shell { height: var(--tg-viewport-stable-height,
 .empty-symbol { width: 56px; height: 56px; display: flex; align-items: center; justify-content: center; background: var(--canvas); border-radius: 14px; }
 .empty-state .button { align-self: stretch; }
 
-.feedback { display: flex; gap: 8px; align-items: flex-start; border-radius: 10px; padding: 12px; min-width: 0; }
+.feedback { display: flex; flex-wrap: wrap; gap: 8px; align-items: flex-start; border-radius: 10px; padding: 12px; min-width: 0; }
 .feedback > div { min-width: 0; flex: 1; }
+.feedback > .button { flex: 0 0 100%; width: 100%; min-width: 0; max-width: 100%; }
+.recipient-link-settings>summary { min-height:44px; padding:10px 0; color:var(--brand); cursor:pointer; }
+.recipient-link-settings>summary:focus-visible { outline:3px solid var(--brand); outline-offset:3px; }
+.recipient-link-settings>:not(summary) { margin-top:12px; }
+.recipient-link-settings>a { display:block; }
 .feedback-title { font-size: 14px; line-height: 20px; font-weight: 500; overflow-wrap: anywhere; }
 .feedback-description { margin-top: 4px; font-size: 12px; line-height: 18px; overflow-wrap: anywhere; }
 .feedback-description p + p { margin-top: 4px; }

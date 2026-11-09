@@ -41,7 +41,7 @@ test('saved GPS consent survives shifts and a private Telegram stream updates th
     const date=Math.floor(Date.now()/1000)+1,message={message_id:1234,date,from:{id:courier.telegramId,is_bot:false},chat:{id:courier.telegramId,type:'private'},location:{latitude:43.241,longitude:76.901,horizontal_accuracy:30,live_period:900}};
     async function webhook(m:unknown,edited=false){const id=Date.now()*100+updateIds.length;updateIds.push(id);const response=await request.post('/api/telegram/webhook',{headers:{'X-Telegram-Bot-Api-Secret-Token':'synthetic_location_webhook_secret_abcdefghijklmnopqrstuvwxyz'},data:{update_id:id,[edited?'edited_message':'message']:m}});expect(response.status()).toBe(200);}
     await webhook(message);await expect(courierPage.getByText('Обновления из Telegram',{exact:true})).toBeVisible();
-    await expect(customerPage.getByText('Источник — трансляция Telegram. Частота обновлений зависит от телефона и связи.',{exact:true})).toBeVisible();
+    await expect(customerPage.getByRole('region',{name:'Отслеживание доставки'})).toContainText('Telegram:');
     await courierPage.getByRole('heading',{name:'Позиция во время навигации',exact:true}).scrollIntoViewIfNeeded();await courierPage.screenshot({path:info.outputPath('location-live-mobile.png')});
     await courierPage.close();await webhook({...message,edit_date:Math.floor(Date.now()/1000)+2,location:{...message.location,latitude:43.252}},true);
     await expect.poll(async()=>((await (await request.get(`/api/orders/${order.id}`,{headers:headers(owner)})).json()).order.courierLocation?.latitude)).toBe(43.252);

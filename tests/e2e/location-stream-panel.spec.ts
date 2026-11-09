@@ -52,9 +52,10 @@ test('photo order keeps one navigation panel through pending requests, polling, 
     await page.screenshot({path:info.outputPath('navigation-panel-pending.png'),fullPage:true});
     await expect(panel).toHaveCount(1);
     await expect(page.locator('.order-trust')).toHaveCount(1);
-    release();await expect(panel).toContainText('Закрытая проверка:');
+    release();await expect(panel).toHaveCount(0);
+    await expect(page.getByText(/Закрытая проверка: подключение доступно/)).toHaveCount(0);
     await expect(page.getByText('Проверяем возможность подключения…',{exact:true})).toHaveCount(0);
-    for(let n=0;n<2;n++){await refreshOrder();await expect(panel).toHaveCount(1);}
+    for(let n=0;n<2;n++){await refreshOrder();await expect(panel).toHaveCount(0);}
     status={...status,enabled:false};await expect(panel).toHaveCount(0);
     await refreshOrder();await expect(panel).toHaveCount(0);
     status={...status,enabled:true,allowed:true};

@@ -33,11 +33,10 @@ export function OrderLocationStream({order}:{order:Order}){
   const chat=<a className="button secondary wide" href="https://t.me/qadam_delivery_bot?start=location" target="_blank" rel="noopener noreferrer">Открыть чат бота</a>;
   const target=order.status==='ACCEPTED'?order.pickupPoint:order.destinationPoint;
   const navigation=target?`https://2gis.kz/almaty/directions/points/|${target.longitude},${target.latitude}`:null;
-  if(data&&!data.enabled&&!active)return null;
+  if(data&&(!data.enabled||!data.allowed)&&!active)return null;
   return <section className="trust-section location-stream"><h2>Позиция во время навигации</h2>
     {error&&<Feedback title={error} tone="error" role="alert" action={<Button variant="ghost" onClick={()=>setTick(n=>n+1)}>Проверить трансляцию</Button>}/>}
     {!data&&!error&&<p role="status">Проверяем возможность подключения…</p>}
-    {data&&!data.allowed&&!active&&<p className="muted">Закрытая проверка: подключение доступно согласованным курьерским аккаунтам. GPS открытого Qadam продолжает работать.</p>}
     {notice&&<p role="status">{notice}</p>}
     {active?<>
       <Feedback tone={stale?'warning':stream.state==='LIVE'?'success':'warning'} title={stream.state==='WAITING'?'Ожидаем трансляцию из Telegram':stale?'Позиция не обновляется':'Обновления из Telegram'}>
