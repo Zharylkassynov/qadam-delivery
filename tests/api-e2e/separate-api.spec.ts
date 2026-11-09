@@ -14,6 +14,12 @@ test('frontend exposes no API; the standalone API preserves CORS, authentication
   expect((await request.get('/api/session')).status()).toBe(404);
   expect((await request.get(`${api}/health`)).status()).toBe(200);
   expect((await request.get(`${api}/api/orders`, { headers: { Origin: frontend } })).status()).toBe(401);
+  expect((await request.post(`${api}/api/geocoding/reverse`, { headers: { Origin: frontend }, data: { latitude: 43.24, longitude: 76.9 } })).status()).toBe(401);
+  const reversePreflight = await request.fetch(`${api}/api/geocoding/reverse`, { method: 'OPTIONS', headers: {
+    Origin: frontend, 'Access-Control-Request-Method': 'POST', 'Access-Control-Request-Headers': 'authorization, content-type',
+  } });
+  expect(reversePreflight.status()).toBe(204);
+  expect(reversePreflight.headers()['access-control-allow-origin']).toBe(frontend);
   const allowed = await request.fetch(`${api}/api/auth/telegram`, { method: 'OPTIONS', headers: {
     Origin: frontend, 'Access-Control-Request-Method': 'POST', 'Access-Control-Request-Headers': 'authorization, content-type',
   } });
@@ -43,8 +49,17 @@ test('Mini App completes a delivery through a separate API without cookies and r
   await expect(page.getByRole('heading', { name: 'Куда доставить?', exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'Указать адреса', exact: true }).click();
   const pickup = `Алматы, отдельный API ${randomUUID().slice(0, 6)}`;
+  let chosenPoint: { latitude: number; longitude: number } | undefined;
+  await page.route(`${api}/api/geocoding/reverse`, async (route) => {
+    expect((await route.request().allHeaders()).authorization).toMatch(/^Bearer /);
+    chosenPoint = route.request().postDataJSON();
+    await route.fulfill({ json: { result: { ...chosenPoint, id: 'separate-api-house', address: pickup, fullAddress: pickup, detail: 'Алматы', precision: 'building' } } });
+  });
   await page.getByLabel('Адрес отправления', { exact: true }).fill(pickup);
-  await page.getByRole('button', { name: 'Выбрать адрес', exact: true }).click();
+  await page.getByRole('button', { name: 'Указать вручную на карте', exact: true }).click();
+  await page.getByRole('button', { name: 'Выбрать точку в центре', exact: true }).click();
+  await expect(page.getByRole('region', { name: 'Проверка точки' })).toContainText(pickup);
+  await page.getByRole('button', { name: 'Подтвердить точку', exact: true }).click();
   await page.getByLabel('Адрес доставки', { exact: true }).fill('Алматы, улица Абая, 20');
   await page.getByRole('button', { name: 'Выбрать адрес', exact: true }).click();
   await page.getByRole('button', { name: 'Далее — получатель', exact: true }).click();
@@ -57,6 +72,7 @@ test('Mini App completes a delivery through a separate API without cookies and r
   expect(response.status()).toBe(201);
   expect((await response.request().allHeaders()).authorization).toMatch(/^Bearer /);
   const { order } = await response.json();
+  expect(chosenPoint).toBeDefined(); expect(order.pickupAddress).toBe(pickup); expect(order.pickupPoint).toEqual(chosenPoint);
   const courier = await playwright.request.newContext({ baseURL: api, extraHTTPHeaders: { Origin: frontend } });
   try {
     expect((await courier.post('/api/auth/login', { data: { email: 'courier1@qadam.demo', password: process.env.DEMO_PASSWORD } })).status()).toBe(200);

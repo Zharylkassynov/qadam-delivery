@@ -42,7 +42,12 @@ export function DeliveryMap({ markers, onPick, focusCourier = false, center, rou
       const routeLayer = L.layerGroup().addTo(map);
       state.current = { L, map, layer, routeLayer };
       map.on('click', (event: Leaflet.LeafletMouseEvent) => latest.current.onPick?.({ latitude: event.latlng.lat, longitude: event.latlng.lng }));
-      const boundsChanged=()=>{const b=map.getBounds();latest.current.onBoundsChange?.({south:b.getSouth(),north:b.getNorth(),west:b.getWest(),east:b.getEast()});};
+      const boundsChanged=()=>{
+        // Resize/pan events can finish after the picker has been closed. Leaflet
+        // has already removed its panes then, so reading bounds would crash.
+        if(disposed||!latest.current.onBoundsChange)return;
+        const b=map.getBounds();latest.current.onBoundsChange({south:b.getSouth(),north:b.getNorth(),west:b.getWest(),east:b.getEast()});
+      };
       map.on('moveend',boundsChanged);
       const points = latest.current.markers.filter((point) => point.kind !== 'courier');
       const bounds = (points.length ? points : latest.current.markers).map((point): [number, number] => [point.latitude, point.longitude]);
