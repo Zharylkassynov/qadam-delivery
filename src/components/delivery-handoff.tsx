@@ -27,6 +27,8 @@ async function preparePhoto(file:File){
 
 export function DeliveryHandoff({order,busy,error,onBack,onComplete}:{order:Order;busy:boolean;error:string;onBack:()=>void;onComplete:(body:Record<string,unknown>)=>Promise<boolean>}){
   const data=useOrderTrust(order),upload=useTrustAction();
+  const secure=!!order.handoffRequired,pickup=secure&&order.status==='ACCEPTED';
+  const photoRequired=!pickup&&order.photoRequired;
   const [photo,setPhoto]=useState<Awaited<ReturnType<typeof preparePhoto>>|null>(null),[preview,setPreview]=useState(''),[preparing,setPreparing]=useState(false),[photoError,setPhotoError]=useState('');
   const [code,setCode]=useState(''),[handed,setHanded]=useState(false);
   const camera=useRef<HTMLInputElement>(null),gallery=useRef<HTMLInputElement>(null),alive=useRef(true),completion=useRef<{signature:string;key:string}|null>(null);
@@ -44,17 +46,18 @@ export function DeliveryHandoff({order,busy,error,onBack,onComplete}:{order:Orde
     if(await upload.run(`/api/orders/${order.id}/photo`,{expectedVersion:order.assignmentVersion??0,image:photo.base64})){setPhoto(current=>current?{...current,saved:true}:current);data.reload();}
   }
   async function complete(){
-    const body={expectedVersion:order.assignmentVersion??0,handedOver:true,...(order.codeRequired?{code}:{})};
+    const body={expectedVersion:order.assignmentVersion??0,handedOver:true,...(secure?{expectedRouteVersion:order.routeVersion??0,stage:pickup?'PICKUP':'DROPOFF',code}:order.codeRequired?{code}:{})};
     const signature=JSON.stringify(body);if(completion.current?.signature!==signature)completion.current={signature,key:crypto.randomUUID()};
     if(!await onComplete({...body,requestKey:completion.current.key}))data.reload();
   }
-  const photoReady=!order.photoRequired||(data.trust?.photo?.state==='READY'&&(!photo||photo.saved));
-  const codeReady=!order.codeRequired||(/^\d{4}$/.test(code)&&(data.trust?.attemptsRemaining??0)>0);
-  return <ApplicationScreen title="Подтверждение вручения" courier busy={working} onBack={onBack} actions={<Button className="wide" disabled={working||!data.trust||!!data.error||!photoReady||!codeReady||!handed} onClick={()=>void complete()}>{busy?'Завершаем…':'Завершить доставку'}</Button>}>
-    <div className="screen-heading"><h1>Передайте посылку</h1><p>{orderNumber(order)} · Завершайте заказ только после вручения.</p></div><RouteCard pickup={order.pickupAddress} destination={order.destinationAddress}/>
+  const photoReady=!photoRequired||(data.trust?.photo?.state==='READY'&&(!photo||photo.saved));
+  const codeReady=secure?/^\d{6}$/.test(code)&&!!data.trust?.handoff?.codeReady:!order.codeRequired||(/^\d{4}$/.test(code)&&(data.trust?.attemptsRemaining??0)>0);
+  return <ApplicationScreen title={pickup?'Подтверждение забора':'Подтверждение вручения'} courier busy={working} onBack={onBack} actions={<Button className="wide" disabled={working||!data.trust||!!data.error||!photoReady||!codeReady||!handed||(secure&&!data.trust?.handoff?.ready)} onClick={()=>void complete()}>{busy?'Сохраняем…':pickup?'Подтвердить забор':'Завершить доставку'}</Button>}>
+    <div className="screen-heading"><h1 tabIndex={-1}>{pickup?'Получите посылку':'Передайте посылку'}</h1><p>{secure?(pickup?order.pickupAddress:order.destinationAddress):`${orderNumber(order)} · Завершайте заказ только после вручения.`}</p></div>{!secure&&<RouteCard pickup={order.pickupAddress} destination={order.destinationAddress}/>}
+    {secure&&data.trust?.handoff&&!data.trust.handoff.ready&&<Feedback title={data.trust.handoff.message} tone="warning"/>}
     {error&&<Feedback title={error} tone="error" role="alert"/>}{data.error&&<Feedback title={data.error} tone="error" role="alert" action={<Button variant="ghost" onClick={data.reload}>Обновить подтверждение</Button>}/>}
     {data.loading&&!data.trust&&<p role="status">Проверяем требования заказа…</p>}
-    {order.photoRequired?<section className="trust-section"><h2>Фото вручения</h2><p className="muted">Снимок упаковки в месте передачи. Без лиц, документов и банковских данных. Фото увидят отправитель и команда Qadam.</p>
+    {photoRequired?<section className="trust-section"><h2>Фото вручения</h2><p className="muted">Снимок упаковки в месте передачи. Без лиц и личных данных.</p>
       {preview?<img className="trust-photo" src={preview} alt="Выбранное фото упаковки перед отправкой"/>:<div className="trust-photo-empty">{data.trust?.photo?.state==='READY'?'Фото уже сохранено. Можно оставить его или выбрать другое.':'Сделайте фото или выберите снимок с устройства'}</div>}
       <input className="sr-only" tabIndex={-1} aria-label="Снять фото вручения" ref={camera} type="file" accept="image/*" capture="environment" onChange={e=>{void select(e.target.files?.[0]);e.target.value='';}}/>
       <input className="sr-only" tabIndex={-1} aria-label="Выбрать фото вручения" ref={gallery} type="file" accept="image/jpeg,image/png,image/heic,image/heif" onChange={e=>{void select(e.target.files?.[0]);e.target.value='';}}/>
@@ -62,10 +65,10 @@ export function DeliveryHandoff({order,busy,error,onBack,onComplete}:{order:Orde
       {preparing&&<p role="status">Подготавливаем фото…</p>}{photo&&!photo.saved&&<Button disabled={working} onClick={()=>void savePhoto()}>{upload.busy?'Сохраняем фото…':'Сохранить фото'}</Button>}
       {(photo?.saved||(!photo&&data.trust?.photo?.state==='READY'))&&<Feedback title="Фото сохранено" tone="success" role="status"/>}
       {(photoError||upload.error)&&<Feedback title={photoError||upload.error} tone="error" role="alert"/>}<p className="muted">JPEG, до 1 МБ и 1600 пикселей после сжатия. Доступ в Qadam — до 30 суток.</p>
-    </section>:<Feedback title="Фото для этого заказа не требуется">Заказ оформлен до подключения фото вручения. Его требования сохранены.</Feedback>}
-    {order.codeRequired&&<section className="trust-section"><h2>Код получателя</h2>{data.trust?.attemptsRemaining===0?<Feedback title="Попытки закончились" tone="warning">Попросите отправителя выпустить новый код. До этого завершить заказ нельзя.</Feedback>:<><p className="muted">Попросите назвать код после передачи посылки. Не запрашивайте его заранее.</p><div className="field"><label htmlFor="delivery-code-input">4 цифры</label><input id="delivery-code-input" className="delivery-code-input" type="text" inputMode="numeric" autoComplete="off" pattern="[0-9]{4}" maxLength={4} value={code} disabled={working} onChange={e=>setCode(e.target.value.replace(/\D/g,''))} aria-describedby="delivery-code-attempts"/><small id="delivery-code-attempts">Осталось попыток: {data.trust?.attemptsRemaining??'…'}</small></div></>}</section>}
-    <label className="courier-consent"><input type="checkbox" checked={handed} disabled={working} onChange={e=>setHanded(e.target.checked)}/><span>Посылка передана получателю</span></label>
-    <p className="muted">Если вручение невозможно, свяжитесь с отправителем и командой Qadam. Не отмечайте заказ выполненным заранее.</p>
+    </section>:!secure&&<Feedback title="Фото для этого заказа не требуется">Заказ оформлен до подключения фото вручения. Его требования сохранены.</Feedback>}
+    {(secure||order.codeRequired)&&<section className="trust-section"><h2>{pickup?'Код отправителя':'Код получателя'}</h2>{(secure?data.trust?.handoff?.attemptsRemaining:data.trust?.attemptsRemaining)===0?<Feedback title="Попытки закончились" tone="warning">Попросите отправителя выпустить новый код.</Feedback>:<><p className="muted">{pickup?'Попросите код, когда посылка у вас.':'Получатель назовёт код после передачи.'}</p>{secure&&!data.trust?.handoff?.codeReady&&<p className="field-hint">Отправителю нужно открыть код в своём заказе.</p>}<div className="field"><label htmlFor="delivery-code-input">{secure?'6 цифр':'4 цифры'}</label><input id="delivery-code-input" className="delivery-code-input" type="text" inputMode="numeric" autoComplete="off" pattern={secure?'[0-9]{6}':'[0-9]{4}'} maxLength={secure?6:4} value={code} disabled={working} onChange={e=>setCode(e.target.value.replace(/\D/g,''))} aria-describedby="delivery-code-attempts"/><small id="delivery-code-attempts">Осталось попыток: {(secure?data.trust?.handoff?.attemptsRemaining:data.trust?.attemptsRemaining)??'…'}</small></div></>}</section>}
+    <label className="courier-consent"><input type="checkbox" checked={handed} disabled={working} onChange={e=>setHanded(e.target.checked)}/><span>{pickup?'Посылка у меня':'Посылка передана получателю'}</span></label>
+    <a className="handoff-support" href="https://t.me/zharlkssnv" target="_blank" rel="noopener noreferrer">Нужна помощь?</a>
   </ApplicationScreen>;
 }
 

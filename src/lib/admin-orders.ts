@@ -5,6 +5,7 @@ import { requireAdministrator } from './administrators';
 import { selectOrder } from './orders';
 import { adminOrderFilters, type AdminOrder, type AdminOrdersPage, type User } from './types';
 import { alertWaitingOrders } from './order-notifications';
+import {handoffsEnabled} from './handoff-settings';
 
 const querySchema = z.object({
   search: z.string().trim().max(100).default(''),
@@ -42,7 +43,7 @@ export async function listAdminOrders(actor: User, input: unknown = {}): Promise
   ) SELECT (SELECT coalesce(jsonb_agg(to_jsonb(p) ORDER BY p."createdAt" DESC,p.id DESC),'[]'::jsonb) FROM page p) AS orders,
     to_jsonb(counts) AS counts FROM counts`, [q.search, q.limit, q.offset]);
   const row = result.rows[0];
-  return { orders: row.orders, counts: row.counts, total: row.counts[q.filter] };
+  return { orders: row.orders.map((order:AdminOrder)=>({...order,handoffRequired:handoffsEnabled()})), counts: row.counts, total: row.counts[q.filter] };
 }
 
 export async function getAdminOrder(actor: User, id: string): Promise<AdminOrder> {
@@ -52,5 +53,5 @@ export async function getAdminOrder(actor: User, id: string): Promise<AdminOrder
     FROM (${selectOrder} WHERE o.id=$1) detail
     LEFT JOIN qadam.courier_applications a ON a.user_id=detail."courierId" AND a.status='APPROVED'`, [id]);
   if (!result.rows[0]) throw new AppError(404, 'Заказ не найден.');
-  return result.rows[0];
+  return {...result.rows[0],handoffRequired:handoffsEnabled()};
 }

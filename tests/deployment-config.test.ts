@@ -7,6 +7,7 @@ const production = {
   SUPABASE_PROJECT_REF: 'abcdefghijklmnopqrst',
   DATABASE_URL: 'postgresql://qadam_app.abcdefghijklmnopqrst:example@aws-1-eu-central-1.pooler.supabase.com:6543/postgres',
   DATABASE_SSL_CA_FILE: 'config/certs/supabase-root.crt', DEMO_AUTH_ENABLED: 'true',
+  DELIVERY_CODE_SECRET:'ab'.repeat(32),
 };
 
 test('production accepts the restricted transaction pooler and exact HTTPS origin', () => {

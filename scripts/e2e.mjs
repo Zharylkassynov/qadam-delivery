@@ -5,6 +5,7 @@ for (const args of [
   ['node_modules/@playwright/test/cli.js', 'test'],
   ['scripts/apps.mjs', 'frontend', 'build'],
   ['node_modules/@playwright/test/cli.js', 'test', '--config', 'playwright.api.config.ts'],
+  ['node_modules/@playwright/test/cli.js', 'test', '--config', 'playwright.handoff-api.config.ts'],
 ]) {
   const result = spawnSync(process.execPath, args, { stdio: 'inherit', windowsHide: true });
   if (result.error) throw result.error;

@@ -1,5 +1,6 @@
 type Environment = Record<string, string | undefined>;
 import { apiOrigin } from './api-origin';
+import {handoffsEnabled} from './handoff-settings';
 
 export function appOrigin(env: Environment = process.env) {
   let value = env.APP_ORIGIN;
@@ -20,6 +21,7 @@ export function appOrigin(env: Environment = process.env) {
 }
 
 export function validateDeployment(env: Environment = process.env) {
+  handoffsEnabled(env);
   for(const key of ['TELEGRAM_LIVE_LOCATION_ENABLED','TELEGRAM_LIVE_LOCATION_PILOT_ONLY'])if(env[key]&&!['true','false'].includes(env[key]))throw new Error(`${key} must be true or false`);
   if(env.TELEGRAM_LIVE_LOCATION_PILOT_IDS&&!/^[1-9]\d{0,15}(,[1-9]\d{0,15}){0,9}$/.test(env.TELEGRAM_LIVE_LOCATION_PILOT_IDS))throw new Error('Invalid live location pilot account list');
   if(env.TELEGRAM_LIVE_LOCATION_ENABLED==='true'&&(env.TELEGRAM_AUTH_ENABLED!=='true'||!/^\d+:[A-Za-z0-9_-]{30,}$/.test(env.TELEGRAM_BOT_TOKEN??'')||!/^[A-Za-z0-9_-]{32,256}$/.test(env.TELEGRAM_WEBHOOK_SECRET??'')))throw new Error('Telegram live location requires Telegram authentication and a protected webhook');
@@ -61,6 +63,7 @@ export function validateDeployment(env: Environment = process.env) {
     return;
   }
   if (env.VERCEL_ENV !== 'production') throw new Error('Expected a Production or Preview Vercel build');
+  if(env.TELEGRAM_AUTH_ENABLED==='true'&&!env.DELIVERY_CODE_SECRET)throw new Error('Mandatory handoffs require DELIVERY_CODE_SECRET in Production');
   if (!['true', 'false'].includes(env.DEMO_AUTH_ENABLED ?? '')) throw new Error('Set DEMO_AUTH_ENABLED explicitly');
   if (env.TELEGRAM_AUTH_ENABLED && !['true', 'false'].includes(env.TELEGRAM_AUTH_ENABLED)) throw new Error('TELEGRAM_AUTH_ENABLED must be true or false');
   if (env.TELEGRAM_AUTH_ENABLED === 'true' && !/^\d+:[A-Za-z0-9_-]{30,}$/.test(env.TELEGRAM_BOT_TOKEN ?? '')) {

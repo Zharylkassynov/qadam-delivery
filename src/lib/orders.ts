@@ -17,6 +17,9 @@ import {initialiseCode} from './order-codes';
 import {lockCouriers,requireCourierAccess,notBlocked} from './trust-core';
 import {requireReadyCourier} from './courier-readiness';
 import {locationConsentVersion} from './location-consent';
+import {handoffsEnabled} from './handoff-settings';
+import {codeKey} from './proof-settings';
+import {ensureHandoffEnforcement} from './handoff-activation';
 
 export const pointSchema = z.object({ latitude: z.number().min(-90).max(90), longitude: z.number().min(-180).max(180) }).strict();
 export const createOrderSchema = z.object({
@@ -47,7 +50,7 @@ export const selectOrder = `SELECT o.id,o.number::text,o.customer_id AS "custome
   o.sender_phone AS "senderPhone",o.courier_phone AS "courierPhone",
   o.parcel_type AS "parcelType",o.fragile,o.surprise,o.urgent,o.card_text AS "cardText",
   o.business_name AS "businessName",o.pickup_details AS "pickupDetails",o.deliver_after AS "deliverAfter",o.deliver_before AS "deliverBefore",
-  o.photo_required AS "photoRequired",o.code_required AS "codeRequired",o.assignment_version AS "assignmentVersion",
+  o.photo_required AS "photoRequired",o.code_required AS "codeRequired",o.assignment_version AS "assignmentVersion",o.route_version AS "routeVersion",
   CASE WHEN o.price_kzt IS NOT NULL THEN jsonb_build_object('priceKzt',o.price_kzt,'courierPayoutKzt',o.courier_payout_kzt,
     'platformFeeKzt',o.platform_fee_kzt,'distanceM',o.distance_m,'durationS',o.duration_s,
     'tariffVersion',o.tariff_version,'breakdown',o.pricing_details) END AS pricing,
@@ -66,6 +69,7 @@ const eligibleCar=`EXISTS(SELECT 1 FROM qadam.courier_applications ca WHERE ca.u
 
 // Apply this to every ordinary order response, including mutation retries.
 async function protectRecipientContacts(client: Pick<PoolClient, 'query'>, actor: User, orders: Order[]): Promise<Order[]> {
+  orders=orders.map(order=>({...order,handoffRequired:handoffsEnabled()}));
   if (actor.role !== 'COURIER' || orders.every(order => order.courierId === actor.id)) return orders;
   // Recheck private membership rather than trusting a supplied isAdmin flag.
   const admin = await client.query(`SELECT 1 FROM qadam.administrators a
@@ -120,6 +124,7 @@ export async function getOrder(actor: User, reference: string): Promise<Order> {
 }
 
 export async function createOrder(actor: User, input: CreateOrder): Promise<Order> {
+  await ensureHandoffEnforcement();
   if (actor.role !== 'CUSTOMER') throw new AppError(403, 'Создавать заказы может только клиент.');
   // Validate here too, so scripts and tests cannot bypass the API validation.
   const data = createOrderSchema.parse(input);
@@ -142,6 +147,10 @@ export async function createOrder(actor: User, input: CreateOrder): Promise<Orde
       return order;
     }
     const timeError=scheduleError(data);if(timeError)throw new AppError(400,timeError);
+    if(handoffsEnabled()){
+      if(!data.pickupPoint||!data.destinationPoint)throw new AppError(422,'Уточните оба адреса на карте. Это нужно для безопасной передачи.');
+      codeKey();
+    }
     const proof=proofEnabled();if(data.codeRequired&&!proof)throw new AppError(409,'Код вручения ещё не подключён. Обновите условия заказа.');
     await checkBusinessSnapshot(actor,data.businessName,client);
     const tariff=await currentTariff(client);
@@ -248,6 +257,7 @@ export async function transitionOrder(actor: User, id: string, target: Status): 
     } else {
       if (order.courier_id !== actor.id) throw new AppError(403, 'Этот заказ вам не назначен.');
       if (order.status === target) return readOrder(client, id, actor);
+      if(handoffsEnabled()&&['PICKED_UP','IN_TRANSIT','DELIVERED'].includes(target))throw new AppError(409,'Откройте Qadam заново. Передача подтверждается у адреса по коду.');
       if (nextStatus[order.status] !== target) throw new AppError(409, 'Недопустимый переход статуса. Обновите заказ и выполните следующий шаг.');
       if(target==='DELIVERED'&&(order.photo_required||order.code_required))throw new AppError(409,'Откройте подтверждение вручения: нужно фото и выбранный код.');
     }

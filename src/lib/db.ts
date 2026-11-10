@@ -1,6 +1,7 @@
 import pg, { type PoolClient } from 'pg';
 import { attachDatabasePool } from '@vercel/functions';
 import { databaseConfig } from './db-config';
+import {handoffsEnabled} from './handoff-settings';
 
 const globalDb = globalThis as unknown as { qadamPool?: pg.Pool };
 
@@ -8,7 +9,9 @@ export function database() {
   if (!globalDb.qadamPool) {
     const connectionString = process.env.DATABASE_URL;
     if (!connectionString) throw new Error('DATABASE_URL is required');
-    globalDb.qadamPool = new pg.Pool(databaseConfig(connectionString));
+    const config=databaseConfig(connectionString);
+    if(!handoffsEnabled())config.options='-c qadam.legacy_handoff_tests=on';
+    globalDb.qadamPool = new pg.Pool(config);
     if (process.env.VERCEL === '1') attachDatabasePool(globalDb.qadamPool);
     globalDb.qadamPool.on('error', (error) => console.error('Database connection error:', 'code' in error ? error.code : 'unknown'));
   }

@@ -1,8 +1,10 @@
 import { appOrigin } from '../src/lib/deployment-config';
 import { databaseConfig } from '../src/lib/db-config';
 import { apiOrigin } from '../src/lib/api-origin';
+import {handoffsEnabled} from '../src/lib/handoff-settings';
 
 export function validateBackend(env: Record<string, string | undefined> = process.env) {
+  handoffsEnabled(env);
   if (env.QADAM_BACKEND !== 'true' || env.VERCEL === '1') throw new Error('Standalone backend mode is required outside Vercel');
   const frontend = new URL(appOrigin(env));
   const api = apiOrigin(env.API_ORIGIN);
@@ -18,6 +20,7 @@ export function validateBackend(env: Record<string, string | undefined> = proces
   if (!local && (env.QADAM_LOCAL_DOCKER === 'true' || env.DEMO_AUTH_ENABLED === 'true')) {
     throw new Error('Local Docker and demo login are restricted to local origins');
   }
+  if(!local&&!/^[a-fA-F0-9]{64}$/.test(env.DELIVERY_CODE_SECRET??''))throw new Error('Mandatory handoffs require a server code secret');
   if (env.DEMO_AUTH_ENABLED === 'true' && (env.DEMO_PASSWORD?.length ?? 0) < 12) throw new Error('Local demo password is required');
   if (env.TELEGRAM_AUTH_ENABLED === 'true') {
     if (!/^\d+:[A-Za-z0-9_-]{30,}$/.test(env.TELEGRAM_BOT_TOKEN ?? '') ||

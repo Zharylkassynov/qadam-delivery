@@ -22,10 +22,11 @@ test('standalone backend validates its server settings and keeps local-only mode
   ]) assert.throws(() => validateBackend({ ...local, ...change }));
   const publicBackend = { ...local, APP_ORIGIN: 'https://qadam.example', API_ORIGIN: 'https://api.qadam.example',
     DEMO_AUTH_ENABLED: 'false', TELEGRAM_AUTH_ENABLED: 'true', TELEGRAM_BOT_TOKEN: '123456789:synthetic_test_only_abcdefghijklmnopqrstuvwxyz',
-    TELEGRAM_WEBHOOK_SECRET: 'synthetic_test_webhook_secret_abcdefghijklmnopqrstuvwxyz' };
+    TELEGRAM_WEBHOOK_SECRET: 'synthetic_test_webhook_secret_abcdefghijklmnopqrstuvwxyz',DELIVERY_CODE_SECRET:'ab'.repeat(32) };
   assert.doesNotThrow(() => validateBackend(publicBackend));
   assert.throws(() => validateBackend({ ...publicBackend, TELEGRAM_WORKER_ENABLED: 'false' }));
   assert.throws(() => validateBackend({ ...publicBackend, TELEGRAM_BOT_TOKEN: undefined }));
+  assert.throws(() => validateBackend({ ...publicBackend, DELIVERY_CODE_SECRET: undefined }));
   assert.throws(() => validateDeployment({ VERCEL: '1', QADAM_BACKEND: 'true' }));
 });
 

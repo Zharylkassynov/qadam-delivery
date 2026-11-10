@@ -56,7 +56,7 @@ function Field({ label, hint, error, ...props }: InputHTMLAttributes<HTMLInputEl
   return <div className="field"><label htmlFor={id}>{label}</label><input id={id} aria-invalid={!!error} aria-describedby={error || hint ? `${id}-hint` : undefined} {...props}/>{(error || hint) && <small className={error ? 'field-error' : 'field-hint'} id={`${id}-hint`}>{error || hint}</small>}</div>;
 }
 
-export function OrderForm({ draft, onChange, onReview, onPoint, busy }: { draft: OrderDraft; onChange: (draft: OrderDraft) => void; onReview: () => void; onPoint: (kind: 'pickup' | 'destination') => void; busy: boolean }) {
+export function OrderForm({ draft, onChange, onReview, onPoint, busy,requirePoints=false }: { draft: OrderDraft; onChange: (draft: OrderDraft) => void; onReview: () => void; onPoint: (kind: 'pickup' | 'destination') => void; busy: boolean;requirePoints?:boolean }) {
   const [errors, setErrors] = useState<Partial<Record<keyof OrderDraft, string>>>({});
   const formRef = useRef<HTMLFormElement>(null);
   function change(key: keyof OrderDraft, value: string) {
@@ -67,6 +67,7 @@ export function OrderForm({ draft, onChange, onReview, onPoint, busy }: { draft:
     event.preventDefault();
     const problems: typeof errors = {};
     for (const key of ['pickupAddress', 'destinationAddress'] as const) if (draft[key].trim().length < 5) problems[key] = 'Укажите улицу и номер дома — минимум 5 символов.';
+    if(requirePoints)for(const kind of ['pickup','destination'] as const)if(!draft[`${kind}Point`])problems[`${kind}Address`]='Уточните точку на карте.';
     if (draft.recipientName.trim().length < 2) problems.recipientName = 'Укажите имя получателя — минимум 2 символа.';
     if (!/^[+\d\s()\-]+$/.test(draft.recipientPhone) || draft.recipientPhone.replace(/\D/g, '').length < 7) problems.recipientPhone = 'Укажите номер полностью, например +7 700 123 45 67.';
     if(draft.timing==='window'){

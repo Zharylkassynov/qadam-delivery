@@ -12,7 +12,7 @@ permissions:
 jobs:
   verify:
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    timeout-minutes: 20
     services:
       postgres:
         image: postgres:17-alpine
@@ -55,6 +55,7 @@ jobs:
           TELEGRAM_AUTH_ENABLED: 'true'
           TELEGRAM_BOT_TOKEN: '123456789:local_test_only_abcdefghijklmnopqrstuvwxyz'
           TELEGRAM_WEBHOOK_SECRET: 'local_test_only_webhook_secret_abcdefghijklmnopqrstuvwxyz'
+          DELIVERY_CODE_SECRET: 'abababababababababababababababababababababababababababababababab'
       - run: npm run check:build
       - run: npx playwright install --with-deps chromium
       - run: npm run test:e2e

@@ -79,7 +79,7 @@ export function bindTelegramControls(app: TelegramWebApp) {
         try {
           if(lastMain!==state){main!.setParams({text,is_visible:true,is_active:!disabled,...(validThemeColor(color)?{color}:{}),...(validThemeColor(textColor)?{text_color:textColor}:{})});if(progress)main!.showProgress(false);else main!.hideProgress();main!.show();lastMain=state;}
           mainTarget.classList.add('telegram-main-target');
-          if(choices.length===1)footer?.classList.add('telegram-main-only');
+          if(choices.length===1&&!footer?.querySelector('[data-telegram-keep]'))footer?.classList.add('telegram-main-only');
         } catch {main!.hide();lastMain='';}
       }else {main!.hide();lastMain='';}
     }else if(mainAvailable){main!.hideProgress();main!.hide();lastMain='';}

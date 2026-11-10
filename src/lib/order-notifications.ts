@@ -2,6 +2,7 @@ import { transaction, database } from './db';
 import { appOrigin } from './deployment-config';
 import { enqueueBotMessage, type Db, type BotJob } from './telegram-outbox';
 import type { Status } from './types';
+import {handoffsEnabled} from './handoff-settings';
 import { deliveryWindow,parcelLabels,type ParcelType } from './order-details';
 import {notBlocked} from './trust-core';
 
@@ -75,7 +76,7 @@ export async function queueCustomerOrderStatus(db: Db, id: string, status: Statu
   };
   if (!texts[status]) return;
   await enqueueBotMessage(db,`order:${id}${order.assignment_version>1?`:assignment:${order.assignment_version}`:''}:status:${status}`,identity.chat,{chat_id:identity.chat,
-    text:`${label(order.number)}\n${texts[status]}`,reply_markup:keyboard(id)},'sendMessage',{orderId:id});
+    text:`${label(order.number)}\n${texts[status]}${handoffsEnabled()&&status==='ACCEPTED'?' Откройте заказ: код забора станет доступен у адреса. Сообщите его только при передаче.':handoffsEnabled()&&status==='IN_TRANSIT'?' Откройте заказ и передайте получателю отдельный код вручения.':''}`,reply_markup:keyboard(id)},'sendMessage',{orderId:id});
 }
 
 export async function alertWaitingOrders() {

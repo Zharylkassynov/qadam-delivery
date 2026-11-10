@@ -14,10 +14,12 @@ export function OrderNavigation({order,user}:{order:Order;user:User}) {
   const fresh=assigned&&status?.online&&status.locationSharing&&status.consentCurrent&&freshLocation(status.location)?status.location:null;
   const origin=route.origin??(fresh?{point:fresh,address:''}:null);
   const links=navigationLinks(route.target,origin,assigned&&status?.transport==='FOOT');
+  const controls=<div className="navigation-links">{links.map(link=><a key={link.name} className={order.handoffRequired&&link.name==='2ГИС'?'navigation-primary':undefined} href={link.href} target="_blank" rel="noopener noreferrer" onClick={event=>{const app=activeTelegram();if(app?.openLink){try{app.openLink(link.href);event.preventDefault();}catch{/* The ordinary link remains a working fallback. */}}}}><span>{order.handoffRequired&&link.name==='2ГИС'?'Маршрут в 2ГИС':link.name}</span><span aria-hidden="true">↗</span></a>)}</div>;
+  if(order.handoffRequired)return <nav className="focused-navigation" aria-label="Открыть маршрут">{controls}</nav>;
   return <details className="navigation-picker"><summary>Открыть навигацию</summary><div className="navigation-picker-body">
     <h3>{route.label}</h3><p>{route.target.address}</p>
     {!fresh&&<p className="field-hint">Карты определят вашу позицию.</p>}
-    <div className="navigation-links">{links.map(link=><a key={link.name} href={link.href} target="_blank" rel="noopener noreferrer" onClick={event=>{const app=activeTelegram();if(app?.openLink){try{app.openLink(link.href);event.preventDefault();}catch{/* The ordinary link remains a working fallback. */}}}}><span>{link.name}</span><span aria-hidden="true">›</span></a>)}</div>
+    {controls}
     {!links.some(link=>link.name==='2ГИС')&&<p className="field-hint">Для 2ГИС нужна точка на карте.</p>}
   </div></details>;
 }

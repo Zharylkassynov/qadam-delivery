@@ -35,13 +35,13 @@ export function useOrderTrust(order:Order){
       if(alive)timer=setTimeout(()=>void poll(),3000);
     }
     void poll(true);return()=>{alive=false;clearTimeout(timer);controller.abort();};
-  },[order.id,order.status,order.assignmentVersion,version]);
+  },[order.id,order.status,order.assignmentVersion,order.routeVersion,version]);
   return{trust,error,loading,reload};
 }
 
-export function CodeReset({order,onDone}:{order:Order;onDone:()=>void}){
+export function CodeReset({order,onDone,handoffStage}:{order:Order;onDone:()=>void;handoffStage?:'PICKUP'|'DROPOFF'}){
   const [open,setOpen]=useState(false),[reason,setReason]=useState('');const action=useTrustAction();
-  return <div className="trust-section">{!open?<Button variant="secondary" onClick={()=>setOpen(true)}>Выпустить новый код</Button>:<form className="trust-section" onSubmit={e=>{e.preventDefault();void action.run(`/api/orders/${order.id}/code`,{expectedVersion:order.assignmentVersion??0,reason:reason.trim()}).then(result=>{if(result){setOpen(false);setReason('');onDone();}});}}>
+  return <div className="trust-section">{!open?<Button variant="secondary" onClick={()=>setOpen(true)}>Выпустить новый код</Button>:<form className="trust-section" onSubmit={e=>{e.preventDefault();void action.run(`/api/orders/${order.id}/${handoffStage?'handoff-code':'code'}`,{expectedVersion:order.assignmentVersion??0,reason:reason.trim(),...(handoffStage?{stage:handoffStage,expectedRouteVersion:order.routeVersion??0,reset:true}:{})}).then(result=>{if(result){setOpen(false);setReason('');onDone();}});}}>
     <Feedback title="Прежний код перестанет действовать" tone="warning">Передайте новый код получателю. Не более трёх перевыпусков в час.</Feedback>
     <div className="field"><label htmlFor="code-reset-reason">Причина перевыпуска</label><textarea id="code-reset-reason" required minLength={5} maxLength={500} value={reason} disabled={action.busy} onChange={e=>setReason(e.target.value)}/></div>
     {action.error&&<Feedback title={action.error} tone="error" role="alert"/>}
@@ -104,9 +104,10 @@ function DeliveryRating({order,rating,onDone}:{order:Order;rating:OrderTrust['ra
 export function OrderTrustPanel({order,user}:{order:Order;user:User}){
   const data=useOrderTrust(order);const owner=order.customerId===user.id;
   return <div className="order-trust">{data.error?<Feedback title="Подтверждение не обновлено" tone="error" role="alert" action={<Button variant="ghost" onClick={data.reload}>Повторить</Button>}>{data.error}</Feedback>:data.loading&&!data.trust?<p role="status">Загружаем подтверждение…</p>:null}
-    {data.trust&&<>{order.codeRequired&&owner&&!['DELIVERED','CANCELLED'].includes(order.status)&&<CustomerCode key={`${order.id}:${order.assignmentVersion}`} order={order}/>}
+    {data.trust&&<>{!order.handoffRequired&&order.codeRequired&&owner&&!['DELIVERED','CANCELLED'].includes(order.status)&&<CustomerCode key={`${order.id}:${order.assignmentVersion}`} order={order}/>}
       {order.photoRequired&&<ProofPhoto order={order} photo={data.trust.photo}/>}
-      {order.codeRequired&&user.isAdmin&&!owner&&data.trust.canResetCode&&<section className="trust-section"><h2>Код при вручении</h2><p className="muted">Код видит только отправитель. Команда может выпустить новый с сохранением причины.</p><CodeReset order={order} onDone={data.reload}/></section>}
+      {!order.handoffRequired&&order.codeRequired&&user.isAdmin&&!owner&&data.trust.canResetCode&&<section className="trust-section"><h2>Код при вручении</h2><p className="muted">Код видит только отправитель. Команда может выпустить новый с сохранением причины.</p><CodeReset order={order} onDone={data.reload}/></section>}
+      {order.handoffRequired&&user.isAdmin&&!owner&&['ACCEPTED','PICKED_UP','IN_TRANSIT'].includes(order.status)&&<section className="trust-section"><h2>{order.status==='ACCEPTED'?'Код забора':'Код вручения'}</h2><p className="muted">Код видит отправитель. Новый выпуск сохраняется в истории.</p><CodeReset order={order} handoffStage={order.status==='ACCEPTED'?'PICKUP':'DROPOFF'} onDone={data.reload}/></section>}
       {order.status==='DELIVERED'&&(owner?<DeliveryRating order={order} rating={data.trust.rating} onDone={data.reload}/>:user.isAdmin&&data.trust.rating?<section className="trust-section"><h2>Отзыв отправителя</h2><p>{data.trust.rating.score} из 5</p><p className="pre-wrap">{data.trust.rating.comment}</p></section>:null)}
     </>}
   </div>;

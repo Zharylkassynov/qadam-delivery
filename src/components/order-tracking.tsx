@@ -8,7 +8,7 @@ import { Button, Feedback, finished, formatTime } from './delivery-ui';
 import { DeliveryMap, type MapMarker } from './delivery-map';
 import {OrderNavigation} from './order-navigation';
 
-export function OrderTracking({ order, user, readOnly = false }: { order: Order; user: User; readOnly?: boolean }) {
+export function OrderTracking({ order, user, readOnly = false,focused=false }: { order: Order; user: User; readOnly?: boolean;focused?:boolean }) {
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => { const timer = setInterval(() => setNow(Date.now()), 10000); return () => clearInterval(timer); }, []);
   const location = order.courierLocation;
@@ -16,22 +16,22 @@ export function OrderTracking({ order, user, readOnly = false }: { order: Order;
   const stale = !!location && (stopped||now - Date.parse(location.capturedAt) > 90000);
   const telegramSource=location?.source==='TELEGRAM_LIVE';
   const courierControls=!readOnly&&user.role==='COURIER'&&order.courierId===user.id&&!finished(order);
-  const routeControls=!readOnly&&user.role==='COURIER'&&!finished(order);
+  const routeControls=!readOnly&&!focused&&user.role==='COURIER'&&!finished(order);
   const markers: MapMarker[] = [];
   if (order.pickupPoint) markers.push({ ...order.pickupPoint, kind: 'pickup', label: `А · ${order.pickupAddress}` });
   if (order.destinationPoint) markers.push({ ...order.destinationPoint, kind: 'destination', label: `Б · ${order.destinationAddress}` });
   if (location) markers.push({ ...location, kind: 'courier', label: `Курьер · ${formatTime(location.capturedAt)}${stale ? ' · точка устарела' : ''}`, stale });
   return <section className="order-tracking" aria-label="Отслеживание доставки">
-    <h2>Доставка на карте</h2>
+    <h2>{focused?'На карте':'Доставка на карте'}</h2>
     {markers.length > 0 ? <OrderRoute key={`route-${order.id}`} order={order} markers={markers} controls={routeControls}/> : <p className="muted">Точки ещё не указаны</p>}
-    <p className="map-legend">А — отправление · Б — доставка</p>
-    {courierControls&&<OrderNavigation order={order} user={user}/>}
+    {!focused&&<p className="map-legend">А — отправление · Б — доставка</p>}
+    {courierControls&&!focused&&<OrderNavigation order={order} user={user}/>}
     {(!order.pickupPoint || !order.destinationPoint) && markers.length > 0 && <p className="muted">{!order.pickupPoint ? 'Точка отправления не указана. ' : ''}{!order.destinationPoint ? 'Точка доставки не указана.' : ''}</p>}
-    {location ? <Feedback tone={stale || finished(order) ? 'warning' : 'info'} title={finished(order) ? 'Доставка завершена · последняя точка' : stopped?'Передача геопозиции остановлена':stale ? 'Позиция курьера устарела' : 'Последняя позиция курьера'}>
+    {focused?<p className={`focused-location ${stale?'stale':''}`} role="status">{location?stopped?'Геопозиция отключена':stale?'Позиция устарела · показана последняя точка':`Позиция обновлена в ${new Intl.DateTimeFormat('ru-KZ',{hour:'2-digit',minute:'2-digit'}).format(new Date(location.capturedAt))}`:'Ждём позицию курьера'}</p>:location ? <Feedback tone={stale || finished(order) ? 'warning' : 'info'} title={finished(order) ? 'Доставка завершена · последняя точка' : stopped?'Передача геопозиции остановлена':stale ? 'Позиция курьера устарела' : 'Последняя позиция курьера'}>
       <p>{telegramSource?'Telegram':'Обновлено'}: {formatTime(location.capturedAt)}. {location.accuracy === null ? '' : `Точность: около ${Math.round(location.accuracy)} м.`}</p>
       {(stopped||stale)&&<p>Показана последняя известная точка.</p>}
     </Feedback> : order.courierId ? <p className="muted">Ждём позицию курьера</p> : null}
-    {courierControls&&<CourierGpsStatus/>}
+    {courierControls&&!focused&&<CourierGpsStatus/>}
   </section>;
 }
 

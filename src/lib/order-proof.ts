@@ -11,6 +11,7 @@ import {checkDeliveryCode,completionFingerprint} from './order-codes';
 import {getOrder} from './orders';
 import {queueCustomerOrderStatus} from './order-notifications';
 import {enqueueBotMessage} from './telegram-outbox';
+import {handoffsEnabled} from './handoff-settings';
 
 const uploadSchema=z.object({...actionFields,image:z.string().min(4).max(1400000)}).strict();
 const completionSchema=z.object({...actionFields,handedOver:z.literal(true),code:z.string().regex(/^\d{4}$/).optional()}).strict();
@@ -37,17 +38,18 @@ export async function uploadOrderPhoto(actor:User,id:string,input:unknown,storag
     if(!order.photo_required)throw new AppError(409,'Для этого заказа фото не требуется.');
     const old=(await db.query('SELECT * FROM qadam.order_photos WHERE order_id=$1 AND assignment_version=$2 AND request_key=$3 FOR UPDATE',[id,order.assignment_version,data.requestKey])).rows[0];
     if(old&&old.content_hash!==hash)throw new AppError(409,'Этот запрос уже использован для другого фото.');
-    if(old?.state==='READY')return{done:true,id:old.id,number:order.number};
+    if(old?.state==='RETIRED')throw new AppError(409,'Условия передачи изменились. Добавьте новое фото.');
+    if(old?.state==='READY')return{done:true,id:old.id,number:order.number,routeVersion:order.route_version};
     if(old?.state==='UPLOADING'&&new Date(old.lease_until).getTime()>Date.now())throw new AppError(409,'Фото ещё сохраняется. Подождите немного и повторите.');
     await db.query("UPDATE qadam.order_photos SET state='FAILED' WHERE order_id=$1 AND state='UPLOADING' AND lease_until<=clock_timestamp()",[id]);
     const pending=await db.query("SELECT 1 FROM qadam.order_photos WHERE order_id=$1 AND state='UPLOADING' AND lease_until>clock_timestamp()",[id]);
     if(pending.rowCount)throw new AppError(409,'Другое фото ещё сохраняется. Дождитесь результата.');
     const count=(await db.query("SELECT coalesce(sum(upload_attempts),0)::int AS count FROM qadam.order_photos WHERE order_id=$1 AND lease_until>clock_timestamp()-interval '1 hour'",[id])).rows[0].count;
     if(count>=12)throw new AppError(429,'Слишком много загрузок. Подождите или обратитесь к команде.');
-    if(old){await db.query("UPDATE qadam.order_photos SET state='UPLOADING',upload_attempts=CASE WHEN lease_until<clock_timestamp()-interval '1 hour' THEN 1 ELSE upload_attempts+1 END,lease_until=clock_timestamp()+interval '1 minute' WHERE id=$1",[old.id]);return{done:false,id:old.id,number:order.number};}
+    if(old){await db.query("UPDATE qadam.order_photos SET state='UPLOADING',upload_attempts=CASE WHEN lease_until<clock_timestamp()-interval '1 hour' THEN 1 ELSE upload_attempts+1 END,lease_until=clock_timestamp()+interval '1 minute' WHERE id=$1",[old.id]);return{done:false,id:old.id,number:order.number,routeVersion:order.route_version};}
     const saved=await db.query(`INSERT INTO qadam.order_photos(order_id,courier_id,assignment_version,request_key,content_hash,chat_id,byte_size,width,height)
       VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING id`,[id,actor.id,order.assignment_version,data.requestKey,hash,storageChat(),image.bytes.length,image.width,image.height]);
-    return{done:false,id:saved.rows[0].id,number:order.number};
+    return{done:false,id:saved.rows[0].id,number:order.number,routeVersion:order.route_version};
   });
   if(reservation.done)return{ok:true};
   try{
@@ -56,7 +58,7 @@ export async function uploadOrderPhoto(actor:User,id:string,input:unknown,storag
     if(stored.chatId!==storageChat()||!stored.fileId||stored.fileId.length>512||!Number.isSafeInteger(stored.messageId)||stored.messageId<=0)throw new AppError(503,'Фото не сохранилось. Повторите попытку.');
     await transaction(async db=>{
       await lockCouriers(db,[actor.id]);await requireCourierAccess(db,actor.id);const order=await lockedOrder(db,id);
-      if(order.courier_id!==actor.id||order.assignment_version!==data.expectedVersion||order.status!=='IN_TRANSIT')throw new AppError(409,'Назначение или статус изменились. Обновите заказ.');
+      if(order.courier_id!==actor.id||order.assignment_version!==data.expectedVersion||order.route_version!==reservation.routeVersion||order.status!=='IN_TRANSIT')throw new AppError(409,'Назначение, адрес или статус изменились. Обновите заказ.');
       await db.query("UPDATE qadam.order_photos SET state='RETIRED' WHERE order_id=$1 AND assignment_version=$2 AND state='READY' AND id<>$3",[id,order.assignment_version,reservation.id]);
       await db.query("UPDATE qadam.order_photos SET state='READY',file_id=$2,message_id=$3,lease_until=clock_timestamp(),expires_at=clock_timestamp()+interval '30 days' WHERE id=$1 AND state='UPLOADING'",[reservation.id,stored.fileId,stored.messageId]);
     });
@@ -69,11 +71,18 @@ export async function readOrderPhoto(actor:User,id:string,storage:PhotoStorage=t
   if(!row?.file_id||!row.available)throw new AppError(410,'Фото больше не доступно. История доставки сохранена.');
   const image=await normalisePhoto(await storage.download(row.file_id));
   // Recheck after provider I/O: a former courier cannot finish an in-flight download after reassignment.
-  const current=await privateOrder(db,actor,id);if(current.assignment_version!==order.assignment_version)throw new AppError(409,'Назначение изменилось. Обновите заказ.');
+  const current=await privateOrder(db,actor,id);if(current.assignment_version!==order.assignment_version||current.route_version!==order.route_version)throw new AppError(409,'Назначение или адрес изменились. Обновите заказ.');
   if(!(await db.query("SELECT 1 FROM qadam.order_photos WHERE id=$1 AND state='READY' AND file_id=$2 AND expires_at>clock_timestamp()",[row.id,row.file_id])).rowCount)throw new AppError(410,'Фото больше не доступно. История доставки сохранена.');
   return image.bytes;
 }
 export async function completeOrder(actor:User,id:string,input:unknown){
+  if(handoffsEnabled()){
+    // All callers of the old endpoint use the same mandatory dropoff guard.
+    const {confirmHandoff}=await import('./order-handoffs');
+    const parsed=z.object({...actionFields,expectedRouteVersion:z.number().int().min(0),handedOver:z.literal(true),code:z.string().regex(/^\d{6}$/)}).strict().safeParse(input);
+    if(!parsed.success)throw new AppError(400,'Откройте Qadam заново и введите код из 6 цифр.');
+    return confirmHandoff(actor,id,{...parsed.data,stage:'DROPOFF'});
+  }
   const data=parseTrust(completionSchema,input);
   // Legacy orders with no code must not require a configured encryption key.
   const hash=data.code?completionFingerprint(data):createHash('sha256').update(JSON.stringify(data)).digest('hex');

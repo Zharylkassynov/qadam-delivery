@@ -4,6 +4,7 @@ import { AppError } from './errors';
 import { getSession, sessionCookie } from './auth';
 import { appOrigin } from './deployment-config';
 import { allowedAppOrigins } from './app-origins';
+import {ensureHandoffEnforcement} from './handoff-activation';
 
 export const json = (body: unknown, status = 200) => NextResponse.json(body, {
   status, headers: { 'Cache-Control': 'private, no-store', Vary: 'Cookie, Authorization' },
@@ -13,6 +14,7 @@ export async function handle(work: () => Promise<Response>) {
   try { return await work(); }
   catch (error) {
     if (error instanceof AppError) return json({ error: error.message }, error.status);
+    if(error&&typeof error==='object'&&'constraint' in error&&error.constraint==='qadam_handoff_required')return json({error:'Обновите Qadam и подтвердите передачу кодом у адреса.'},409);
     if (error instanceof ZodError) return json({ error: 'Проверьте поля: адреса от 5 символов, имя от 2 символов и корректный телефон.' }, 400);
     if (error instanceof SyntaxError) return json({ error: 'Некорректный JSON.' }, 400);
     // Log a code, never a connection string, password or request body.
@@ -38,6 +40,7 @@ export function requestToken(request: Request) {
 export async function requireUser(request: Request) {
   const user = await getSession(requestToken(request));
   if (!user) throw new AppError(401, 'Войдите в аккаунт.');
+  await ensureHandoffEnforcement();
   return user;
 }
 

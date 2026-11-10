@@ -43,10 +43,11 @@ export type Order = {
   parcelType?:import('./order-details').ParcelType|null;fragile?:boolean;surprise?:boolean;urgent?:boolean;
   cardText?:string|null;businessName?:string|null;pickupDetails?:string|null;
   deliverAfter?:string|null;deliverBefore?:string|null;
-  photoRequired?:boolean;codeRequired?:boolean;assignmentVersion?:number;
+  photoRequired?:boolean;codeRequired?:boolean;assignmentVersion?:number;routeVersion?:number;handoffRequired?:boolean;
   pickupDistanceM?:number|null;deliveryDistanceM?:number|null;
 };
-export type OrderTrust={photoRequired:boolean;codeRequired:boolean;assignmentVersion:number;photo:{state:'READY'|'EXPIRED';expiresAt:string}|null;attemptsRemaining:number|null;rating?:{score:number;comment:string;createdAt:string}|null;canResetCode:boolean};
+export type HandoffInfo={required:true;stage:'PICKUP'|'DROPOFF';routeVersion:number;ready:boolean;message:string;distanceM:number|null;codeReady:boolean;attemptsRemaining:number|null;expiresAt:string|null;missingPickup:boolean;missingDestination:boolean};
+export type OrderTrust={photoRequired:boolean;codeRequired:boolean;assignmentVersion:number;photo:{state:'READY'|'EXPIRED';expiresAt:string}|null;attemptsRemaining:number|null;rating?:{score:number;comment:string;createdAt:string}|null;canResetCode:boolean;handoff?:HandoffInfo};
 
 export const adminOrderFilters = ['all', 'unassigned', 'active', 'history'] as const;
 export type AdminOrderFilter = typeof adminOrderFilters[number];

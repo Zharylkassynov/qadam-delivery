@@ -13,15 +13,16 @@ export async function requireCourierAccess(db:Db,id:string){
     AND (u.role='COURIER' OR EXISTS(SELECT 1 FROM qadam.courier_applications a WHERE a.user_id=u.id AND a.status='APPROVED'))`,[id]);
   if(!row.rowCount)throw new AppError(403,'Курьерский доступ недоступен. Обратитесь к команде Qadam.');
 }
-export type TrustOrder={id:string;number:string;customer_id:string;courier_id:string|null;status:Status;photo_required:boolean;code_required:boolean;assignment_version:number;price_kzt:number|null;deliver_before:Date|null};
+export type TrustOrder={id:string;number:string;customer_id:string;courier_id:string|null;status:Status;photo_required:boolean;code_required:boolean;assignment_version:number;price_kzt:number|null;deliver_before:Date|null;route_version:number;custody_assignment_version:number|null;custody_at:Date|null;pickup_latitude:number|null;pickup_longitude:number|null;destination_latitude:number|null;destination_longitude:number|null};
+const handoffColumns='route_version,custody_assignment_version,custody_at,pickup_latitude,pickup_longitude,destination_latitude,destination_longitude';
 export async function lockedOrder(db:Db,id:string):Promise<TrustOrder>{
   if(!z.uuid().safeParse(id).success)throw new AppError(400,'Некорректный номер заказа.');
-  const row=(await db.query('SELECT id,number::text,customer_id,courier_id,status,photo_required,code_required,assignment_version,price_kzt,deliver_before FROM qadam.orders WHERE id=$1 FOR UPDATE',[id])).rows[0];
+  const row=(await db.query(`SELECT id,number::text,customer_id,courier_id,status,photo_required,code_required,assignment_version,price_kzt,deliver_before,${handoffColumns} FROM qadam.orders WHERE id=$1 FOR UPDATE`,[id])).rows[0];
   if(!row)throw new AppError(404,'Заказ не найден.');return row;
 }
 export async function privateOrder(db:Db,actor:User,id:string):Promise<TrustOrder>{
   if(!z.uuid().safeParse(id).success)throw new AppError(400,'Некорректный номер заказа.');
-  const row=(await db.query(`SELECT o.id,o.number::text,o.customer_id,o.courier_id,o.status,o.photo_required,o.code_required,o.assignment_version,o.price_kzt,o.deliver_before,
+  const row=(await db.query(`SELECT o.id,o.number::text,o.customer_id,o.courier_id,o.status,o.photo_required,o.code_required,o.assignment_version,o.price_kzt,o.deliver_before,${handoffColumns.split(',').map(c=>`o.${c}`).join(',')},
     EXISTS(SELECT 1 FROM qadam.administrators a JOIN qadam.users u ON u.id=a.user_id WHERE a.user_id=$2 AND u.active) AS admin
     FROM qadam.orders o JOIN qadam.users viewer ON viewer.id=$2 AND viewer.active WHERE o.id=$1`,[id,actor.id])).rows[0];
   if(!row)throw new AppError(404,'Заказ недоступен.');

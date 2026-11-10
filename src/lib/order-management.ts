@@ -74,7 +74,7 @@ export async function manageOrder(actor:User,id:string,input:unknown){
         if(!car.rowCount)throw new AppError(409,'Для этого заказа нужен одобренный автокурьер.');phone=await requirePhone(courier,db);
       }
       const status:Status=['PICKED_UP','IN_TRANSIT'].includes(order.status)?order.status:'ACCEPTED';
-      await db.query('UPDATE qadam.orders SET courier_id=$2,courier_phone=$3,status=$4,assignment_version=assignment_version+1,updated_at=clock_timestamp() WHERE id=$1',[id,data.courierId,phone,status]);
+      await db.query("UPDATE qadam.orders SET courier_id=$2,courier_phone=$3,status=$4,assignment_version=assignment_version+1,custody_assignment_version=CASE WHEN $4 IN ('PICKED_UP','IN_TRANSIT') THEN assignment_version+1 ELSE NULL END,custody_at=CASE WHEN $4 IN ('PICKED_UP','IN_TRANSIT') THEN coalesce(custody_at,clock_timestamp()) ELSE NULL END,updated_at=clock_timestamp() WHERE id=$1",[id,data.courierId,phone,status]);
       await db.query('DELETE FROM qadam.courier_locations WHERE order_id=$1',[id]);
       await db.query("UPDATE qadam.order_photos SET state='RETIRED' WHERE order_id=$1 AND state IN ('READY','UPLOADING')",[id]);
       if(order.courier_id)await rotateCode(db,id);

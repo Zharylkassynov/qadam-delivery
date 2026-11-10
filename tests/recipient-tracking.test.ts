@@ -113,7 +113,8 @@ test('cancelled deliveries hide identity and GPS, and expire 24 hours after thei
   const delivery=await publicRecipientDelivery(f.token);assert.equal(delivery.status,'CANCELLED');assert.equal(delivery.location,null);assert.equal(delivery.courierName,null);
   await database().query("UPDATE qadam.order_events SET created_at=now()-interval '25 hours' WHERE order_id=$1 AND status='CANCELLED'",[f.order.id]);await denied(publicRecipientDelivery(f.token),404);
 });
-test('invalid secrets and maps are rate limited and counters persist after rejected requests',async()=>{
+test('invalid secrets and maps are rate limited and counters persist after rejected requests',async context=>{
+  const now=Date.now();context.mock.method(Date,'now',()=>now);
   const request=new Request('http://127.0.0.1:3100/api/recipient-tracking');
   for(let i=0;i<60;i++)await takeRecipientBudget(request,'invalid');
   await denied(takeRecipientBudget(request,'invalid'),429);

@@ -25,7 +25,9 @@ import {api} from '../lib/client-api';
 import {OrderTrustPanel} from './order-trust';
 import {CourierRelease,DeliveryHandoff} from './delivery-handoff';
 import {OrderLocationStream} from './order-location-stream';
-import {useCourierPresence} from './courier-presence';
+import {CourierGpsStatus,useCourierPresence} from './courier-presence';
+import {HandoffCodes,HandoffStart} from './handoff-codes';
+import {OrderNavigation} from './order-navigation';
 import {confirmAction} from '../lib/telegram-ui';
 import {CourierHomeScreen} from './telegram-shell';
 import {freshLocation} from '../lib/geo-distance';
@@ -52,7 +54,8 @@ export function DeliveryWorkspace(props: Props) {
   const [point, setPoint] = useState<MapPoint | null>(null);
   const [pointAddress, setPointAddress] = useState('');
   const [pointMode, setPointMode] = useState<AddressPickerMode>('search');
-  const [pointOrigin, setPointOrigin] = useState<'home' | 'create' | 'business'>('home');
+  const [pointOrigin, setPointOrigin] = useState<'home' | 'create' | 'business' | 'detail'>('home');
+  const [pointReason,setPointReason]=useState('');
   const [pointSequence, setPointSequence] = useState(false);
   const [pointSession, setPointSession] = useState(0);
   const [creatingNew, setCreatingNew] = useState(false);
@@ -64,8 +67,10 @@ export function DeliveryWorkspace(props: Props) {
   const [businessValidation,setBusinessValidation]=useState('');
   const [pickupSource,setPickupSource]=useState<'auto'|'shop'|'other'|'repeat'>('auto');
   const [repeated,setRepeated]=useState(false);
-  const [proofEnabled,setProofEnabled]=useState<boolean|null>(null),[proofError,setProofError]=useState(''),[proofRetry,setProofRetry]=useState(0);
-  useEffect(()=>{let alive=true;const controller=new AbortController();void api<{enabled:boolean}>('/api/delivery-proof',undefined,controller.signal).then(data=>{if(alive){setProofEnabled(data.enabled);setProofError('');}}).catch(e=>{if(alive)setProofError(e instanceof Error?e.message:'Не удалось проверить условия вручения.');});return()=>{alive=false;controller.abort();};},[proofRetry]);
+  // Address entry remains usable while capabilities load; creation is blocked
+  // until the response arrives, and the server always enforces both points.
+  const [proofEnabled,setProofEnabled]=useState<boolean|null>(null),[handoffs,setHandoffs]=useState(false),[proofError,setProofError]=useState(''),[proofRetry,setProofRetry]=useState(0);
+  useEffect(()=>{let alive=true;const controller=new AbortController();void api<{enabled:boolean;handoffsEnabled?:boolean}>('/api/delivery-proof',undefined,controller.signal).then(data=>{if(alive){setProofEnabled(data.enabled);setHandoffs(data.handoffsEnabled!==false);setProofError('');}}).catch(e=>{if(alive)setProofError(e instanceof Error?e.message:'Не удалось проверить условия вручения.');});return()=>{alive=false;controller.abort();};},[proofRetry]);
   const pricing=useOrderQuote(view==='review',draft);
   const needsPhone=(pricing.enabled===true||!!draft.businessName||draft.surprise)&&!phone.profile.phoneVerified;
   const bodyRef = useRef<HTMLElement>(null);
@@ -101,7 +106,7 @@ export function DeliveryWorkspace(props: Props) {
     setView(props.initialScreen === 'adminOrders' && user.isAdmin ? 'adminOrders' : 'detail');
   }, [props.initialOrderId, props.initialScreen, user.isAdmin]);
   useEffect(() => { props.onDetailChange(view === 'detail'||view==='handoff' ? selected : null); }, [view, selected, props.onDetailChange]);
-  useEffect(()=>{if(view==='handoff'&&detail&&(detail.courierId!==user.id||detail.status!=='IN_TRANSIT'))setView('detail');},[view,detail?.courierId,detail?.status,user.id]);
+  useEffect(()=>{if(view==='handoff'&&detail&&(detail.courierId!==user.id||!(detail.handoffRequired?['ACCEPTED','PICKED_UP','IN_TRANSIT'].includes(detail.status):detail.status==='IN_TRANSIT')))setView('detail');},[view,detail?.courierId,detail?.status,detail?.handoffRequired,user.id]);
 
   function navigate(target: View) {
     if (busy||business.busy) return;
@@ -142,13 +147,22 @@ export function DeliveryWorkspace(props: Props) {
   }
   function newDelivery() {const p=business.profile;setRepeated(false);setPickupSource(p?'shop':'other');setDraft({...emptyDraft,...(p?{pickupAddress:p.pickupAddress,pickupPoint:p.pickupPoint,pickupDetails:p.pickupDetails,businessName:p.name}:{})});setCreatingNew(true);navigate('home');}
   function repeat(order:Order){setDraft(repeatDraft(order));setPickupSource('repeat');setRepeated(true);setCreatingNew(true);navigate('create');}
-  function confirmAddress() {
+  async function confirmAddress() {
     if (busy || pointAddress.trim().length < 5 || pointAddress.trim().length > 200 || (pointMode === 'map' && !point)) return;
+    if(handoffs&&pointMode==='search'&&!point){setPointMode('map');return;}
+    if(pointOrigin==='detail'){
+      if(!detail||!point||pointReason.trim().length<5)return;
+      if(await props.onMutate(`/api/orders/${detail.id}/handoff-point`,{requestKey:crypto.randomUUID(),expectedVersion:detail.assignmentVersion??0,expectedRouteVersion:detail.routeVersion??0,stage:pointKind==='pickup'?'PICKUP':'DROPOFF',point,address:pointAddress.trim(),reason:pointReason.trim()},'Точка сохранена. Прежние коды отключены.'))navigate('detail');
+      return;
+    }
     if(pointOrigin==='business'){if(!point){setBusinessValidation('Выберите точку входа на карте.');return;}setBusinessDraft(current=>({...current,pickupPoint:point,pickupAddress:pointAddress.trim()}));navigate('business');return;}
     if(pointKind==='pickup')setPickupSource('other');
     setDraft((current) => ({ ...current, [`${pointKind}Point`]: point, [`${pointKind}Address`]: pointAddress.trim(),pilotParcelConfirmed:false,...(pointKind==='pickup'?{businessName:null,pickupDetails:''}:{}) }));
     if (pointSequence && pointKind === 'pickup' && draft.destinationAddress.trim().length < 5) editAddress('destination', pointOrigin, true);
     else navigate(pointOrigin);
+  }
+  function repairPoint(kind:'pickup'|'destination'){
+    if(!detail)return;setPointKind(kind);setPoint(detail[`${kind}Point`]);setPointAddress(detail[`${kind}Address`]);setPointMode('search');setPointOrigin('detail');setPointReason('Уточнение точки для передачи');setPointSequence(false);setPointSession(n=>n+1);navigate('point');
   }
   function back() {
     if(view==='phone'){navigate(phoneReturn);return;}
@@ -160,6 +174,7 @@ export function DeliveryWorkspace(props: Props) {
     if (await props.onMutate(`/api/orders/${order.id}/accept`, {shareContact:true}, 'Заказ принят. Заберите посылку у отправителя.')) setView('detail');
   }
   async function advance(order: Order) {
+    if(order.handoffRequired){navigate('handoff');return;}
     const target = nextStatus[order.status];
     if(target==='DELIVERED'&&(proofEnabled||order.photoRequired||order.codeRequired)){navigate('handoff');return;}
     if (target) await props.onMutate(`/api/orders/${order.id}/status`, { status: target }, target === 'DELIVERED' ? 'Доставка завершена. Заказ сохранён в истории.' : 'Статус обновлён. Клиент увидит изменение автоматически.');
@@ -186,7 +201,7 @@ export function DeliveryWorkspace(props: Props) {
   if (view === 'couriers') return <CourierDirectory user={user} onBack={() => navigate('profile')}/>;
   if (view === 'adminApplications') return <CourierApplicationAdmin user={user} onBack={() => navigate('profile')}/>;
   if (view === 'adminOrders') return <AdminOrders user={user} initialOrderId={props.initialOrderId} onBack={() => navigate('profile')}/>;
-  if(view==='handoff'&&detail&&detail.courierId===user.id&&detail.status==='IN_TRANSIT')return <DeliveryHandoff key={`${detail.id}:${detail.assignmentVersion}`} order={detail} busy={busy} error={error} onBack={()=>navigate('detail')} onComplete={async body=>{const ok=await props.onMutate(`/api/orders/${detail.id}/complete`,body,'Доставка завершена. Подтверждение сохранено.');if(ok)setView('detail');return ok;}}/>;
+  if(view==='handoff'&&detail&&detail.courierId===user.id&&(detail.handoffRequired?['ACCEPTED','PICKED_UP','IN_TRANSIT'].includes(detail.status):detail.status==='IN_TRANSIT'))return <DeliveryHandoff key={`${detail.id}:${detail.assignmentVersion}:${detail.routeVersion}:${detail.status}`} order={detail} busy={busy} error={error} onBack={()=>navigate('detail')} onComplete={async body=>{const ok=await props.onMutate(`/api/orders/${detail.id}/${detail.handoffRequired?'handoff':'complete'}`,body,detail.status==='ACCEPTED'?'Забор подтверждён. Можно ехать к получателю.':'Доставка завершена.');if(ok)setView('detail');return ok;}}/>;
 
   return <div className="app-shell">
     <aside className="sidebar"><Brand/><div className="sidebar-role">{customer ? 'Клиент' : 'Курьер'} · {serviceCity}</div>
@@ -215,18 +230,18 @@ export function DeliveryWorkspace(props: Props) {
           {view === 'orders' && <><h1 className="sr-only" tabIndex={-1}>Мои заказы</h1>{!customer && <h2 className="list-title">Ваши доставки</h2>}<div className="choice-row order-filters" role="group" aria-label="Фильтр заказов">{(customer ? ['all', 'active', 'history'] as const : ['active', 'history'] as const).map((value) => <button type="button" className={`choice ${filter === value ? 'selected' : ''}`} aria-pressed={filter === value} key={value} onClick={() => setFilter(value)} disabled={busy}>{{ all: 'Все', active: 'Активные', history: 'Завершённые' }[value]}</button>)}</div>
             {loading ? <Skeletons/> : visible.length ? <div className="order-list">{visible.map(card)}</div> : <EmptyState title={filter === 'history' ? 'История пока пуста' : 'Заказов пока нет'} action={customer ? <Button variant="secondary" onClick={newDelivery}>Заказать доставку</Button> : refresh}>{filter === 'history' ? 'Завершённые и отменённые доставки сохранятся здесь.' : customer ? 'Создайте первую доставку, чтобы передать посылку.' : 'Ваши принятые доставки появятся здесь.'}</EmptyState>}<SyncTime value={syncedAt} offline={!!syncError}/></>}
 
-          {view === 'create' && customer && <>{repeated&&<Feedback title="Данные из прошлого заказа">Проверьте адреса и получателя. Прежние время, стоимость, срочность и открытка не перенесены.</Feedback>}<OrderForm draft={draft} onChange={setDraft} onReview={() => navigate('review')} onPoint={(kind) => editAddress(kind, 'create')} busy={busy}/></>}
-          {view === 'point' && customer && <AddressPicker key={pointSession} kind={pointKind} address={pointOrigin==='business'?businessDraft.pickupAddress:draft[`${pointKind}Address`]} pickupAddress={draft.pickupAddress} point={point} onChange={setPoint} onAddress={setPointAddress} mode={pointMode} onModeChange={setPointMode}/>}
+          {view === 'create' && customer && <>{repeated&&<Feedback title="Данные из прошлого заказа">Проверьте адреса и получателя. Прежние время, стоимость, срочность и открытка не перенесены.</Feedback>}<OrderForm requirePoints={handoffs} draft={draft} onChange={setDraft} onReview={() => navigate('review')} onPoint={(kind) => editAddress(kind, 'create')} busy={busy}/></>}
+          {view === 'point' && customer && <><AddressPicker key={pointSession} kind={pointKind} address={pointOrigin==='detail'?detail?.[`${pointKind}Address`]??'':pointOrigin==='business'?businessDraft.pickupAddress:draft[`${pointKind}Address`]} pickupAddress={pointOrigin==='detail'?detail?.pickupAddress??'':draft.pickupAddress} point={point} onChange={setPoint} onAddress={setPointAddress} mode={pointMode} onModeChange={setPointMode}/>{pointOrigin==='detail'&&<div className="field"><label htmlFor="point-correction-reason">Причина уточнения</label><input id="point-correction-reason" minLength={5} maxLength={500} value={pointReason} onChange={e=>setPointReason(e.target.value)}/></div>}</>}
           {view === 'review' && customer && <OrderReview draft={draft} onEdit={() => navigate('create')} busy={busy} pricing={<>
             {pricing.enabled===true&&draft.timing==='window'&&<Feedback title="Расчёт для будущей даты пока недоступен" tone="warning">{futurePriceMessage}</Feedback>}
             {pricing.enabled===false?<PriceNote/>:<><p className="muted">Автомобиль</p>{pricing.enabled===true&&<section className="review-section"><h2>Условия посылки</h2><label className="courier-consent"><input type="checkbox" checked={draft.pilotParcelConfirmed} disabled={busy} onChange={event=>setDraft(current=>({...current,pilotParcelConfirmed:event.target.checked}))}/><span>{deliveryPilot.parcelStatement}</span></label><p className="muted payment-hint">Доставка до двери в зоне сервиса. Включено по 5 минут на получение и вручение. Автоматических доплат нет. <a href="/rules" target="_blank" rel="noopener noreferrer">Правила доставки</a></p></section>}{pricing.enabled!==true||draft.pilotParcelConfirmed?<QuoteSummary quote={pricing.quote} previousPrice={pricing.previousPrice} busy={pricing.busy} error={pricing.error} onRetry={pricing.retry} onExpired={pricing.expire}/>:<p className="muted">Подтвердите условия посылки, чтобы рассчитать стоимость.</p>}</>}
             <PaymentChoices payer={draft.payer} paymentMethod={draft.paymentMethod} disabled={busy} onChange={(field,value)=>setDraft(current=>({...current,[field]:value}))}/>
-            {proofError?<Feedback title={proofError} tone="error" role="alert" action={<Button variant="ghost" onClick={()=>setProofRetry(n=>n+1)}>Проверить условия</Button>}/>:proofEnabled===null?<p role="status">Проверяем условия вручения…</p>:proofEnabled&&<section className="review-section"><h2>Подтверждение вручения</h2><p className="muted">Курьер приложит фото упаковки в месте передачи. Доступ в Qadam — до 30 суток.</p><label className="courier-consent"><input type="checkbox" checked={draft.codeRequired} disabled={busy} onChange={e=>setDraft(current=>({...current,codeRequired:e.target.checked}))}/><span>Код при вручении<small className="field-hint">Получатель назовёт его курьеру после получения. Код передаёте вы.</small></span></label></section>}
+            {proofError?<Feedback title={proofError} tone="error" role="alert" action={<Button variant="ghost" onClick={()=>setProofRetry(n=>n+1)}>Проверить условия</Button>}/>:proofEnabled===null?<p role="status">Проверяем условия вручения…</p>:handoffs?<section className="review-section"><h2>Передача по коду</h2><p className="muted">Один код для забора, другой — получателю. Сообщайте их при передаче посылки.</p>{proofEnabled&&<p className="field-hint">Курьер также приложит фото упаковки при вручении.</p>}</section>:proofEnabled&&<section className="review-section"><h2>Подтверждение вручения</h2><p className="muted">Курьер приложит фото упаковки в месте передачи. Доступ в Qadam — до 30 суток.</p><label className="courier-consent"><input type="checkbox" checked={draft.codeRequired} disabled={busy} onChange={e=>setDraft(current=>({...current,codeRequired:e.target.checked}))}/><span>Код при вручении<small className="field-hint">Получатель назовёт его курьеру после получения. Код передаёте вы.</small></span></label></section>}
             <p className="muted">Подтверждённый номер из Telegram будет доступен курьеру после принятия заказа.{pricing.enabled&&!phone.profile.phoneVerified?' Перед созданием подтвердите свой номер для связи.':''}</p>
           </>}/>}
           {view==='phone'&&<PhoneProfilePanel profile={phone.profile} busy={phone.busy} notice={phone.notice}/>}
           {view==='business'&&customer&&<BusinessProfilePanel profile={business.profile} draft={businessDraft} onChange={setBusinessDraft} mode={businessMode} onMode={changeBusinessMode} phone={phone.profile} onPhone={()=>{setPhoneReturn('business');navigate('phone');}} onPoint={businessAddress} loading={business.loading} busy={business.busy} error={businessValidation||business.error} onRetry={business.refresh}/>}
-          {view === 'detail' && (detail ? <OrderDetail key={detail.id} order={detail} user={user} onCancel={async () => { if (await confirmAction(`Отменить заказ ${orderNumber(detail)}? После отмены курьеры больше не смогут его принять.`)) await props.onMutate(`/api/orders/${detail.id}/status`, { status: 'CANCELLED' }, 'Заказ отменён и сохранён в истории.'); }} onReleased={()=>{props.onRefresh();navigate('orders');}} busy={busy}/> : <EmptyState title="Заказ больше недоступен" action={<Button variant="secondary" onClick={() => navigate('home')}>К списку заказов</Button>}>Возможно, его уже принял другой курьер. Обновите список и выберите другую доставку.</EmptyState>)}
+          {view === 'detail' && (detail ? <OrderDetail key={detail.id} order={detail} user={user} onPointRepair={repairPoint} onCancel={async () => { if (await confirmAction(`Отменить заказ ${orderNumber(detail)}? После отмены курьеры больше не смогут его принять.`)) await props.onMutate(`/api/orders/${detail.id}/status`, { status: 'CANCELLED' }, 'Заказ отменён и сохранён в истории.'); }} onReleased={()=>{props.onRefresh();navigate('orders');}} busy={busy}/> : <EmptyState title="Заказ больше недоступен" action={<Button variant="secondary" onClick={() => navigate('home')}>К списку заказов</Button>}>Возможно, его уже принял другой курьер. Обновите список и выберите другую доставку.</EmptyState>)}
           {view === 'profile' && <><h1 className="sr-only" tabIndex={-1}>Профиль</h1><div className="profile-card"><span className="avatar large">{initials(user.name)}</span><h2>{user.name}</h2><p className="muted">{customer ? 'Клиент' : 'Курьер'}{user.telegramId && ' · Telegram'}</p><p>{user.telegramId ? `Telegram ID: ${user.telegramId}` : user.email}</p></div><div className="profile-stats"><div><strong>{activeOrders.length}</strong><span>Активные</span></div><div><strong>{completed.length}</strong><span>Доставлены</span></div></div>
             {!customer&&props.telegram&&<CourierHomeScreen/>}
             {customer&&<Button variant="secondary" onClick={()=>{changeBusinessMode('view');business.refresh();navigate('business');}}>Мой магазин</Button>}
@@ -239,11 +254,11 @@ export function DeliveryWorkspace(props: Props) {
       {hasFooter&&<footer data-telegram-actions key={view} className={`sticky-action ${view==='point'?'address-action':''}`}>
         {view==='business'?businessMode==='delete'?<><Button className="wide" disabled={business.busy} onClick={()=>void business.remove().then(ok=>{if(ok){setBusinessMode('view');setPickupSource('other');setDraft(current=>({...current,businessName:null}));}})}>{business.busy?'Удаляем…':'Удалить профиль'}</Button><Button variant="secondary" className="wide" disabled={business.busy} onClick={()=>changeBusinessMode('view')}>Оставить магазин</Button></>:businessMode==='edit'?<Button className="wide" disabled={business.busy||business.loading} onClick={()=>void saveBusiness()}>{business.busy?'Сохраняем…':'Сохранить магазин'}</Button>:<Button className="wide" disabled={business.loading||!!business.error} onClick={()=>business.profile?newDelivery():changeBusinessMode('edit')}>{business.profile?'Заказать из магазина':'Добавить магазин'}</Button>
         :view==='phone'?<Button className="wide" disabled={phone.busy} onClick={()=>phone.profile.phoneVerified?navigate(phoneReturn):void phone.request()}>{phone.busy?'Проверяем номер…':phone.profile.phoneVerified?phoneReturn==='business'?'Вернуться к магазину':phoneReturn==='profile'?'Вернуться в профиль':'Вернуться к заказу':'Поделиться номером'}</Button>
-        :view==='point'?<Button className="wide" disabled={busy||pointAddress.trim().length<5||pointAddress.trim().length>200||((pointMode==='map'||pointOrigin==='business')&&!point)} onClick={confirmAddress}>{pointMode==='map'?'Подтвердить точку':'Выбрать адрес'}</Button>
+        :view==='point'?<Button className="wide" disabled={busy||pointAddress.trim().length<5||pointAddress.trim().length>200||((pointMode==='map'||pointOrigin==='business'||pointOrigin==='detail')&&!point)||(pointOrigin==='detail'&&pointReason.trim().length<5)} onClick={()=>void confirmAddress()}>{pointMode==='map'?'Подтвердить точку':'Выбрать адрес'}</Button>
         :view==='create'?<Button form="delivery-form" type="submit" className="wide" disabled={busy}>Проверить заказ</Button>
         :view==='review'?pricing.enabled===true&&draft.timing==='window'?<Button className="wide" disabled={busy} onClick={()=>{setDraft(current=>({...current,timing:'soon',pilotParcelConfirmed:false}));navigate('create');}}>Изменить время</Button>:<Button className="wide" onClick={()=>void confirmOrder()} disabled={busy||!pricing.ready||proofEnabled===null||!!proofError}>{busy?'Сохраняем…':needsPhone?'Подтвердить телефон':pricing.enabled?pricing.quote?`Создать заказ за ${formatMoney(pricing.quote.priceKzt)}`:'Рассчитываем стоимость…':'Подтвердить заказ'}</Button>
         :completedDetail?<>{customer&&detail&&<Button className="wide" disabled={busy} onClick={()=>repeat(detail)}>Повторить заказ</Button>}<Button className="wide" variant="secondary" onClick={history} disabled={busy}>В историю заказов</Button></>
-        :actionable&&detail?<Button className="wide" disabled={busy||(detail.status==='SEARCHING_FOR_COURIER'&&(windowExpired(detail)||!courierPresence.canAccept))} onClick={()=>void(detail.status==='SEARCHING_FOR_COURIER'?accept(detail):advance(detail))}>{busy?'Сохраняем…':detail.status==='SEARCHING_FOR_COURIER'?windowExpired(detail)?'Интервал истёк':detail.pricing?`Принять · ${formatMoney(detail.pricing.courierPayoutKzt)}`:'Принять заказ':actionLabels[detail.status]}</Button>:null}
+        :actionable&&detail?detail.handoffRequired&&detail.status!=='SEARCHING_FOR_COURIER'?<HandoffStart order={detail} busy={busy} onOpen={()=>void advance(detail)}/>:<Button className="wide" disabled={busy||(detail.status==='SEARCHING_FOR_COURIER'&&(windowExpired(detail)||!courierPresence.canAccept))} onClick={()=>void(detail.status==='SEARCHING_FOR_COURIER'?accept(detail):advance(detail))}>{busy?'Сохраняем…':detail.status==='SEARCHING_FOR_COURIER'?windowExpired(detail)?'Интервал истёк':detail.pricing?`Принять · ${formatMoney(detail.pricing.courierPayoutKzt)}`:'Принять заказ':actionLabels[detail.status]}</Button>:null}
       </footer>}
       {showNav && <nav className="mobile-nav" aria-label="Мобильная навигация">{navItems.map((item) => <button type="button" key={item.view} className={view === item.view ? 'current' : ''} aria-current={view === item.view ? 'page' : undefined} disabled={busy} onClick={() => navigate(item.view)}><Icon type={item.icon}/><span>{item.label}</span></button>)}</nav>}
     </div>
@@ -254,9 +269,10 @@ function SyncTime({ value, offline }: { value: string | null; offline: boolean }
   return <p className={`sync-time ${offline ? 'offline' : ''}`}>{offline ? 'Нет обновлений · показаны последние полученные данные' : value ? `Обновлено в ${new Intl.DateTimeFormat('ru-KZ', { hour: '2-digit', minute: '2-digit', timeZone: serviceTimezone }).format(new Date(value))}` : 'Подключаемся…'}</p>;
 }
 
-function OrderDetail({ order, user, busy, onCancel,onReleased }: { order: Order; user: User; busy: boolean; onCancel: () => Promise<void>;onReleased:()=>void }) {
+function OrderDetail({ order, user, busy, onCancel,onReleased,onPointRepair }: { order: Order; user: User; busy: boolean; onCancel: () => Promise<void>;onReleased:()=>void;onPointRepair:(kind:'pickup'|'destination')=>void }) {
   const customer = user.role === 'CUSTOMER';
   const complete = order.status === 'DELIVERED';
+  if(order.handoffRequired&&['ACCEPTED','PICKED_UP','IN_TRANSIT'].includes(order.status))return <FocusedOrderDetail order={order} user={user} onReleased={onReleased} onPointRepair={onPointRepair}/>;
   const heading = {
     CREATED: 'Заказ создан', SEARCHING_FOR_COURIER: customer ? 'Ищем курьера' : 'Новая доставка',
     ACCEPTED: customer ? 'Курьер назначен' : 'Заберите посылку', PICKED_UP: customer ? 'Посылка у курьера' : 'Посылка у вас',
@@ -281,6 +297,35 @@ function OrderDetail({ order, user, busy, onCancel,onReleased }: { order: Order;
     <Timeline order={order}/>
     {complete && <Recipient order={order}/>}
     {customer && ['CREATED', 'SEARCHING_FOR_COURIER'].includes(order.status) && <Button variant="danger" className="wide" disabled={busy} onClick={() => void onCancel()}>Отменить заказ</Button>}
+  </section>;
+}
+
+function FocusedOrderDetail({order,user,onReleased,onPointRepair}:{order:Order;user:User;onReleased:()=>void;onPointRepair:(kind:'pickup'|'destination')=>void}){
+  const owner=order.customerId===user.id,courier=user.role==='COURIER'&&order.courierId===user.id,pickup=order.status==='ACCEPTED';
+  const presence=useCourierPresence();
+  const needsLocationSetup=courier&&!!presence.status&&(!presence.status.consentCurrent||!presence.online);
+  const contactPhone=pickup||order.surprise?order.senderPhone:order.recipientPhone;
+  const contactName=pickup||order.surprise?order.customerName:order.recipientName;
+  return <section className={`order-detail focused-order ${courier?'focused-courier':'focused-customer'}`} aria-label="Детали заказа">
+    <div className="focused-heading"><Badge status={order.status}/><p>{orderNumber(order)}</p></div>
+    <div className="screen-heading"><h1 tabIndex={-1}>{courier?pickup?'Заберите посылку':'Доставьте получателю':pickup?'Курьер едет к вам':'Посылка в пути'}</h1>{!courier&&<p>{order.courierName||'Курьер'} · {pickup?'Код нужен при передаче':'Получатель подтвердит вручение кодом'}</p>}</div>
+    {needsLocationSetup&&<CourierGpsStatus/>}
+    {courier&&<>
+      <div className="delivery-target"><span className="delivery-target-letter" aria-hidden="true">{pickup?'А':'Б'}</span><div><p className="field-hint">{pickup?'Забрать':'Доставить'}</p><h2>{pickup?order.pickupAddress:order.destinationAddress}</h2>{pickup&&order.pickupDetails&&<p className="muted">{order.pickupDetails}</p>}</div></div>
+      <OrderNavigation order={order} user={user}/>
+      {contactPhone?<PhoneLink className="focused-contact" phone={contactPhone}><span><Icon type="phone"/>{order.surprise&&!pickup?'Позвонить отправителю':pickup?'Отправитель':'Получатель'}</span><strong>{contactName}</strong></PhoneLink>:<p className="field-hint">Номер отправителя не указан. <a href="https://t.me/zharlkssnv" target="_blank" rel="noopener noreferrer">Связаться с поддержкой</a></p>}
+      {order.surprise&&!pickup&&<p className="field-hint">Сюрприз · сначала свяжитесь с отправителем.</p>}
+      {order.notes&&<p className="focused-note">{order.notes}</p>}
+      {(order.fragile||order.urgent)&&<div className="focused-tags">{order.fragile&&<span>Хрупкое</span>}{order.urgent&&<span>Без задержки</span>}</div>}
+    </>}
+    {owner&&<OrderContacts order={order} customer/>}
+    <div className="focused-map"><OrderTracking order={order} user={user} focused/></div>
+    {owner&&(!order.pickupPoint||!order.destinationPoint)&&<Feedback title="Уточните точку передачи" tone="warning">{!order.pickupPoint&&pickup&&<Button variant="secondary" onClick={()=>onPointRepair('pickup')}>Точка отправителя</Button>}{!order.destinationPoint&&<Button variant="secondary" onClick={()=>onPointRepair('destination')}>Точка получателя</Button>}</Feedback>}
+    {owner&&<HandoffCodes key={`${order.id}:${order.assignmentVersion}:${order.routeVersion}:${pickup}`} order={order}/>}
+    {owner&&<details className="order-disclosure"><summary>Поделиться доставкой</summary><RecipientShare order={order}/></details>}
+    <details className="order-disclosure"><summary>{courier?'Детали заказа':'Адреса и условия'}</summary><div className="order-disclosure-body"><RouteCard pickup={order.pickupAddress} destination={order.destinationAddress}/><OrderRequirements order={order}/><SavedOrderPrice order={order} courier={courier}/><Recipient order={order}/>{courier&&!pickup&&<OrderContacts order={order} customer={false}/>}<Timeline order={order}/></div></details>
+    {courier&&<details className="order-disclosure"><summary>Другие действия</summary><div className="order-disclosure-body">{!needsLocationSetup&&<CourierGpsStatus/>}<OrderLocationStream key={`${order.id}:${order.assignmentVersion}`} order={order}/>{pickup&&<CourierRelease order={order} onReleased={onReleased}/>}</div></details>}
+    <a className="handoff-support" href="https://t.me/zharlkssnv" target="_blank" rel="noopener noreferrer">Нужна помощь?</a>
   </section>;
 }
 
