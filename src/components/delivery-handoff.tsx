@@ -5,6 +5,8 @@ import type {Order} from '../lib/types';
 import {ApplicationScreen} from './courier-onboarding';
 import {Button,Feedback,RouteCard,orderNumber} from './delivery-ui';
 import {useOrderTrust,useTrustAction} from './order-trust';
+import {CourierGpsStatus,useCourierPresence} from './courier-presence';
+import {formatDistance} from '../lib/geo-distance';
 
 async function preparePhoto(file:File){
   if(file.size>25*1024*1024)throw new Error('Выберите снимок размером до 25 МБ. Перед отправкой мы его сожмём.');
@@ -26,7 +28,7 @@ async function preparePhoto(file:File){
 }
 
 export function DeliveryHandoff({order,busy,error,onBack,onComplete}:{order:Order;busy:boolean;error:string;onBack:()=>void;onComplete:(body:Record<string,unknown>)=>Promise<boolean>}){
-  const data=useOrderTrust(order),upload=useTrustAction();
+  const data=useOrderTrust(order),upload=useTrustAction(),presence=useCourierPresence();
   const secure=!!order.handoffRequired,pickup=secure&&order.status==='ACCEPTED';
   const photoRequired=!pickup&&order.photoRequired;
   const [photo,setPhoto]=useState<Awaited<ReturnType<typeof preparePhoto>>|null>(null),[preview,setPreview]=useState(''),[preparing,setPreparing]=useState(false),[photoError,setPhotoError]=useState('');
@@ -34,7 +36,7 @@ export function DeliveryHandoff({order,busy,error,onBack,onComplete}:{order:Orde
   const camera=useRef<HTMLInputElement>(null),gallery=useRef<HTMLInputElement>(null),alive=useRef(true),completion=useRef<{signature:string;key:string}|null>(null);
   useEffect(()=>{alive.current=true;return()=>{alive.current=false;};},[]);
   useEffect(()=>{if(!photo){setPreview('');return;}const url=URL.createObjectURL(photo.blob);setPreview(url);return()=>URL.revokeObjectURL(url);},[photo?.blob]);
-  const working=busy||upload.busy||preparing;
+  const working=busy||upload.busy||preparing||(secure&&presence.busy);
   async function select(file:File|undefined){
     if(!file)return;setPreparing(true);setPhotoError('');
     try{const result=await preparePhoto(file);if(alive.current)setPhoto(result);}
@@ -54,7 +56,11 @@ export function DeliveryHandoff({order,busy,error,onBack,onComplete}:{order:Orde
   const codeReady=secure?/^\d{6}$/.test(code)&&!!data.trust?.handoff?.codeReady:!order.codeRequired||(/^\d{4}$/.test(code)&&(data.trust?.attemptsRemaining??0)>0);
   return <ApplicationScreen title={pickup?'Подтверждение забора':'Подтверждение вручения'} courier busy={working} onBack={onBack} actions={<Button className="wide" disabled={working||!data.trust||!!data.error||!photoReady||!codeReady||!handed||(secure&&!data.trust?.handoff?.ready)} onClick={()=>void complete()}>{busy?'Сохраняем…':pickup?'Подтвердить забор':'Завершить доставку'}</Button>}>
     <div className="screen-heading"><h1 tabIndex={-1}>{pickup?'Получите посылку':'Передайте посылку'}</h1><p>{secure?(pickup?order.pickupAddress:order.destinationAddress):`${orderNumber(order)} · Завершайте заказ только после вручения.`}</p></div>{!secure&&<RouteCard pickup={order.pickupAddress} destination={order.destinationAddress}/>}
-    {secure&&data.trust?.handoff&&!data.trust.handoff.ready&&<Feedback title={data.trust.handoff.message} tone="warning"/>}
+    {secure&&data.trust?.handoff&&!data.trust.handoff.ready&&<Feedback title={data.trust.handoff.message} tone="warning">{data.trust.handoff.distanceM!==null&&<p>До точки {pickup?'забора':'вручения'}: {formatDistance(data.trust.handoff.distanceM)}.</p>}</Feedback>}
+    {secure&&!data.trust?.handoff?.ready&&<div className="trust-section">{presence.online&&presence.status?.locationSharing&&presence.status.consentCurrent?<>
+      <Button variant="secondary" disabled={working} onClick={()=>void presence.refreshLocation().then(()=>data.reload())}>{presence.busy?'Обновляем позицию…':'Обновить позицию'}</Button>
+      {presence.geoError&&<Feedback title={presence.geoError} tone="error" role="alert"/>}
+    </>:<CourierGpsStatus/>}</div>}
     {error&&<Feedback title={error} tone="error" role="alert"/>}{data.error&&<Feedback title={data.error} tone="error" role="alert" action={<Button variant="ghost" onClick={data.reload}>Обновить подтверждение</Button>}/>}
     {data.loading&&!data.trust&&<p role="status">Проверяем требования заказа…</p>}
     {photoRequired?<section className="trust-section"><h2>Фото вручения</h2><p className="muted">Снимок упаковки в месте передачи. Без лиц и личных данных.</p>

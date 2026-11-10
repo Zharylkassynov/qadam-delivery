@@ -4,7 +4,6 @@ import {api} from '../lib/client-api';
 import type {Order} from '../lib/types';
 import {Button,Feedback} from './delivery-ui';
 import {useOrderTrust,useTrustAction} from './order-trust';
-import {useCourierPresence} from './courier-presence';
 
 export function HandoffCodes({order}:{order:Order}){
   const data=useOrderTrust(order),action=useTrustAction();
@@ -40,9 +39,7 @@ export function HandoffCodes({order}:{order:Order}){
 
 export function HandoffStart({order,busy,onOpen}:{order:Order;busy:boolean;onOpen:()=>void}){
   const data=useOrderTrust(order),pickup=order.status==='ACCEPTED';
-  const presence=useCourierPresence();
   return <div className="handoff-start">{data.error?<p data-telegram-keep className="field-error" role="alert">{data.error}</p>:data.trust?.handoff&&!data.trust.handoff.ready?<p data-telegram-keep className="field-hint" role="status">{data.trust.handoff.message}</p>:null}
-    <Button className="wide" disabled={busy||!data.trust?.handoff?.ready||!!data.error} onClick={onOpen}>{pickup?'Подтвердить забор':'Подтвердить вручение'}</Button>
-    {data.trust?.handoff&&!data.trust.handoff.ready&&data.trust.handoff.distanceM===null&&<Button variant="secondary" disabled={busy||presence.busy} onClick={()=>{presence.retry();data.reload();}}>Обновить позицию</Button>}
+    <Button className="wide" disabled={busy} onClick={onOpen}>{pickup?'Подтвердить забор':'Подтвердить вручение'}</Button>
   </div>;
 }

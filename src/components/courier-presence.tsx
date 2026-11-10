@@ -11,7 +11,7 @@ import {RecipientSharingConsent} from './recipient-sharing';
 
 type Phase='off'|'pending'|'live'|'permission'|'unavailable'|'network'|'paused';
 type Presence={status:CourierStatus|null;busy:boolean;error:string;phase:Phase;geoError:string;saved:string|null;
-  online:boolean;canAccept:boolean;wantsStart:boolean;cancelStart:()=>void;load:()=>Promise<void>;setOnline:(on:boolean)=>Promise<void>;enableLocation:(saveAuto?:boolean)=>Promise<void>;saveSettings:(data:Record<string,unknown>)=>Promise<boolean>;retry:()=>void;openSettings:()=>void};
+  online:boolean;canAccept:boolean;wantsStart:boolean;cancelStart:()=>void;load:()=>Promise<void>;setOnline:(on:boolean)=>Promise<void>;enableLocation:(saveAuto?:boolean)=>Promise<void>;refreshLocation:()=>Promise<boolean>;saveSettings:(data:Record<string,unknown>)=>Promise<boolean>;retry:()=>void;openSettings:()=>void};
 const Context=createContext<Presence|null>(null);
 export const useCourierPresence=()=>{const value=useContext(Context);if(!value)throw new Error('Courier presence provider missing');return value;};
 const foreground=()=>!document.hidden&&window.Telegram?.WebApp?.isActive!==false;
@@ -109,6 +109,24 @@ export function CourierPresenceProvider({user,children}:{user:User;children:Reac
     } catch(e) {if(alive.current){setPhase(e instanceof ApiError?'network':'permission');setGeoError(e instanceof Error?e.message:'Не удалось включить геолокацию.');}}
     finally {consentBusy.current=false;if(alive.current){setBusy(false);await load();setVersion(v=>v+1);}}
   }
+  async function refreshLocation(){
+    if(consentBusy.current||saving.current||!foreground()||!online||!status?.locationSharing||!status.consentCurrent)return false;
+    consentBusy.current=true;setBusy(true);setGeoError('');const generation=++geoGeneration.current;
+    try{
+      // Read on the click so Telegram can request device access immediately.
+      const fix=await currentLocation();
+      if(generation!==geoGeneration.current||!alive.current||!foreground())return false;
+      const data=await api<{location:CourierLocation}>('/api/courier/location',fix);
+      if(generation!==geoGeneration.current||!alive.current||!foreground())return false;
+      lastPublish.current=performance.now();setSaved(data.location.receivedAt);setPhase('live');return true;
+    }catch(e){
+      if(alive.current&&generation===geoGeneration.current){
+        if(e instanceof ApiError&&e.status===429){setPhase('live');return true;}
+        setPhase(e instanceof ApiError?'network':'permission');setGeoError(e instanceof Error?e.message:'Не удалось обновить позицию.');
+      }
+      return false;
+    }finally{consentBusy.current=false;if(alive.current){setBusy(false);await load();setVersion(v=>v+1);}}
+  }
   const retry=()=>{setVersion(v=>v+1);void load();};
   async function saveSettings(data:Record<string,unknown>){
     if(saving.current)return false;
@@ -120,7 +138,7 @@ export function CourierPresenceProvider({user,children}:{user:User;children:Reac
   const openSettings=()=>{const manager=nativeLocationManager();if(manager)manager.openSettings();else{setGeoError('Разрешите геолокацию в настройках сайта, затем нажмите «Повторить геолокацию».');}};
   // tick updates expiry even when a status request fails.
   void tick;
-  return <Context.Provider value={{status,busy,error,phase,geoError,saved,online,canAccept,wantsStart,cancelStart:()=>setWantsStart(false),load,setOnline,enableLocation,saveSettings,retry,openSettings}}>{children}</Context.Provider>;
+  return <Context.Provider value={{status,busy,error,phase,geoError,saved,online,canAccept,wantsStart,cancelStart:()=>setWantsStart(false),load,setOnline,enableLocation,refreshLocation,saveSettings,retry,openSettings}}>{children}</Context.Provider>;
 }
 
 function CourierGpsContent(){
