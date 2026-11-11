@@ -67,6 +67,7 @@ test('denied GPS requests no repeating permission dialogs and preserves the shif
     expect(await page.evaluate(()=>document.documentElement.dataset.locationRequests)).toBe('1');
     await page.clock.install();await page.clock.fastForward(20000);
     expect(await page.evaluate(()=>document.documentElement.dataset.locationRequests)).toBe('1');
+    await expect(page.getByRole('button',{name:'Открыть настройки геолокации'})).toBeVisible();
     await page.getByRole('button',{name:'Открыть настройки геолокации'}).click();expect(await page.evaluate(()=>document.documentElement.dataset.locationSettings)).toBe('opened');
     await page.reload();await expect(page.getByText('Не на линии',{exact:true})).toBeVisible();
     expect(await page.evaluate(()=>document.documentElement.dataset.locationRequests)).toBeUndefined();

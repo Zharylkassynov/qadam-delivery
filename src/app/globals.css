@@ -32,6 +32,7 @@
 .courier-offer-bottom>span:last-child{display:flex;align-items:center;gap:6px;flex-shrink:0}.courier-offer-bottom .icon{width:16px;height:16px}
 .offer-distance{font-size:12px;line-height:1.5;color:var(--muted)}
 .courier-offer-preview{gap:16px}.offer-payout{display:grid;gap:6px;padding:4px 0 8px}.offer-payout p{font-size:14px;color:var(--muted)}.offer-payout h1{font-size:32px;line-height:1.2;letter-spacing:-.7px;overflow-wrap:anywhere}
+.offer-payout h1:focus{outline:none}
 .offer-preview-route{padding:18px 16px;background:var(--surface);border:1px solid var(--line);border-radius:12px;gap:20px}.offer-preview-route .address-row p{font-size:18px;line-height:1.4;overflow-wrap:anywhere}
 .offer-map .delivery-map{height:240px;min-height:240px}.courier-offer-preview .order-disclosure-body{gap:12px;font-size:14px;line-height:1.5}.courier-offer-preview .compact-shift{margin:0;padding:0;border:0}
 .offer-business{font-size:14px;font-weight:600}.offer-important{font-size:14px;line-height:1.5;color:var(--warning)}.offer-contact-lock{font-size:13px;line-height:1.5;color:var(--muted)}

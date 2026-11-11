@@ -19,6 +19,7 @@ export function CourierAvailability({telegram,settings=true}:{telegram:boolean;s
     {status?.expired&&!online&&!geo.wantsStart&&<p className="availability-hint">Смена завершилась. Включите, когда будете готовы.</p>}
     {status?.endingAfterDelivery&&<p className="availability-hint">Новые заказы выключены. Текущая доставка остаётся у вас.</p>}
     {(geo.wantsStart||(online&&!geo.canAccept&&!status?.endingAfterDelivery))&&<CourierGpsContent compact/>}
+    {geo.geoError&&['permission','unavailable'].includes(geo.phase)&&(!status?.consentCurrent||geo.wantsStart)&&<button type="button" className="text-button" disabled={busy} onClick={geo.openSettings}>Открыть настройки геолокации</button>}
     {error&&<div className="availability-error" role="alert">{error}<br/><button type="button" className="text-button" disabled={busy} onClick={()=>void(retry.current===null?geo.load():geo.setOnline(retry.current))}>Повторить</button></div>}
     {settings&&<details className="courier-work-settings"><summary>Настройки работы</summary><div className="courier-work-body">
       <p>{online?`Смена до ${time}.`:'Смена действует 8 часов.'} Геопозиция обновляется, пока Qadam открыт.</p>

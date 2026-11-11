@@ -160,7 +160,7 @@ export function CourierGpsContent({compact=false}:{compact?:boolean}){
 
 export function CourierGpsStatus({hideContent=false}:{hideContent?:boolean}){
   const geo=useCourierPresence(),[open,setOpen]=useState(false),[notice,setNotice]=useState('');
-  return <>{!hideContent&&<CourierGpsContent/>}{geo.geoError&&['permission','unavailable'].includes(geo.phase)&&(!geo.status?.consentCurrent||geo.wantsStart)&&<button type="button" className="text-button" disabled={geo.busy} onClick={geo.openSettings}>Открыть настройки геолокации</button>}<div className="trust-section courier-gps-settings">
+  return <>{!hideContent&&<CourierGpsContent/>}{!hideContent&&geo.geoError&&['permission','unavailable'].includes(geo.phase)&&(!geo.status?.consentCurrent||geo.wantsStart)&&<button type="button" className="text-button" disabled={geo.busy} onClick={geo.openSettings}>Открыть настройки геолокации</button>}<div className="trust-section courier-gps-settings">
     {geo.online&&geo.status?.acceptingOrders&&geo.status.activeDeliveries>0&&<Button variant="secondary" disabled={geo.busy} onClick={()=>void geo.setOnline(false)}>Закончить после доставки</Button>}
     {geo.status?.endingAfterDelivery&&<Feedback title="Приём новых выключен">Геопозиция используется для текущих доставок. После последней доставки смена завершится. Можно остановить использование раньше, отозвав согласие.</Feedback>}
     {!open?<Button variant="ghost" disabled={geo.busy} onClick={()=>{setOpen(true);setNotice('');}}>Настройки геолокации</Button>:<>
