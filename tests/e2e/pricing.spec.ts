@@ -128,7 +128,7 @@ test('fixed price survives expiry, own phone verification, assignment and reopen
     const number=`QD-${order.number.padStart(4,'0')}`;
     await courierPage.getByRole('button',{name:`Открыть заказ ${number}`,exact:true}).click();
     await expect(courierPage.getByRole('link',{name:/Позвонить:/})).toHaveCount(0);
-    await enableShiftGps(courierPage);await courierPage.getByRole('button',{name:/Принять · 1\s?500/}).click();
+    await enableShiftGps(courierPage);await courierPage.getByRole('button',{name:/Принять за 1\s?500/}).click();
     await expect(courierPage.getByRole('link',{name:'Позвонить: +77000000022',exact:true})).toBeVisible();
     await expectPhoneCall(courierPage,courierPage.getByRole('link',{name:'Позвонить: +77000000022',exact:true}),'tel:+77000000022');
     await courierPage.locator('.quote-price').scrollIntoViewIfNeeded();

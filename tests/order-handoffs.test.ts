@@ -92,18 +92,18 @@ test('database guard blocks writes from retired servers even when their old stat
   await assert.rejects(database().query("UPDATE qadam.orders SET status='DELIVERED' WHERE id=$1",[order.id]),(e:unknown)=>!!e&&typeof e==='object'&&'constraint' in e&&e.constraint==='qadam_handoff_required');
   assert.equal(transit.status,'IN_TRANSIT');
 });
-test('GPS, separate codes and a single atomic pickup lead to independently confirmed delivery',async()=>{
+test('GPS at pickup, separate codes and a single atomic pickup lead to delivery away from B',async()=>{
   let order=await assigned();const first=await code(order,'PICKUP');assert.match(first,/^\d{6}$/);
   for(const actor of [courier,other,admin])await assert.rejects(viewHandoffCode(actor,order.id,'PICKUP'));
   const body={...fields(order),stage:'PICKUP',code:first,handedOver:true};
   const responses=await Promise.all([confirmHandoff(courier,order.id,body),confirmHandoff(courier,order.id,body)]);order=responses[0];assert.equal(order.status,'IN_TRANSIT');
   assert.equal((await database().query('SELECT count(*)::int AS n FROM qadam.order_handoff_proofs WHERE order_id=$1',[order.id])).rows[0].n,1);
   const last=await code(order,'DROPOFF');assert.notEqual(last,first);
-  await reject(confirmHandoff(courier,order.id,{...fields(order),stage:'DROPOFF',code:last,handedOver:true}),409);
-  await location(order,B);
   await reject(confirmHandoff(courier,order.id,{...fields(order),stage:'DROPOFF',code:first,handedOver:true}),400);
   order=await completeOrder(courier,order.id,{...fields(order),code:last,handedOver:true});assert.equal(order.status,'DELIVERED');
-  const proofs=(await database().query('SELECT stage,accuracy,distance_m FROM qadam.order_handoff_proofs WHERE order_id=$1',[order.id])).rows;assert.equal(proofs.length,2);assert.ok(proofs.every(p=>p.distance_m<1));
+  const proofs=(await database().query('SELECT stage,latitude,longitude,accuracy,distance_m,captured_at,received_at,location_source FROM qadam.order_handoff_proofs WHERE order_id=$1',[order.id])).rows;assert.equal(proofs.length,2);
+  assert.ok(proofs.find(p=>p.stage==='PICKUP').distance_m<1);
+  const {stage,...dropoff}=proofs.find(p=>p.stage==='DROPOFF');assert.equal(stage,'DROPOFF');assert.ok(Object.values(dropoff).every(value=>value===null));
   assert.equal(order.events.filter(e=>e.kind==='PICKUP_VERIFIED').length,1);assert.equal(order.events.filter(e=>e.kind==='DROPOFF_VERIFIED').length,1);
   assert.ok(!JSON.stringify(order).includes(first));assert.ok(!JSON.stringify(await orderTrustInfo(courier,order.id)).includes(last));
 });
@@ -111,8 +111,35 @@ test('old completion, boolean confirmations, optional photo flags and generic st
   let order=await assigned();await reject(transitionOrder(courier,order.id,'PICKED_UP'),409);order=await pickup(order);
   await reject(transitionOrder(courier,order.id,'DELIVERED'),409);
   await assert.rejects(completeOrder(courier,order.id,{requestKey:randomUUID(),expectedVersion:order.assignmentVersion,handedOver:true}));
-  const last=await code(order,'DROPOFF');await reject(completeOrder(courier,order.id,{...fields(order),handedOver:true,code:last}),409);
+  const last=await code(order,'DROPOFF');await reject(completeOrder(courier,order.id,{...fields(order),handedOver:false,code:last}),400);
+  await reject(completeOrder(courier,order.id,{...fields(order),handedOver:true,code:last,photoRequired:false}),400);
   assert.equal((await getOrder(customer,order.id)).status,'IN_TRANSIT');
+});
+
+test('dropoff remains available with missing, stale, inaccurate or disabled location',async()=>{
+  for(const condition of ['missing','stale','inaccurate','sharing-disabled','offline']){
+    await readyCourier(courier);
+    const order=await pickup(await assigned()),value=await code(order,'DROPOFF');
+    if(condition==='missing')await database().query('DELETE FROM qadam.courier_locations WHERE order_id=$1',[order.id]);
+    if(condition==='stale')await database().query("UPDATE qadam.courier_locations SET captured_at=clock_timestamp()-interval '2 minutes',received_at=clock_timestamp()-interval '2 minutes' WHERE order_id=$1",[order.id]);
+    if(condition==='inaccurate')await database().query('UPDATE qadam.courier_locations SET accuracy=500 WHERE order_id=$1',[order.id]);
+    if(condition==='sharing-disabled')await database().query('UPDATE qadam.courier_presence SET sharing=false WHERE user_id=$1',[courier.id]);
+    if(condition==='offline')await database().query('UPDATE qadam.courier_status SET online=false WHERE user_id=$1',[courier.id]);
+    const info=(await orderTrustInfo(courier,order.id)).handoff;assert.equal(info?.ready,true,condition);assert.equal(info?.distanceM,null);
+    const body={...fields(order),stage:'DROPOFF',code:value,handedOver:true};
+    assert.equal((await confirmHandoff(courier,order.id,body)).status,'DELIVERED',condition);
+    assert.equal((await confirmHandoff(courier,order.id,body)).status,'DELIVERED','Retry is idempotent');
+    assert.equal((await getOrder(customer,order.id)).status,'DELIVERED');
+    assert.equal((await database().query("SELECT count(*)::int AS n FROM qadam.order_handoff_proofs WHERE order_id=$1 AND stage='DROPOFF' AND latitude IS NULL AND location_source IS NULL",[order.id])).rows[0].n,1);
+  }
+});
+
+test('database requires complete GPS evidence at pickup and rejects partial dropoff coordinates',async()=>{
+  const order=await assigned();
+  for(const [stage,latitude] of [['PICKUP',null],['DROPOFF',A.latitude]]){
+    await assert.rejects(database().query(`INSERT INTO qadam.order_handoff_proofs(order_id,stage,courier_id,assignment_version,route_version,code_version,latitude)
+      VALUES($1,$2,$3,$4,$5,1,$6)`,[order.id,stage,courier.id,order.assignmentVersion,order.routeVersion,latitude]),(e:unknown)=>!!e&&typeof e==='object'&&'constraint' in e&&e.constraint==='order_handoff_proofs_location_complete');
+  }
 });
 test('stale fixes, missing/poor accuracy, future timestamps, stopped consent and offline shifts fail closed',async()=>{
   const order=await assigned(),value=await code(order,'PICKUP');

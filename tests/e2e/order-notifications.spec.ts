@@ -46,7 +46,7 @@ test('courier shift persists, failed saves retain the switch, retries work and e
     const toggle=page.getByRole('switch',{name:'Я на линии'}), section=page.getByRole('region',{name:'Готовность к заказам'});
     await expect(toggle).toBeEnabled(); await expect(toggle).toHaveAttribute('aria-checked','false'); await toggle.click();
     await enableShiftGps(page);
-    await expect(toggle).toHaveAttribute('aria-checked','true'); await expect(section.getByRole('button',{name:'Разрешить сообщения'})).toBeVisible();
+    await expect(toggle).toHaveAttribute('aria-checked','true'); await section.getByText('Настройки работы',{exact:true}).click();await expect(section.getByRole('button',{name:'Разрешить сообщения'})).toBeVisible();
     await section.getByRole('button',{name:'Разрешить сообщения'}).click(); await expect(section.locator('.availability-permission').getByRole('status')).toContainText('Уведомления выключены');
     await page.reload(); await expect(toggle).toHaveAttribute('aria-checked','true');
     await page.route('**/api/courier/status',async route => {
@@ -64,6 +64,7 @@ test('courier shift persists, failed saves retain the switch, retries work and e
     await page.setViewportSize({width:390,height:844}); await toggle.click(); await expect(toggle).toHaveAttribute('aria-checked','true');
     const permitted=signedTelegramData({id:f.courier.telegramId,first_name:'Курьер уведомлений',allows_write_to_pm:true});
     await miniApp(page,permitted,844); await page.reload();
+    await section.getByText('Настройки работы',{exact:true}).click();
     await expect(section).toContainText('Новые заказы придут в Telegram');
     await page.screenshot({path:info.outputPath('courier-status-online.png'),fullPage:true});
     expect((await request.post('/api/courier/status',{headers:headers(f.customer.sessionToken),data:{online:true}})).status()).toBe(403);
@@ -81,7 +82,7 @@ test('UUID and signed order-number links open deliveries and revoked administrat
     await expect(page.getByRole('region',{name:'Детали заказа'})).toContainText('Получатель ссылки');
     await expect(page.locator('.app-bar')).toContainText(`QD-${order.number.padStart(4,'0')}`);
     await miniApp(page,f.courier.proof,844,'',{query:`order=${order.id}`});
-    await expect(page.getByRole('region',{name:'Детали заказа'})).toContainText('Контакты получателя откроются');
+    await expect(page.getByRole('region',{name:'Детали заказа'})).toContainText('Контакты откроются после принятия');
     await enableShiftGps(page);
     await page.getByRole('button',{name:'Принять заказ',exact:true}).click();
     await expect(page.getByRole('region',{name:'Детали заказа'})).toContainText('Получатель ссылки');

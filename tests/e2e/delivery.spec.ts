@@ -79,7 +79,7 @@ test('customer and courier complete a delivery; polling, reopening and history r
     await expect(card).toBeVisible({ timeout: 20000 });
     const orderButton = (await card.getAttribute('aria-label'))!;
     await card.click();
-    await expect(courier.getByText(/Платит получатель · наличными/)).toBeVisible();
+    await expect(courier.getByText('Платит получатель · наличные',{exact:true})).toBeVisible();
     await enableShiftGps(courier);await courier.getByRole('button', { name: 'Принять заказ', exact: true }).click();
     await expect(courier.getByRole('button', { name: 'Посылка у меня', exact: true })).toBeInViewport();
     await courier.screenshot({ path: testInfo.outputPath('courier-mobile-accepted.png'), fullPage: true });

@@ -29,7 +29,7 @@ test('saved GPS consent survives shifts and a private Telegram stream updates th
     await db.query("UPDATE qadam.users SET role='COURIER' WHERE id=$1",[courier.user.id]);await db.query('INSERT INTO qadam.administrators(user_id) VALUES($1)',[courier.user.id]);
     let courierPage=await pageFor(courier);await courierPage.getByRole('switch',{name:'Я на линии'}).click();await enableShiftGps(courierPage);
     await courierPage.getByRole('switch',{name:'Я на линии'}).click();await expect(courierPage.getByRole('switch',{name:'Я на линии'})).toHaveAttribute('aria-checked','false');
-    await courierPage.getByRole('switch',{name:'Я на линии'}).click();await expect(courierPage.getByText(/^Позиция сохранена:/)).toBeVisible();
+    await courierPage.getByRole('switch',{name:'Я на линии'}).click();await expect(courierPage.getByRole('status',{name:'Можно принимать заказы',exact:true})).toBeVisible();
     await expect(courierPage.getByRole('checkbox',{name:'Разрешаю автоматически включать передачу геопозиции при выходе на линию.'})).toHaveCount(0);
     const created=await request.post('/api/orders',{headers:headers(owner),data:{requestKey:randomUUID(),pickupAddress:'Алматы, Абая 100',destinationAddress:'Алматы, Самал 111',recipientName:'Получатель трансляции',recipientPhone:'+77000000000',pickupPoint:{latitude:43.24,longitude:76.9},destinationPoint:{latitude:43.25,longitude:76.91}}});expect(created.status()).toBe(201);const order=(await created.json()).order;
     expect((await request.post(`/api/orders/${order.id}/accept`,{headers:headers(courier),data:{}})).status()).toBe(200);

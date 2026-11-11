@@ -38,7 +38,10 @@ function assertStage(order:TrustOrder,stage:HandoffStage){
 }
 
 export async function handoffPresence(db:Db,order:TrustOrder,stage:HandoffStage){
-  const point=stage==='PICKUP'?{latitude:order.pickup_latitude,longitude:order.pickup_longitude}:{latitude:order.destination_latitude,longitude:order.destination_longitude};
+  // Dropoff can be tested without travelling to B. Only pickup requires GPS;
+  // never fabricate location evidence for a handoff confirmed by code alone.
+  if(stage==='DROPOFF')return{ready:true as const,message:'Попросите код получателя при передаче.',distanceM:null,location:null};
+  const point={latitude:order.pickup_latitude,longitude:order.pickup_longitude};
   if(point.latitude===null||point.longitude===null)return{ready:false as const,message:'Отправителю нужно уточнить точку на карте.',distanceM:null,location:null};
   // Use the server's order feed. It accepts Mini App fixes and verified Telegram
   // live updates, and belongs to the current assignment. Never trust POST coordinates.
@@ -52,7 +55,7 @@ export async function handoffPresence(db:Db,order:TrustOrder,stage:HandoffStage)
   if(!location?.fresh)return{ready:false as const,message:'Обновите геопозицию у адреса.',distanceM:null,location:null};
   const distanceM=distanceBetween({latitude:point.latitude,longitude:point.longitude},location);
   if(location.accuracy===null||location.accuracy>handoffPolicy.accuracyM)return{ready:false as const,message:'GPS неточный. Выйдите на открытое место и обновите позицию.',distanceM,location:null};
-  if(distanceM===null||distanceM>handoffPolicy.radiusM)return{ready:false as const,message:stage==='PICKUP'?'Подойдите к отправителю. Подтверждение доступно у адреса.':'Подойдите к получателю. Подтверждение доступно у адреса.',distanceM,location:null};
+  if(distanceM===null||distanceM>handoffPolicy.radiusM)return{ready:false as const,message:'Подойдите к отправителю. Подтверждение доступно у адреса.',distanceM,location:null};
   return{ready:true as const,message:'Вы у адреса. Попросите код при передаче.',distanceM,location};
 }
 async function requirePresence(db:Db,order:TrustOrder,stage:HandoffStage){const presence=await handoffPresence(db,order,stage);if(!presence.ready)throw new AppError(409,presence.message);return presence;}
@@ -134,14 +137,14 @@ export async function confirmHandoff(actor:User,id:string,input:unknown){
     }
     const photo=data.stage==='DROPOFF'?(await db.query("SELECT id,file_id FROM qadam.order_photos WHERE order_id=$1 AND courier_id=$2 AND assignment_version=$3 AND state='READY' AND expires_at>clock_timestamp() ORDER BY created_at DESC,id DESC LIMIT 1",[id,actor.id,order.assignment_version])).rows[0]:null;
     if(data.stage==='DROPOFF'&&order.photo_required&&!photo)throw new AppError(409,'Добавьте фото вручения.');
-    const location=presence.location!;
+    const location=presence.location;
     await db.query(`INSERT INTO qadam.order_handoff_proofs(order_id,stage,courier_id,assignment_version,route_version,code_version,latitude,longitude,accuracy,distance_m,captured_at,received_at,location_source)
-      VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,[id,data.stage,actor.id,order.assignment_version,order.route_version,row.version,location.latitude,location.longitude,location.accuracy,presence.distanceM,location.captured_at,location.received_at,location.location_source]);
+      VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,[id,data.stage,actor.id,order.assignment_version,order.route_version,row.version,location?.latitude??null,location?.longitude??null,location?.accuracy??null,presence.distanceM,location?.captured_at??null,location?.received_at??null,location?.location_source??null]);
     await db.query('UPDATE qadam.order_handoffs SET verified_at=clock_timestamp() WHERE order_id=$1 AND stage=$2',[id,data.stage]);
     const status=data.stage==='PICKUP'?'IN_TRANSIT':'DELIVERED';
     await db.query("UPDATE qadam.orders SET status=$2,custody_assignment_version=CASE WHEN $3='PICKUP' THEN assignment_version ELSE custody_assignment_version END,custody_at=CASE WHEN $3='PICKUP' THEN clock_timestamp() ELSE custody_at END,updated_at=clock_timestamp() WHERE id=$1",[id,status,data.stage]);
     const target=data.stage==='PICKUP'?`${order.pickup_latitude}, ${order.pickup_longitude}`:`${order.destination_latitude}, ${order.destination_longitude}`;
-    const evidence=`Точка ${data.stage==='PICKUP'?'А':'Б'}: ${target}; маршрут ${order.route_version}; назначение ${order.assignment_version}.`;
+    const evidence=`Точка ${data.stage==='PICKUP'?'А':'Б'}: ${target}; маршрут ${order.route_version}; назначение ${order.assignment_version}.${data.stage==='DROPOFF'?' Геопозиция при вручении не проверялась.':''}`;
     if(data.stage==='PICKUP')await trustEvent(db,{...order,status:'PICKED_UP'},actor,'PICKUP_VERIFIED',evidence);
     await trustEvent(db,{...order,status},actor,data.stage==='PICKUP'?'STATUS':'DROPOFF_VERIFIED',data.stage==='DROPOFF'?evidence:null);
     await queueCustomerOrderStatus(db,id,status);

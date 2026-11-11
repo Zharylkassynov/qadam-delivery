@@ -31,13 +31,14 @@ test('permission denial blocks new acceptance; fresh GPS enables it and shift en
     await page.getByRole('heading',{name:'Геопозиция нужна для заказов',exact:true}).scrollIntoViewIfNeeded();
     await page.screenshot({path:info.outputPath('readiness-denied-mobile.png'),fullPage:true});
     await miniApp(page,f.courier.proof,844,'',{query:`order=${order.id}`,location:'allow'});await page.reload();await enableShiftGps(page);
-    await page.locator('.courier-shift').scrollIntoViewIfNeeded();await page.screenshot({path:info.outputPath('readiness-ready-mobile.png'),fullPage:true});
+    await page.locator('.courier-offer-preview').scrollIntoViewIfNeeded();await page.screenshot({path:info.outputPath('readiness-ready-mobile.png'),fullPage:true});
     await expect(page.getByRole('button',{name:'Принять заказ',exact:true})).toBeEnabled();await page.getByRole('button',{name:'Принять заказ',exact:true}).click();
     await expect(page.getByRole('heading',{name:'Заберите посылку',exact:true})).toBeVisible();
     await page.getByRole('button',{name:'Назад',exact:true}).click();
+    await page.getByText('Настройки работы',{exact:true}).click();
     await page.getByRole('button',{name:'Закончить после доставки',exact:true}).click({timeout:25000});
-    await expect(page.getByText('Смена закончится после доставки',{exact:true})).toBeVisible();
-    await page.getByText('Смена закончится после доставки',{exact:true}).scrollIntoViewIfNeeded();
+    await expect(page.getByText('Завершаем смену',{exact:true})).toBeVisible();
+    await page.getByText('Завершаем смену',{exact:true}).scrollIntoViewIfNeeded();
     await page.screenshot({path:info.outputPath('readiness-ending-mobile.png'),fullPage:true});
     const next=await f.create();expect((await request.post(`/api/orders/${next.id}/accept`,{headers:headers(f.courier.sessionToken),data:{}})).status()).toBe(409);
     expect((await request.post(`/api/orders/${order.id}/accept`,{headers:headers(f.courier.sessionToken),data:{}})).status()).toBe(200);
@@ -71,10 +72,11 @@ test('checkout shows real rounded courier positions, preserves the form and surv
     await client.route('**/api/couriers/nearby?*',route=>route.fulfill({json:{couriers:[]}}));await panel.getByRole('button',{name:'Повторить обновление',exact:true}).click();
     await expect(panel).toContainText('Свежих позиций пока нет');await expect(client.locator('.review-section').filter({has:client.getByRole('heading',{name:'Получатель',exact:true})})).toContainText('Получатель карты');
     for(const width of [320,390,1280]){await client.setViewportSize({width,height:900});expect(await client.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);}
+    await courier.getByText('Настройки работы',{exact:true}).click();
     await courier.getByRole('button',{name:'Настройки геолокации',exact:true}).click();
     await courier.getByRole('button',{name:'Отозвать согласие и остановить',exact:true}).click();
     await expect(courier.getByText('Передача в Qadam остановлена. Остановите трансляцию также в чате Telegram.',{exact:true})).toBeVisible();
-    await courier.getByRole('button',{name:'Выйти на линию',exact:true}).click();
+    await courier.getByRole('switch',{name:'Я на линии'}).click();
     await expect(courier.getByRole('checkbox',{name:/^Разрешаю использовать мою геопозицию/})).not.toBeChecked();
   }finally{await clientContext.close();await courierContext.close();await f.cleanup();}
 });
