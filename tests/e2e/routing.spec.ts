@@ -52,11 +52,12 @@ test('client and courier see the road route, retain it through status changes an
   try {
     await login(courier, 'courier1@qadam.demo');
     await courier.getByRole('button', { name: /^Открыть заказ/ }).filter({ hasText: order.pickup }).click();
-    await expect(courier.locator('path.qadam-route-line')).toHaveCount(1);
+    await expect(courier.locator('path.qadam-route-line')).toHaveCount(0);expect(courierRequests).toBe(0);
     await enableShiftGps(courier);
     const acceptance=courier.waitForResponse(response=>response.url().endsWith(`/api/orders/${order.id}/accept`)&&response.request().method()==='POST');
     await courier.getByRole('button', { name: 'Принять заказ', exact: true }).click();
     const accepted=await acceptance;expect(accepted.status()).toBe(200);const assigned=(await accepted.json()).order;
+    await expect(courier.locator('path.qadam-route-line')).toHaveCount(1);
     expect(assigned.courierName).toBeTruthy();
     await expect(page.getByRole('heading',{name:'Ваш курьер',exact:true}).locator('..')).toContainText(assigned.courierName);
     await expect(courier.getByText('Открыть навигацию',{exact:true})).toBeVisible();
@@ -94,14 +95,18 @@ test('only the courier can retry a route; customer tracking and orders without p
   try{
     await login(courier,'courier2@qadam.demo');await enableShiftGps(courier);
     await courier.getByRole('button',{name:/^Открыть заказ/}).filter({hasText:order.pickup}).click();
+    expect(attempts).toBe(0);await expect(courier.getByRole('button',{name:'Повторить маршрут',exact:true})).toHaveCount(0);
+    await courier.getByRole('button',{name:'Принять заказ',exact:true}).click();
     await expect(courier.getByText('Строим маршрут…',{exact:true})).toBeVisible();
-    await expect(courier.getByRole('button',{name:'Принять заказ',exact:true})).toBeEnabled();firstResponse!();
+    await expect(courier.getByRole('button',{name:'Посылка у меня',exact:true})).toBeEnabled();firstResponse!();
     await expect(courier.getByText('Не удалось построить маршрут',{exact:true})).toBeVisible();
     await expect(courier.locator('path.qadam-route-line')).toHaveCount(0);
     await courier.getByRole('button',{name:'Повторить маршрут',exact:true}).click();
     await expect(courier.locator('path.qadam-route-line')).toHaveCount(1);
+    for(const action of ['Посылка у меня','Начать доставку','Завершить доставку'])await courier.getByRole('button',{name:action,exact:true}).click();
+    await expect(courier.getByRole('heading',{name:'Доставка завершена',exact:true})).toBeVisible();
   }finally{firstResponse?.();await context.close();}
-  expect((await page.request.post(`/api/orders/${order.id}/status`, { headers: { Origin: origin }, data: { status: 'CANCELLED' } })).ok()).toBe(true);
+  expect((await(await page.request.get(`/api/orders/${order.id}`)).json()).order.status).toBe('DELIVERED');
   const without = await create(page, false); await page.reload(); await enterOrders(page);
   await page.getByRole('button', { name: /^Открыть заказ/ }).filter({ hasText: without.pickup }).click();
   await expect(page.getByText('Точки ещё не указаны', { exact: true })).toBeVisible(); expect(attempts).toBe(2);

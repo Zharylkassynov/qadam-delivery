@@ -114,7 +114,7 @@ test('courier selects short or all jobs, navigates to the correct party and adds
       const response=await request.post('/api/orders',{headers:headers(customer.sessionToken),data:{...input(),pickupPoint:{latitude:43.241,longitude:76.9},destinationPoint:{latitude:destination,longitude:76.9}}});expect(response.status()).toBe(201);ids.push((await response.json()).order.id);
     }
     await miniApp(page,courier.proof,760,'',{native:{shortcut:'unknown'}});
-    await expect(page.getByRole('button',{name:'Короткие',exact:true})).toHaveAttribute('aria-pressed','true');
+    await expect(page.getByRole('button',{name:'До 4 км',exact:true})).toHaveAttribute('aria-pressed','true');
     const short=await (await request.get(`/api/orders/${ids[0]}`,{headers:headers(customer.sessionToken)})).json();const long=await (await request.get(`/api/orders/${ids[1]}`,{headers:headers(customer.sessionToken)})).json();
     await expect(page.getByRole('button',{name:`Открыть заказ QD-${short.order.number.padStart(4,'0')}`,exact:true})).toHaveCount(1);
     await expect(page.getByRole('button',{name:`Открыть заказ QD-${long.order.number.padStart(4,'0')}`,exact:true})).toHaveCount(0);

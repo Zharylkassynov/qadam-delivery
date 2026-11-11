@@ -52,7 +52,7 @@ test('Mini App customer completes a delivery with browser courier and restores h
     const availableOrder = availableOrders.find((order: { pickupAddress: string }) => order.pickupAddress === pickup);
     expect(availableOrder.recipientName).toBeNull(); expect(availableOrder.recipientPhone).toBeNull();
     await card.click();
-    await expect(courier.getByText('Контакты получателя откроются после принятия заказа', { exact: true })).toBeVisible();
+    await expect(courier.getByText('Контакты откроются после принятия.', { exact: true })).toBeVisible();
     await expect(courier.locator('a[href^="tel:"]')).toHaveCount(0);
     await enableShiftGps(courier);await courier.getByRole('button', { name: 'Принять заказ', exact: true }).click();
     await expect(courier.locator('.recipient-section').filter({has:courier.getByRole('heading',{name:'Получатель',exact:true})})).toContainText('Айдана');
@@ -281,7 +281,7 @@ test('Telegram applicant is rejected, reapplies, gets admin approval and complet
     await expect(stats.getByRole('status')).toHaveText(directory.total.toLocaleString('ru-KZ'));
     await reopened.screenshot({ path: testInfo.outputPath('courier-application-approved.png'), fullPage: true });
     await reopened.getByRole('button', { name: 'К доступным заказам', exact: true }).click();
-    await expect(reopened.getByRole('heading', { name: 'Можно принять', exact: true })).toBeVisible();
+    await expect(reopened.getByRole('heading', { name: 'Доступные', exact: true })).toBeVisible();
     await expect(reopened.getByRole('button', { name: /^Выйти(?: из аккаунта)?$/ })).toHaveCount(0);
     await expect(reopened.locator('body')).not.toContainText(/демонстрац|учебн|тестов/i);
     await mobileProfile(reopened).click();

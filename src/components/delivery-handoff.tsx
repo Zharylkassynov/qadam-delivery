@@ -36,7 +36,7 @@ export function DeliveryHandoff({order,busy,error,onBack,onComplete}:{order:Orde
   const camera=useRef<HTMLInputElement>(null),gallery=useRef<HTMLInputElement>(null),alive=useRef(true),completion=useRef<{signature:string;key:string}|null>(null);
   useEffect(()=>{alive.current=true;return()=>{alive.current=false;};},[]);
   useEffect(()=>{if(!photo){setPreview('');return;}const url=URL.createObjectURL(photo.blob);setPreview(url);return()=>URL.revokeObjectURL(url);},[photo?.blob]);
-  const working=busy||upload.busy||preparing||(secure&&presence.busy);
+  const working=busy||upload.busy||preparing||(pickup&&presence.busy);
   async function select(file:File|undefined){
     if(!file)return;setPreparing(true);setPhotoError('');
     try{const result=await preparePhoto(file);if(alive.current)setPhoto(result);}
@@ -54,10 +54,10 @@ export function DeliveryHandoff({order,busy,error,onBack,onComplete}:{order:Orde
   }
   const photoReady=!photoRequired||(data.trust?.photo?.state==='READY'&&(!photo||photo.saved));
   const codeReady=secure?/^\d{6}$/.test(code)&&!!data.trust?.handoff?.codeReady:!order.codeRequired||(/^\d{4}$/.test(code)&&(data.trust?.attemptsRemaining??0)>0);
-  return <ApplicationScreen title={pickup?'Подтверждение забора':'Подтверждение вручения'} courier busy={working} onBack={onBack} actions={<Button className="wide" disabled={working||!data.trust||!!data.error||!photoReady||!codeReady||!handed||(secure&&!data.trust?.handoff?.ready)} onClick={()=>void complete()}>{busy?'Сохраняем…':pickup?'Подтвердить забор':'Завершить доставку'}</Button>}>
+  return <ApplicationScreen title={pickup?'Подтверждение забора':'Подтверждение вручения'} courier busy={working} onBack={onBack} actions={<Button className="wide" disabled={working||!data.trust||!!data.error||!photoReady||!codeReady||!handed||(pickup&&!data.trust?.handoff?.ready)} onClick={()=>void complete()}>{busy?'Сохраняем…':pickup?'Подтвердить забор':'Завершить доставку'}</Button>}>
     <div className="screen-heading"><h1 tabIndex={-1}>{pickup?'Получите посылку':'Передайте посылку'}</h1><p>{secure?(pickup?order.pickupAddress:order.destinationAddress):`${orderNumber(order)} · Завершайте заказ только после вручения.`}</p></div>{!secure&&<RouteCard pickup={order.pickupAddress} destination={order.destinationAddress}/>}
-    {secure&&data.trust?.handoff&&!data.trust.handoff.ready&&<Feedback title={data.trust.handoff.message} tone="warning">{data.trust.handoff.distanceM!==null&&<p>До точки {pickup?'забора':'вручения'}: {formatDistance(data.trust.handoff.distanceM)}.</p>}</Feedback>}
-    {secure&&!data.trust?.handoff?.ready&&<div className="trust-section">{presence.online&&presence.status?.locationSharing&&presence.status.consentCurrent?<>
+    {pickup&&data.trust?.handoff&&!data.trust.handoff.ready&&<Feedback title={data.trust.handoff.message} tone="warning">{data.trust.handoff.distanceM!==null&&<p>До точки забора: {formatDistance(data.trust.handoff.distanceM)}.</p>}</Feedback>}
+    {pickup&&!data.trust?.handoff?.ready&&<div className="trust-section">{presence.online&&presence.status?.locationSharing&&presence.status.consentCurrent?<>
       <Button variant="secondary" disabled={working} onClick={()=>void presence.refreshLocation().then(()=>data.reload())}>{presence.busy?'Обновляем позицию…':'Обновить позицию'}</Button>
       {presence.geoError&&<Feedback title={presence.geoError} tone="error" role="alert"/>}
     </>:<CourierGpsStatus/>}</div>}

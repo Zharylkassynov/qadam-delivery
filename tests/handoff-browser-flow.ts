@@ -84,15 +84,22 @@ export async function safeDeliveryBrowser({page,request,browser,info,apiOrigin,a
       }
     }
     await page.setViewportSize({width:390,height:844});await customer.setViewportSize({width:390,height:844});await page.screenshot({path:info.outputPath('safe-courier-in-transit-dark.png')});await customer.screenshot({path:info.outputPath('safe-customer-code.png')});
-    await move(43.25,76.91);await expect.poll(main).toMatchObject({text:'Подтвердить вручение',active:true});await press();
+    // Stay at A with stale, inaccurate GPS. Completing at B must not need travel
+    // or a new location permission, including through native Telegram controls.
+    await database().query("UPDATE qadam.courier_locations SET accuracy=500,captured_at=clock_timestamp()-interval '2 minutes',received_at=clock_timestamp()-interval '2 minutes' WHERE order_id=$1",[id]);
+    await page.evaluate(()=>{const manager=window.Telegram?.WebApp?.LocationManager;if(manager){manager.isAccessGranted=false;manager.getLocation=callback=>callback(null);}});
+    await expect.poll(main).toMatchObject({text:'Подтвердить вручение',active:true});await press();
+    await expect(page.getByRole('heading',{name:'Передайте посылку',exact:true})).toBeVisible();
+    await expect(page.getByRole('button',{name:'Обновить позицию',exact:true})).toHaveCount(0);
+    await expect(page.getByText('Подойдите к получателю. Подтверждение доступно у адреса.',{exact:true})).toHaveCount(0);
     if(order.photoRequired){
       const image=await sharp({create:{width:80,height:60,channels:3,background:'#b4c6d0'}}).jpeg().toBuffer();
       await page.getByLabel('Выбрать фото вручения',{exact:true}).setInputFiles({name:'parcel.jpg',mimeType:'image/jpeg',buffer:image});
       await page.getByRole('button',{name:'Сохранить фото',exact:true}).click();await expect(page.getByRole('status').filter({hasText:'Фото сохранено'})).toBeVisible();
     }
     await page.getByLabel('6 цифр',{exact:true}).fill(dropCode);await page.getByRole('checkbox',{name:'Посылка передана получателю',exact:true}).check();
-    await expect.poll(main).toMatchObject({text:'Завершить доставку',active:true});const delivered=page.waitForResponse(r=>r.url()===`${apiOrigin}/api/orders/${id}/handoff`&&r.request().method()==='POST');await press();expect((await delivered).status()).toBe(200);
+    await expect.poll(main).toMatchObject({text:'Завершить доставку',active:true});await page.screenshot({path:info.outputPath('dropoff-without-gps.png')});const delivered=page.waitForResponse(r=>r.url()===`${apiOrigin}/api/orders/${id}/handoff`&&r.request().method()==='POST');await press();expect((await delivered).status()).toBe(200);
     await expect(page.getByRole('heading',{name:'Доставка завершена'})).toBeVisible();await page.reload();await expect(page.getByRole('heading',{name:'Доставка завершена'})).toBeVisible();
-    const proofs=(await database().query('SELECT stage FROM qadam.order_handoff_proofs WHERE order_id=$1',[id])).rows;expect(proofs.map(p=>p.stage).sort()).toEqual(['DROPOFF','PICKUP']);expect(errors).toEqual([]);
+    const proofs=(await database().query('SELECT stage,latitude,location_source FROM qadam.order_handoff_proofs WHERE order_id=$1',[id])).rows;expect(proofs.map(p=>p.stage).sort()).toEqual(['DROPOFF','PICKUP']);expect(proofs.find(p=>p.stage==='DROPOFF')).toMatchObject({latitude:null,location_source:null});expect(errors).toEqual([]);
   }finally{await customerContext.close();await database().query('DELETE FROM qadam.orders WHERE id=$1',[id]);await database().query('DELETE FROM qadam.users WHERE id=ANY($1::uuid[])',[[sender.user.id,driver.user.id]]);}
 }

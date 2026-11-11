@@ -125,7 +125,7 @@ test('courier release and dispatcher assignment/block/unblock are usable on mobi
     await adminPage.getByRole('heading',{name:'Управление заказом',exact:true}).scrollIntoViewIfNeeded();await noOverflow(adminPage);await adminPage.screenshot({path:info.outputPath('admin-dispatch-mobile.png')});
     await adminPage.getByRole('button',{name:'Подтвердить назначение',exact:true}).click();await expect(adminPage.getByRole('heading',{name:replacement.user.name,exact:true})).toBeVisible();
     expect((await request.get(`/api/orders/${order.id}`,{headers:authenticated(courier)})).status()).toBe(404);
-    const replacementPage=await f.page(browser,replacement);await expect(replacementPage.getByRole('heading',{name:'Можно принять',exact:true})).toBeVisible();
+    const replacementPage=await f.page(browser,replacement);await expect(replacementPage.getByRole('heading',{name:'Доступные',exact:true})).toBeVisible();
     await adminPage.getByRole('button',{name:'Назад к списку заказов',exact:true}).click();await adminPage.getByRole('button',{name:'Назад в профиль',exact:true}).click();await adminPage.getByRole('button',{name:'Курьеры',exact:true}).click();
     const row=adminPage.locator('.courier-directory-row').filter({has:adminPage.getByRole('heading',{name:replacement.user.name,exact:true})});
     await row.getByRole('button',{name:'Ограничить курьерский доступ',exact:true}).click();await row.getByLabel('Причина решения',{exact:true}).fill('Уточняем сведения и связываемся с курьером');await row.getByRole('button',{name:'Ограничить доступ',exact:true}).click();
