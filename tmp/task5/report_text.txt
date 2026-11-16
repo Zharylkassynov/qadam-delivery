@@ -1,0 +1,545 @@
+QADAM DELIVERY
+TECHNOLOGICAL ENTREPRENEURSHIP
+Task 5  /  11 November 2026
+1
+NARXOZ UNIVERSITY
+School of Digital Technologies
+Technological Entrepreneurship
+Qadam
+Delivery
+Task 5: Business Model and
+Financial Unit Economics
+Team assignment report
+Prepared 11 November 2026
+Team: Qadam Delivery
+PRIMARY MODEL
+VALUE METRIC
+BEACHHEAD
+Transaction / usage-based
+One completed delivery
+coordinated
+Small Almaty flower, gift and social-commerce
+shops
+BASE LTV / CAC
+SIMPLE CAC PAYBACK
+36-MONTH LTV / CAC
+4.31x
+7.73 months
+2.87x
+Commercial proposal
+Charge the shop a fixed platform fee after a completed delivery: KZT 120 Starter, KZT 90 Pro and from KZT 60
+Enterprise. The courier fare remains separate and is paid in full to the courier. Pro and Enterprise have credited
+monthly usage commitments.
+Decision
+The base assumptions meet the reference hurdles of uncapped LTV/CAC at least 3x and SMB payback below
+12 months. A 36-month capped LTV falls below 3x. Commercial viability remains a hypothesis until paying
+cohorts validate acquisition, retention and service costs.
+Evidence boundary. The earlier Task 4 report modeled 600 seconds versus 90 seconds, or 6.67x active-time efficiency. No
+measured 10x result, shop willingness-to-pay dataset or paid retention cohort was supplied. This report labels estimates explicitly.
+The current pilot still uses 0% Qadam commission. [T4, P1]
+
+
+QADAM DELIVERY
+TECHNOLOGICAL ENTREPRENEURSHIP
+Task 5  /  11 November 2026
+2
+02 / BUSINESS MODEL
+Choose the monetization archetype
+Beachhead and transaction roles
+The first paying customer is the owner or administrator of a one-location flower, gift or small social-commerce
+shop in Almaty. The base customer makes 40 repeat deliveries a month, carried forward as an assumption from
+Task 4. Private senders can use Qadam but are excluded from this business-customer acquisition model. [T4]
+Demand side: shops needing local parcel delivery. Supply side: couriers accepting and completing orders. The
+recipient receives the parcel and status information. Qadam coordinates order creation, acceptance, handoff,
+status history and last-known location.
+Archetype
+Assessment and selection
+Subscription / SaaS
+Predictable billing, but a mandatory fee before delivery demand is proven raises
+adoption friction. Stable usage and low churn have not been demonstrated. Not the
+primary model.
+Marketplace percentage rake
+Would scale with courier fare, including distance and traffic that do not necessarily
+increase coordination value. A deduction from courier earnings would change the 0%
+pilot proposition. Rejected for the first commercial test.
+Transaction / usage-based
+Selected. A fixed customer-side fee per completed delivery aligns revenue with useful
+outcomes, is easy to audit and lets small shops start without a commitment.
+Freemium / hybrid
+An indefinite free tier would incur support costs before any demonstrated 5-10%
+premium conversion. Pro and Enterprise use minimum usage commitments, fully
+credited to delivery fees, rather than an extra subscription.
+Transaction and money flow
+1. The shop creates an order and sees courier fare and platform fee separately.
+2. A courier accepts, collects and completes the delivery with a completion record.
+3. The agreed courier fare is paid directly to the courier. Qadam invoices the shop for completed-delivery fees
+monthly. No platform fee is charged for cancellations or unmatched orders.
+Start with local liquidity
+A proposed test cluster is 10 shops in one service zone: 10 x 40 / 26 = 15.4 deliveries per dispatch day. At a
+hypothetical peak of five requests/hour, a 45-minute full courier cycle and 70% planned utilization, required online
+supply is ceil(5 x 45 / 60 / 0.70) = 6 couriers, plus two roster backups. These are capacity assumptions, not
+registered or committed supply.
+Commercial test gates: at least 90% of valid requests accepted within 10 minutes and at least 95% of accepted orders completed.
+Recheck them by zone and time window before expanding. Marketplace match rate and time to match are distinct from courier
+utilization. [A1]
+
+
+QADAM DELIVERY
+TECHNOLOGICAL ENTREPRENEURSHIP
+Task 5  /  11 November 2026
+3
+03 / BUSINESS MODEL
+Translate time into economic value
+The comparison covers active shop coordination, not travel speed or courier earnings.
+Activity
+As-Is
+Qadam target
+Prepare repeat-order details
+180 seconds
+45 seconds
+Confirm acceptance / handoff
+120 seconds
+15 seconds
+Find a delivery update
+180 seconds
+20 seconds
+Locate the completion record
+120 seconds
+10 seconds
+Total active staff time
+600 seconds
+90 seconds
+Every time above is an estimate from Task 4, not a recorded customer result. Identical parcel details and scripted
+events must be used in both workflows. Count corrections, negotiation and follow-up in the workflow that causes
+them. Exclude passive waiting and travel from active-time comparisons. [T4]
+Base As-Is versus To-Be math
+ Efficiency = 600 / 90 = 6.67x. Active-time reduction = (600 - 90) / 600 = 85%.
+At the assumed KZT 1,500/hour:
+As-Is labor value = 600 / 3,600 x 1,500 = KZT 250/order.
+To-Be labor value = 90 / 3,600 x 1,500 = KZT 37.50/order.
+Released capacity = 250 - 37.50 = KZT 212.50/order.
+At 40 deliveries/month, released time is 5.67 hours, valued at KZT 8,500/month. At a KZT 120 platform fee, the
+shop pays KZT 4,800 and retains KZT 3,700/month of modeled labor capacity value. The value-to-fee ratio is
+8,500 / 4,800 = 1.77x.
+The assignment's 10x requirement remains unvalidated
+A genuine 10x active-time result would require 600 / 60 = 10x. The 60-second workflow is an engineering
+target. At that target, released labor value would be KZT 225/order. The financial base case uses the earlier
+90-second assumption, so the 10x target does not inflate LTV.
+Keep the economic claim precise
+Including an illustrative, unchanged KZT 1,500 courier fare, full cost per order is KZT 1,750 As-Is and KZT
+1,657.50 To-Be including the fee. That is about 5.3% total-cost reduction, not 10x cheaper delivery. Released
+staff capacity becomes cash savings only if the shop actually reduces paid labor or uses the time to generate
+additional contribution.
+
+
+QADAM DELIVERY
+TECHNOLOGICAL ENTREPRENEURSHIP
+Task 5  /  11 November 2026
+4
+04 / BUSINESS MODEL
+Price against value and switching costs
+Why cost plus 20% fails
+It ignores willingness to pay. A shop evaluates less administrative work, reliable coordination and alternatives.
+Server costs do not reveal what that shop will pay. Under the base cost assumptions, non-payment service cost
+is KZT 25/order plus KZT 600/40 in account costs, or KZT 40/order. Adding 20% gives KZT 48 before payment
+costs. This does not test whether the customer would accept the proposed KZT 120, or reject any fee at all.
+It ignores switching costs. Moving from WhatsApp and a known courier requires setup, training and trust. Even
+a price below estimated savings may fail when a shop has an efficient existing workflow or unreliable courier
+supply. A 30-minute setup at KZT 1,500/hour is an assumed KZT 750 one-time cost. It belongs in the
+customer's adoption decision, separately from Qadam's onboarding expense in CAC.
+It can leave value uncaptured or overprice a weak product. A percentage markup treats low technical cost as
+low value and may push prices up when the platform is inefficient. A 20% markup is only a 16.7% margin before
+payment costs. Qadam should use costs to test feasibility, then test the customer's economic benefit and actual
+WTP to set the fee.
+One primary value metric
+A completed delivery coordinated for a paying shop
+A billable event is an order with a retained completed-delivery record. Each completed order is charged once.
+Cancellation, duplicate retries and unmatched requests do not create platform-fee events. Fees for failed
+attempts are not added silently.
+This unit scales with the shop's number of fulfilled dispatches. Each additional order creates a coordination task
+and, under the time hypothesis, another KZT 212.50 of released labor capacity. Seats penalize a shop for adding
+staff. Distance and parcel value can increase courier compensation without increasing coordination value, so
+neither is the primary platform pricing unit.
+Starter value capture and adoption hurdle
+KZT 120 captures 56.5% of the modeled KZT 212.50/order benefit, leaving KZT 92.50/order with the shop. At 40
+orders, first-month net capacity value after setup is 8,500 - 4,800 - 750 = KZT 2,950. Recovering the setup effort
+takes 750 / 92.50 = 8.1 completed orders under the assumptions.
+The retained value is a pricing hypothesis, not proof of WTP. Validate paid acceptance and repeat use at the
+proposed price. If realized savings are lower, revise the price, scope or segment rather than assuming interviews
+guarantee purchase.
+
+
+QADAM DELIVERY
+TECHNOLOGICAL ENTREPRENEURSHIP
+Task 5  /  11 November 2026
+5
+05 / BUSINESS MODEL
+A three-tier pricing architecture
+Proposed future commercial terms. These tariffs are not enabled in the current pilot.
+Starter
+Pro
+Enterprise
+Primary buyer
+Small repeat sender
+Growing / mid-market shop
+operation
+Larger or multi-location
+operation
+Platform fee
+KZT 120 / completed order
+KZT 90 / completed order
+From KZT 60 / completed
+order
+Monthly commitment
+None
+100 order equivalents
+KZT 9,000 minimum
+500 order equivalents
+KZT 30,000 minimum
+Core utility
+Order coordination, status
+history, saved pickup and
+repeat orders
+Starter plus proposed batch
+entry and CSV /
+reconciliation reports
+Pro plus scoped custom API
+integrations and contracting
+Service / security
+Standard support and
+existing access controls
+Proposed business-hours
+priority support and team
+workflow
+Negotiated SLA, dedicated
+contact, advanced roles and
+audit exports
+Value captured
+120 / 212.50 = 56.5%
+90 / 212.50 = 42.4%
+60 / 212.50 = 28.2%
+Transparent billing rules
+Monthly platform bill = fee x max(actual completed orders, committed order equivalents). The commitment is
+fully credited against usage. A Pro customer with 120 completed orders pays 120 x 90 = KZT 10,800, not KZT
+19,800. Starter with 40 orders pays KZT 4,800.
+At the minimum commitments, modeled monthly labor benefit is KZT 21,250 for Pro and KZT 106,250 for
+Enterprise. The respective benefits retained after platform fees are KZT 12,250 and KZT 76,250. A shop should
+commit only when its expected usage makes the plan economical. Unused commitments expire monthly and
+must be explained before purchase.
+Scope follows delivery capability
+Existing core coordination is documented in the project. Batch tools, commercial reporting, custom integrations,
+dedicated SLAs and enhanced enterprise controls are proposed capabilities. Enterprise KZT 60 is a planning
+floor for an agreed scope. Custom development and support must be costed before a quote is accepted. This
+report does not estimate enterprise LTV from Starter economics.
+Any Enterprise SLA should specify measurable service availability and support-response obligations after testing. It must not
+promise continuous courier GPS when the Mini App is closed or guaranteed delivery timing without validated supply. The courier
+fare remains separate in every tier. Prices are modeled before applicable taxes; no tax registration or tax rate is assumed.
+
+
+QADAM DELIVERY
+TECHNOLOGICAL ENTREPRENEURSHIP
+Task 5  /  11 November 2026
+6
+06 / BUSINESS MODEL
+Build a fully loaded cost model
+Unit of acquisition: one new paying business account. All amounts are KZT.
+Monthly acquisition component
+Calculation
+Cost
+Digital advertising
+Budget assumption
+80,000
+Channel partner commissions
+Budget assumption
+40,000
+Sales salary / founder replacement labor
+0.5 FTE x 480,000
+240,000
+Employer payroll allowance
+20% x 240,000
+48,000
+Initial onboarding
+Full monthly allocated budget
+40,000
+Courier acquisition
+Supply-side cohort allocation
+32,000
+Total acquisition cost pool
+Sum of all components
+480,000
+Blended CAC = 480,000 / 20 new paying stores = KZT 24,000. The denominator excludes free registrations,
+couriers and recipients. The acquisition funnel hypothesis is 200 leads, 80 qualified shops, 40 activated trials and
+20 paying shops. Spend and customer counts must be matched to the same acquisition cycle. Sales labor is
+costed even if founders initially defer cash pay.
+Direct monthly service cost / store
+Calculation
+Cost
+Maps and notifications
+40 x 5
+200
+Order-level support
+40 x 12
+480
+Service-credit / failed-attempt reserve
+40 x 8
+320
+Payment processing on platform fees
+2% x 4,800
+96
+Ongoing account support
+Per active store
+500
+Account infrastructure
+Per active store
+100
+Total direct COGS
+Sum of components
+1,696
+All cost and conversion figures above are planning assumptions, not supplier quotes or recorded expense data.
+The 2% processing allowance applies only to Qadam's fee. Courier fares are paid directly, so their
+payment-processing cost is not included. Any later decision to collect the entire fare requires a revised cost
+model.
+Courier-acquisition cost belongs in blended CAC. Routine post-sale support belongs in COGS. Initial onboarding is counted once
+in CAC. Costs of non-billable attempts and credits are allocated to successful orders through the reserve; the pilot must measure
+whether KZT 8 is sufficient.
+
+
+QADAM DELIVERY
+TECHNOLOGICAL ENTREPRENEURSHIP
+Task 5  /  11 November 2026
+7
+07 / BUSINESS MODEL
+Calculate LTV, CAC and payback
+ Variable
+Definition
+Base
+q
+Completed deliveries per active paying store / month
+40
+f
+Starter fee per completed delivery
+KZT 120
+R
+Monthly platform revenue: q x f
+KZT 4,800
+GP
+R less direct monthly COGS
+KZT 3,104
+g
+GP / R
+64.7%
+c
+Monthly logo churn for paying stores
+3.0%
+CAC
+Blended monthly cost / new paying stores
+KZT 24,000
+Gross-profit lifetime value
+ Expected lifetime = 1 / c = 1 / 0.03 = 33.33 months.
+LTV = R x g / c = GP / c = 3,104 / 0.03 = KZT 103,467.
+LTV / CAC = 103,466.67 / 24,000 = 4.31x.
+LTV measures lifetime gross profit, not lifetime revenue or courier GMV. It assumes constant monthly churn,
+constant order volume and margin, no expansion, no reactivation and no discounting. A 3% monthly churn
+assumption implies (1 - 0.03)12 = 69.4% twelve-month logo retention. This is unobserved and materially affects
+LTV.
+CAC payback
+ Simple payback = CAC / monthly GP = 24,000 / 3,104 = 7.73 months.
+The monthly cohort also applies churn between months. Expected survival in month t is (1 - c)t-1. The first month
+with cumulative expected gross profit at least KZT 24,000 is month 9. This survival-adjusted payback is more
+conservative than the simple ratio.
+36-month capped check
+ LTV36 = GP x [1 - (1 - c)36] / c
+= 3,104 x [1 - 0.9736] / 0.03 = KZT 68,906.
+LTV36 / CAC = 68,905.94 / 24,000 = 2.87x.
+The workbook sums 36 monthly retained-store contributions, so zero churn still produces a finite capped value.
+Uncapped LTV is shown as unavailable at zero churn instead of reporting an infinite figure. No residual value is
+added after month 36.
+
+
+QADAM DELIVERY
+TECHNOLOGICAL ENTREPRENEURSHIP
+Task 5  /  11 November 2026
+8
+08 / BUSINESS MODEL
+Benchmark the result and test failure
+Bessemer's cloud-company guide recommends gross-profit LTV/CAC of 3x or higher and SMB CAC payback
+below 12 months. Qadam uses these as reference investment-efficiency hurdles. They are cloud benchmarks,
+not universal rules for a Kazakhstan delivery marketplace. Meeting a modeled ratio does not establish financing
+eligibility. [B1]
+Test
+Base result
+Assessment
+Uncapped LTV / CAC >= 3x
+4.31x
+Meets, conditional on assumptions
+SMB simple payback < 12 months
+7.73 months
+Meets, conditional on assumptions
+36-month capped LTV / CAC >= 3x
+2.87x
+Below internal conservative hurdle
+Three scenarios evaluated through the same model
+Metric
+Downside
+Base
+Upside
+Orders / store / month
+25
+40
+70
+New paying stores / month
+12
+20
+30
+Monthly churn
+6%
+3%
+2%
+Blended CAC (KZT)
+40,000
+24,000
+16,000
+Monthly gross profit (KZT)
+1,715
+3,104
+5,882
+Uncapped LTV / CAC
+0.71x
+4.31x
+18.38x
+Simple payback (months)
+23.32
+7.73
+2.72
+36-month LTV / CAC
+0.64x
+2.87x
+9.50x
+All cases use Starter pricing and the same KZT 480,000 monthly acquisition cost pool. Cases vary order volume, paying customer
+additions and churn. Downside fails both primary hurdles. Upside is a stretch assumption, not a growth forecast.
+What must improve
+At base gross profit and CAC, uncapped LTV/CAC reaches 3x only if monthly churn is at most 4.31%. Simple
+payback is below 12 months at 29 or more deliveries/store/month, holding other costs constant.
+To reach 3x on capped LTV, CAC must fall to KZT 22,969 or less. At the same acquisition budget, 21 paying
+stores/month would produce CAC of KZT 22,857. Alternatively, about 42 orders/store/month would cross the
+capped hurdle at unchanged CAC and churn. These are testable thresholds, not achieved results.
+With KZT 120,000 fixed operating overhead plus the KZT 480,000 acquisition pool, indicative operating
+breakeven is ceil(600,000 / 3,104) = 194 active Starter stores. This excludes tax, capital expenditure and
+working-capital timing. Positive unit economics alone does not establish cash breakeven.
+
+
+QADAM DELIVERY
+TECHNOLOGICAL ENTREPRENEURSHIP
+Task 5  /  11 November 2026
+9
+09 / BUSINESS MODEL
+Validate before charging and scaling
+ Hypothesis
+Evidence to collect
+Decision rule
+Active-time advantage
+A proposed study of 10 independent shops, with at
+least five matched dispatch scenarios per workflow.
+Log all active work, corrections and failures.
+Publish paired times, completion
+rates and sample sizes. Claim 10x
+only if measured aggregate As-Is /
+To-Be is at least 10 on the
+predefined scope.
+WTP at KZT 120
+Offer a costed paid test to 20 qualified shops after
+product and launch approval. Record acceptances,
+refusals and reasons.
+Initial gate: at least 10 opt into the
+paid test and at least 8 of those
+complete a second paid dispatch.
+This is a pilot gate, not proof of
+long-term retention.
+Acquisition efficiency
+Track ad spend, referrals, sales hours, payroll
+allocation, onboarding and supply recruitment
+against first paid-store cohorts.
+Target blended CAC <= KZT 22,969
+for the capped 3x hurdle. A minimum
+of 21 payers/month is an acquisition
+hypothesis at the modeled budget.
+Churn and order
+frequency
+Track first-paying-store cohorts for at least six
+months. Record inactive months, exits, fee
+collections and reason codes.
+Use paid activity and a predefined
+churn policy. Do not infer a 33-month
+lifetime from a short trial. Refit the
+LTV model as data accumulates.
+Local service liquidity
+Measure requests, acceptance timestamps,
+completed orders, full courier cycle and support
+workload in one zone.
+Target >= 90% accepted within 10
+minutes and >= 95% accepted orders
+completed. Stop geographic
+expansion if either fails.
+Risks that change the model
+Low usage or seasonality: fewer orders reduce margin per account and raise payback. Supply gaps: credits,
+support and courier incentives may exceed the allowance. Off-platform repeat orders: shops and couriers can
+bypass fees unless history, convenience and service deliver enough recurring value.
+Billing and collection: monthly invoicing creates receivables; LTV is an economic estimate, not a cash-flow
+schedule. Define payment terms and separately measure late payment and bad debt. Product scope: custom
+integrations and SLAs can create new fixed support costs and must not inherit Starter economics without a
+separate build.
+Proceed in stages
+Use this assignment to design the commercial test. Charging fees, activating tariffs, changing courier terms
+and implementing paid-tier features each require the project owner's approval. The current report and
+workbook do not change the operating pilot.
+
+
+QADAM DELIVERY
+TECHNOLOGICAL ENTREPRENEURSHIP
+Task 5  /  11 November 2026
+10
+10 / BUSINESS MODEL
+References and model audit trail
+Project evidence
+[T4] Qadam Delivery. Task 4 team report, prepared 4 November 2026. Sections 02, 05-07 and evidence register. Source for the
+beachhead, 40 orders/month, 600-second versus 90-second model and KZT 1,500/hour assumption. Those figures were explicitly
+unvalidated in Task 4.
+[P1] Qadam Delivery. First pricing pass and pilot tariff hypothesis, updated with owner approval on 29 October 2026, and project
+roadmap current on 11 November 2026. The pilot allocates the entire delivery fare to the courier, uses 0% Qadam commission
+and does not enable automatic pricing until launch gates are closed. Proposed Task 5 platform fees are a separate commercial
+design.
+External primary sources
+[B1] D'Onofrio, M., Ding, E. and Atlas Editors. Bessemer Venture Partners, Scaling to $100 Million, published 21 September
+2021. CAC / CLTV section supports the 3x LTV/CAC reference and sub-12-month SMB payback target. Accessed 11 November
+2026.
+bvp.com/atlas/scaling-to-100-million
+[A1] Jordan, J., Jin, L., Coolican, D. A. and Chen, A. Andreessen Horowitz, 13 Metrics for Marketplace Companies, published
+21 February 2020. Supports separating GMV from revenue and monitoring match rate, market depth and time to match. Accessed
+11 November 2026.
+a16z.com/13-metrics-for-marketplace-companies/
+[M1] Team planning assumptions. Proposed fees, scenario drivers, staffing, acquisition budgets, cost allocations, churn,
+capacity targets and commercial gates were constructed for Task 5 on 11 November 2026. They are neither interview findings nor
+observed commercial performance.
+Financial workbook map
+Worksheet
+Purpose and key formulas
+Overview
+Active scenario, benchmark tests and a chart of expected cumulative gross profit versus
+CAC.
+Inputs
+Single case selector. Editable scenario and cost assumptions, provenance and benchmark
+links. Blue numbers are inputs.
+Pricing
+As-Is / To-Be labor value, tiers, credited minimum billing and customer net benefit.
+Unit Economics
+Revenue, direct COGS, fully loaded CAC, LTV, payback, retention and operating
+breakeven.
+Cohort
+36 monthly survival probabilities and gross-profit contributions. First expected acquisition
+recovery month.
+How to use. Start on Overview. On Inputs, select 1 = Downside, 2 = Base or 3 = Upside. Change blue assumptions only. Select
+the pricing plan separately to test minimum commitments. The report presents Starter economics; enterprise scope needs its own
+cost estimate.
+Model boundary. KZT nominal amounts, monthly periods, before taxes. No FX conversion, market-size valuation, revenue
+growth, financing, discounted valuation or full cash-flow forecast is claimed. Uncapped LTV is a constant-churn approximation.
+The capped cohort provides a shorter-horizon check.

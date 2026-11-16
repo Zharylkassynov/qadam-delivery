@@ -1,0 +1,212 @@
+PAGE 1
+Qadam Delivery
+Task 4. Quantified Value Proposition
+01
+Delivery
+for everyone
+0%
+commission at launch
+A future 2–3% fee may be
+deducted from courier payouts.
+
+PAGE 2
+Who Qadam Serves
+Primary segment: individual senders within Qadam's Almaty service area
+02
+PRIMARY SEGMENT
+Individual
+customer
+Documents
+Send across the city
+Gifts
+Send to someone you 
+know
+Personal items
+Deliver a small parcel
+NEXT SEGMENT
+Small shops
+Customer orders
+and regular dispatches.
+Research follows the first
+tests with everyday users.
+Couriers fulfill deliveries. Low commission is also a proposed benefit for this side of the platform.
+PAGE 3
+Value Proposition Canvas
+Connecting customer jobs, pains and gains to what Qadam offers
+03
+CUSTOMER PROFILE QADAM VALUE MAP
+Jobs to Be Done
+Send a parcel to someone.
+Track delivery and pay.
+Products / Services
+Telegram Mini App with orders,
+couriers, a map and order history.
+Pains
+High cost and unclear payment.
+Limited information about the order.
+Pain Relievers
+0% commission at launch.
+Agreed price and order statuses.
+Gains
+Affordable price, clear terms
+and a clear delivery outcome.
+Gain Creators
+Potential for a lower total price.
+Full payment to couriers at launch.
+Price value for senders needs testing with comparable all-in delivery prices.
+PAGE 4
+How the Payment Is Split
+Example: a KZT 1,500 order. Commission is deducted from the courier's payout
+04
+Qadam receives
+0% = 0 ₸
+2% = 30 ₸
+3% = 45 ₸
+At the same order price, the sender still pays KZT 1,500. Low commission may allow a lower tariff.
+Courier payout is before costs. The future 2–3% commission is not active.
+1,455 ₸
+1,470 ₸
+1,500 ₸
+Plan: 3%
+Plan: 2%
+Launch: 0%
+Courier payout Qadam commission
+PAGE 5
+Pricing and the “5–10×” Requirement
+Hypothetical scenario: commission reduction and total-price savings are separate measures
+05
+5–10×
+by commission rate
+15% ÷ 3% = 5×
+20% ÷ 2% = 10×
+Total price if the courier needs KZT 1,500
+Prices in this example are 15% / 12.4% lower.
+15–20% is an assumed baseline, not verified competitor rates. The 5–10× ratio applies to commission.
+All-in delivery price differences still require measurement.
+1,546 ₸
+1,500 ₸
+1,765 ₸
+Qadam: 3%
+Qadam: 0%
+Baseline: 15%
+PAGE 6
+Who Chooses the Service: DMU
+An individual sender often fills several buying roles
+06
+Individual
+sender
+Champion
+The sender decides
+to try Qadam
+End User
+Sender creates and
+checks the order
+Economic Buyer
+Sender or an informed
+recipient
+Blocker
+Another payer rejects the
+price or data sharing
+Influencer
+Friend or relative
+recommends the service
+For shops, a later study will distinguish the owner approving costs from the administrator creating orders.
+PAGE 7
+Buying Process and Full Customer Life Cycle
+From the first delivery need to the next order
+07
+1. Need
+Send a parcel
+within Almaty
+2. Choice
+Compare total price
+and delivery terms
+3. Launch
+Telegram, login
+and shipment details
+6. Return
+History, another order
+or customer support
+5. Payment
+Cash or a manual Kaspi
+transfer to the courier
+4. Delivery
+Terms, order, acceptance
+and status updates
+No separate app installation. Renewal means another order. Qadam handles order and data queries.
+PAGE 8
+How the Product Works
+One Telegram Mini App, Qadam's server and PostgreSQL
+08
+Next.js, React, TypeScript
+Customer Courier Administrator
+Qadam API
+Authentication, access, orders, statuses, notifications
+Node.js, Next.js API, Zod
+PostgreSQL
+Users, orders and event history
+Last known location and update time
+Telegram Bot API
+Messages and bot events
+Geoapify + Leaflet
+Addresses, routes, map
+Future integrations
+Kaspi Pay API, CRM, ERP
+Automatic pricing is off. Kaspi uses manual transfers. Location updates require an active Mini App and permission.
+PAGE 9
+Usability Tests with Everyday Users
+10 real participants independently complete three tasks
+09
+01
+Create a delivery
+“Send a small parcel to
+someone using this task 
+card.”
+Are addresses, the recipient
+and the final review clear?
+02
+Price and payment
+“How much will you pay,
+to whom, and how?”
+Are the total, payer and
+payment method understood?
+03
+Reopen the order
+“Close Qadam, reopen it
+and explain the parcel's 
+status.”
+Can they explain the status
+and location update time?
+If pricing is not available, use a clearly labeled prototype and record that distinction.
+PAGE 10
+Video Evidence and Feedback
+Assignment: recordings and clips by ISC2/Final, plus 20 separate feedback responses
+10
+10 full sessions
+At least 3 minutes each
+Screen, voice and consent
+Google Drive
+All full recordings
+Access for the instructor
+15–30 second clips
+Bottlenecks or insights
+Embedded in final slides
+20 other respondents
+Role and date. Exact feedback. Team insight and proposed improvement.
+At least 30 unique people. A PDF thumbnail or link does not replace an embedded video clip.
+PAGE 11
+Testing the Price Advantage
+Customers compare the total price of equivalent deliveries
+11
+Customer savings
+(Alternative price − Qadam price) ÷ Alternative price × 100%
+Comparable prices
+Same route, transport,
+time and handover terms.
+Courier payout
+Acceptable payout after
+commission and costs.
+Sender choice
+Do people choose Qadam
+over real alternatives?
+Hypothesis: low commission can make delivery more affordable.

@@ -40,7 +40,7 @@ test('Mini App customer completes a delivery with browser courier and restores h
     await customer.getByRole('button', { name: 'Проверить заказ', exact: true }).click();
     await customer.getByRole('button', { name: 'Подтвердить заказ', exact: true }).click();
     const detail = customer.getByRole('region', { name: 'Детали заказа' });
-    await expect(detail.locator('.status-badge')).toHaveText('Ищем курьера');
+    await expect(detail.getByRole('heading',{name:'Ищем курьера',exact:true})).toBeVisible();
     await courier.goto('/');
     await courier.getByLabel('Логин', { exact: true }).fill('courier1@qadam.demo');
     await courier.getByLabel('Пароль', { exact: true }).fill(process.env.DEMO_PASSWORD!);
@@ -72,7 +72,8 @@ test('Mini App customer completes a delivery with browser courier and restores h
     await navigation.getByRole('button', { name: 'Заказы', exact: true }).click();
     await reopened.getByRole('button', { name: 'Завершённые', exact: true }).click();
     await reopened.getByRole('button', { name: orderButton, exact: true }).click();
-    await expect(reopened.locator('.timeline li')).toHaveCount(6);
+    await expect(reopened.locator('.timeline')).toHaveCount(0);
+    expect((await(await courier.request.get(`/api/orders/${availableOrder.id}`)).json()).order.events).toHaveLength(6);
     await reopened.screenshot({ path: testInfo.outputPath('telegram-mobile-history.png'), fullPage: true });
     await expect(reopened.getByRole('button', { name: /^Выйти(?: из аккаунта)?$/ })).toHaveCount(0);
     expect((await reopened.request.get('/api/orders')).status()).toBe(401);

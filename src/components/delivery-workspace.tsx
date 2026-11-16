@@ -21,7 +21,7 @@ import { useOrderQuote } from './use-order-quote';
 import { PhoneLink } from './phone-link';
 import { useBusinessProfile,BusinessProfilePanel,emptyBusiness,type BusinessDraft } from './business-profile';
 import { OrderRequirements } from './order-requirements';
-import { windowExpired,futurePriceMessage } from '../lib/order-details';
+import { deliveryWindow,parcelLabels,windowExpired,futurePriceMessage } from '../lib/order-details';
 import {api} from '../lib/client-api';
 import {OrderTrustPanel} from './order-trust';
 import {CourierRelease,DeliveryHandoff} from './delivery-handoff';
@@ -215,7 +215,7 @@ export function DeliveryWorkspace(props: Props) {
       <main className={`screen-body screen-${view}`} ref={bodyRef} id="main-content">
         <div className="screen-content">
           {error && <Feedback tone="error" title={error} role="alert" action={<button type="button" className="feedback-dismiss" aria-label="Закрыть сообщение" onClick={props.onClearMessages}>×</button>}/>}
-          {notice && <Feedback tone="success" title={notice} role="status"/>}
+          {notice && !(customer&&view==='detail'&&notice.startsWith('Заказ создан')) && <Feedback tone="success" title={notice} role="status"/>}
           {syncError && <Feedback tone="error" title="Данные не обновлены" role="alert" action={<button type="button" className="text-button" onClick={props.onRefresh}>Повторить</button>}>{syncError}{syncedAt && <p>Последнее обновление: {formatTime(syncedAt)}. Статусы могут быть устаревшими.</p>}</Feedback>}
           {user.courierBlocked&&<Feedback title="Курьерский доступ ограничен" tone="warning">Личные доставки доступны. Если у вас уже есть принятая посылка, свяжитесь с командой Qadam: <a href="https://t.me/zharlkssnv" target="_blank" rel="noopener noreferrer">@zharlkssnv</a>.</Feedback>}
 
@@ -275,6 +275,7 @@ function SyncTime({ value, offline }: { value: string | null; offline: boolean }
 function OrderDetail({ order, user, busy, onCancel,onReleased,onPointRepair }: { order: Order; user: User; busy: boolean; onCancel: () => Promise<void>;onReleased:()=>void;onPointRepair:(kind:'pickup'|'destination')=>void }) {
   const customer = user.role === 'CUSTOMER';
   const complete = order.status === 'DELIVERED';
+  const concise = customer&&['CREATED','SEARCHING_FOR_COURIER','DELIVERED','CANCELLED'].includes(order.status);
   if(user.role==='COURIER'&&order.status==='SEARCHING_FOR_COURIER'&&!order.courierId)return <CourierOfferPreview order={order} telegram={!!user.telegramId}/>;
   if(order.handoffRequired&&['ACCEPTED','PICKED_UP','IN_TRANSIT'].includes(order.status))return <FocusedOrderDetail order={order} user={user} onReleased={onReleased} onPointRepair={onPointRepair}/>;
   const heading = {
@@ -282,24 +283,31 @@ function OrderDetail({ order, user, busy, onCancel,onReleased,onPointRepair }: {
     ACCEPTED: customer ? 'Курьер назначен' : 'Заберите посылку', PICKED_UP: customer ? 'Посылка у курьера' : 'Посылка у вас',
     IN_TRANSIT: customer ? 'Посылка в пути' : 'Доставьте получателю', DELIVERED: customer ? 'Посылка у получателя' : 'Доставка завершена', CANCELLED: 'Заказ отменён',
   }[order.status];
-  return <section className="order-detail" aria-label="Детали заказа">
-    {complete ? <div className="success-symbol"><Icon type="check"/></div> : <Badge status={order.status}/>}
-    <div className="screen-heading"><h1 tabIndex={-1}>{heading}</h1><p>{complete?`${orderNumber(order)} · ${formatTime(order.updatedAt)}`:`Создан ${formatTime(order.createdAt)}`}</p></div>
-    <OrderTracking order={order} user={user}/>
+  return <section className={`order-detail ${concise?'customer-order-summary':''}`} aria-label="Детали заказа">
+    {complete ? <div className="success-symbol"><Icon type="check"/></div> : !concise&&<Badge status={order.status}/>}
+    <div className="screen-heading"><h1 tabIndex={-1}>{heading}</h1>{(!concise||finished(order))&&<p>{concise?formatTime(order.updatedAt):complete?`${orderNumber(order)} · ${formatTime(order.updatedAt)}`:`Создан ${formatTime(order.createdAt)}`}</p>}</div>
+    <details className={concise&&finished(order)?'order-disclosure':undefined} open={concise&&finished(order)?undefined:true}>
+      <summary hidden={!concise||!finished(order)}>Карта доставки</summary>
+      <div className={concise&&finished(order)?'order-disclosure-body':concise?'focused-map':undefined}><OrderTracking order={order} user={user} focused={concise&&!finished(order)}/></div>
+    </details>
     {!customer&&order.status==='SEARCHING_FOR_COURIER'&&<CourierAvailability telegram={!!user.telegramId}/>}
     {!customer&&order.courierId===user.id&&['ACCEPTED','PICKED_UP','IN_TRANSIT'].includes(order.status)&&<OrderLocationStream key={`location-stream:${order.id}:${order.assignmentVersion}`} order={order}/>}
     <RouteCard pickup={order.pickupAddress} destination={order.destinationAddress}/>
-    <OrderRequirements order={order}/>
-    {!complete && <Recipient order={order}/>}
-    <SavedOrderPrice order={order} courier={!customer}/>
-    <OrderContacts order={order} customer={customer}/>
-    {customer&&order.customerId===user.id&&<RecipientShare key={`recipient-share:${order.id}`} order={order}/>}
-    {(order.customerId===user.id||order.courierId===user.id)&&(order.photoRequired||order.codeRequired||complete)&&<OrderTrustPanel key={`trust:${order.id}:${order.assignmentVersion}`} order={order} user={user}/>}
+    {concise&&!finished(order)&&<>
+      {deliveryWindow(order)&&<p className="delivery-window">{deliveryWindow(order)} · Алматы</p>}
+      {windowExpired(order)&&<Feedback title="Интервал доставки истёк" tone="warning">Отмените заказ и выберите новое время.</Feedback>}
+      <div className="focused-tags">{order.parcelType&&<span>{parcelLabels[order.parcelType]}</span>}{order.fragile&&<span>Хрупкое</span>}{order.surprise&&<span>Сюрприз</span>}{order.urgent&&<span>Без задержки</span>}</div>
+    </>}
+    {!concise&&<><OrderRequirements order={order}/>{!complete&&<Recipient order={order}/>}</>}
+    <SavedOrderPrice order={order} courier={!customer} compact={concise}/>
+    {concise?<details className="order-disclosure"><summary>Детали заказа</summary><div className="order-disclosure-body"><OrderRequirements order={order}/><Recipient order={order}/><OrderContacts order={order} customer/>{order.pricing?.breakdown.pilotTermsVersion===deliveryPilot.termsVersion&&<p className="field-hint">До двери · до 5 кг · каждая сторона до 40 см. По 5 минут на забор и вручение. Автоматических доплат нет.</p>}</div></details>:<OrderContacts order={order} customer={customer}/>}
+    {customer&&order.customerId===user.id&&(finished(order)?<details className="order-disclosure"><summary>Ссылка получателю</summary><RecipientShare key={`recipient-share:${order.id}`} order={order} compact/></details>:<RecipientShare key={`recipient-share:${order.id}`} order={order} compact={concise}/>)}
+    {(order.customerId===user.id||order.courierId===user.id)&&(order.photoRequired||order.codeRequired||complete)&&<OrderTrustPanel key={`trust:${order.id}:${order.assignmentVersion}`} order={order} user={user} compact={concise}/>}
     {order.courierId===user.id&&order.status==='ACCEPTED'&&<CourierRelease order={order} onReleased={onReleased}/>}
     {!customer&&order.status==='SEARCHING_FOR_COURIER'&&<p className="muted">Принимая заказ, вы разрешаете показать свой подтверждённый номер клиенту для связи по доставке.</p>}
     {!customer&&order.status==='SEARCHING_FOR_COURIER'&&<p className="muted">{order.pricing?'Сумма зафиксирована. Оплата напрямую вам.':'Стоимость согласуйте до передачи посылки.'}</p>}
-    <Timeline order={order}/>
-    {complete && <Recipient order={order}/>}
+    {!customer&&<Timeline order={order}/>}
+    {complete&&!concise&&<Recipient order={order}/>}
     {customer && ['CREATED', 'SEARCHING_FOR_COURIER'].includes(order.status) && <Button variant="danger" className="wide" disabled={busy} onClick={() => void onCancel()}>Отменить заказ</Button>}
   </section>;
 }
@@ -327,7 +335,7 @@ function FocusedOrderDetail({order,user,onReleased,onPointRepair}:{order:Order;u
     {owner&&(!order.pickupPoint||!order.destinationPoint)&&<Feedback title="Уточните точку передачи" tone="warning">{!order.pickupPoint&&pickup&&<Button variant="secondary" onClick={()=>onPointRepair('pickup')}>Точка отправителя</Button>}{!order.destinationPoint&&<Button variant="secondary" onClick={()=>onPointRepair('destination')}>Точка получателя</Button>}</Feedback>}
     {owner&&<HandoffCodes key={`${order.id}:${order.assignmentVersion}:${order.routeVersion}:${pickup}`} order={order}/>}
     {owner&&<details className="order-disclosure"><summary>Поделиться доставкой</summary><RecipientShare order={order}/></details>}
-    <details className="order-disclosure"><summary>{courier?'Детали заказа':'Адреса и условия'}</summary><div className="order-disclosure-body"><RouteCard pickup={order.pickupAddress} destination={order.destinationAddress}/><OrderRequirements order={order}/><SavedOrderPrice order={order} courier={courier}/><Recipient order={order}/>{courier&&!pickup&&<OrderContacts order={order} customer={false}/>}<Timeline order={order}/></div></details>
+    <details className="order-disclosure"><summary>{courier?'Детали заказа':'Адреса и условия'}</summary><div className="order-disclosure-body"><RouteCard pickup={order.pickupAddress} destination={order.destinationAddress}/><OrderRequirements order={order}/><SavedOrderPrice order={order} courier={courier}/><Recipient order={order}/>{courier&&!pickup&&<OrderContacts order={order} customer={false}/>} {courier&&<Timeline order={order}/>}</div></details>
     {courier&&<details className="order-disclosure"><summary>Другие действия</summary><div className="order-disclosure-body">{!needsLocationSetup&&<CourierGpsStatus/>}<OrderLocationStream key={`${order.id}:${order.assignmentVersion}`} order={order}/>{pickup&&<CourierRelease order={order} onReleased={onReleased}/>}</div></details>}
     <a className="handoff-support" href="https://t.me/zharlkssnv" target="_blank" rel="noopener noreferrer">Нужна помощь?</a>
   </section>;

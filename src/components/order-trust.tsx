@@ -91,24 +91,24 @@ function ProofPhoto({order,photo}:{order:Order;photo:OrderTrust['photo']}){
   </>:<p className="muted">{order.status==='DELIVERED'?'Фото недоступно. По вопросам доставки напишите команде.':'Курьер приложит фото перед завершением доставки.'}</p>}</section>;
 }
 
-function DeliveryRating({order,rating,onDone}:{order:Order;rating:OrderTrust['rating'];onDone:()=>void}){
+function DeliveryRating({order,rating,onDone,compact=false}:{order:Order;rating:OrderTrust['rating'];onDone:()=>void;compact?:boolean}){
   const [score,setScore]=useState(0),[comment,setComment]=useState('');const action=useTrustAction();
   return <section className="trust-section"><h2>{rating?'Ваш отзыв':'Как прошла доставка?'}</h2>{rating?<><p className="trust-rating-result">{rating.score} из 5</p>{rating.comment&&<p className="pre-wrap">{rating.comment}</p>}<p className="muted">Отзыв сохранён. Для исправления напишите команде Qadam.</p></>:<form className="trust-section" onSubmit={e=>{e.preventDefault();void action.run(`/api/orders/${order.id}/rating`,{score,comment:comment.trim()},false).then(result=>{if(result)onDone();});}}>
     <fieldset className="trust-rating"><legend className="sr-only">Оценка доставки от 1 до 5</legend>{[1,2,3,4,5].map(value=><label key={value}><input type="radio" name="delivery-rating" value={value} required checked={score===value} disabled={action.busy} onChange={()=>setScore(value)}/><span aria-hidden="true">★</span><small>{value}</small></label>)}</fieldset>
-    <div className="field"><label htmlFor="rating-comment">Комментарий <span className="muted">· необязательно</span></label><textarea id="rating-comment" maxLength={500} value={comment} disabled={action.busy} onChange={e=>setComment(e.target.value)}/></div>
-    <p className="muted">Отзыв увидит команда Qadam. Курьеру он не показывается.</p>{action.error&&<Feedback title={action.error} tone="error" role="alert"/>}
+    {(!compact||score>0)&&<><div className="field"><label htmlFor="rating-comment">Комментарий <span className="muted">· необязательно</span></label><textarea id="rating-comment" maxLength={500} value={comment} disabled={action.busy} onChange={e=>setComment(e.target.value)}/></div>
+    <p className="muted">{compact?'Отзыв виден только команде Qadam.':'Отзыв увидит команда Qadam. Курьеру он не показывается.'}</p></>}{action.error&&<Feedback title={action.error} tone="error" role="alert"/>}
     <Button type="submit" disabled={action.busy||!score}>{action.busy?'Сохраняем…':'Сохранить отзыв'}</Button>
   </form>}</section>;
 }
 
-export function OrderTrustPanel({order,user}:{order:Order;user:User}){
+export function OrderTrustPanel({order,user,compact=false}:{order:Order;user:User;compact?:boolean}){
   const data=useOrderTrust(order);const owner=order.customerId===user.id;
   return <div className="order-trust">{data.error?<Feedback title="Подтверждение не обновлено" tone="error" role="alert" action={<Button variant="ghost" onClick={data.reload}>Повторить</Button>}>{data.error}</Feedback>:data.loading&&!data.trust?<p role="status">Загружаем подтверждение…</p>:null}
     {data.trust&&<>{!order.handoffRequired&&order.codeRequired&&owner&&!['DELIVERED','CANCELLED'].includes(order.status)&&<CustomerCode key={`${order.id}:${order.assignmentVersion}`} order={order}/>}
       {order.photoRequired&&<ProofPhoto order={order} photo={data.trust.photo}/>}
       {!order.handoffRequired&&order.codeRequired&&user.isAdmin&&!owner&&data.trust.canResetCode&&<section className="trust-section"><h2>Код при вручении</h2><p className="muted">Код видит только отправитель. Команда может выпустить новый с сохранением причины.</p><CodeReset order={order} onDone={data.reload}/></section>}
       {order.handoffRequired&&user.isAdmin&&!owner&&['ACCEPTED','PICKED_UP','IN_TRANSIT'].includes(order.status)&&<section className="trust-section"><h2>{order.status==='ACCEPTED'?'Код забора':'Код вручения'}</h2><p className="muted">Код видит отправитель. Новый выпуск сохраняется в истории.</p><CodeReset order={order} handoffStage={order.status==='ACCEPTED'?'PICKUP':'DROPOFF'} onDone={data.reload}/></section>}
-      {order.status==='DELIVERED'&&(owner?<DeliveryRating order={order} rating={data.trust.rating} onDone={data.reload}/>:user.isAdmin&&data.trust.rating?<section className="trust-section"><h2>Отзыв отправителя</h2><p>{data.trust.rating.score} из 5</p><p className="pre-wrap">{data.trust.rating.comment}</p></section>:null)}
+      {order.status==='DELIVERED'&&(owner?<DeliveryRating order={order} rating={data.trust.rating} onDone={data.reload} compact={compact}/>:user.isAdmin&&data.trust.rating?<section className="trust-section"><h2>Отзыв отправителя</h2><p>{data.trust.rating.score} из 5</p><p className="pre-wrap">{data.trust.rating.comment}</p></section>:null)}
     </>}
   </div>;
 }
