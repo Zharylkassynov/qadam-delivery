@@ -6,7 +6,7 @@ import type {Order} from '../lib/types';
 import {Button,Feedback,formatTime} from './delivery-ui';
 import {confirmAction} from '../lib/telegram-ui';
 
-export function RecipientShare({order}:{order:Order}){
+export function RecipientShare({order,compact=false}:{order:Order;compact?:boolean}){
   const [link,setLink]=useState<RecipientLink|null>(null),[error,setError]=useState(''),[busy,setBusy]=useState(false),[notice,setNotice]=useState(''),[retry,setRetry]=useState(0);
   const saving=useRef(false);
   const loadedOrder=useRef<string|null>(null);
@@ -24,7 +24,7 @@ export function RecipientShare({order}:{order:Order}){
   }
   const url=link?.url,whatsapp=url?whatsAppLink(order.recipientPhone,url):null;
   return <section className="trust-section recipient-share"><h2>Отслеживание для получателя</h2>
-    <p className="muted">Поделитесь статусом доставки. Получателю не нужно входить в Qadam.</p>
+    {!compact&&<p className="muted">Поделитесь статусом доставки. Получателю не нужно входить в Qadam.</p>}
     {order.surprise&&<Feedback title="Это сюрприз" tone="warning">Ссылка сообщит получателю о доставке.</Feedback>}
     <p className="recipient-caption">Доступ есть у всех, кому передали ссылку.</p>
     {error&&<Feedback title={error} tone="error" role="alert" action={!link?<Button variant="ghost" onClick={()=>setRetry(n=>n+1)}>Повторить</Button>:undefined}/>}

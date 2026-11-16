@@ -1,6 +1,12 @@
 @import "tailwindcss";
 @import "leaflet/dist/leaflet.css";
 
+.compact-order-price.quote-price{border-top:0;padding-top:0}
+.compact-order-price .quote-price-row{display:flex;flex-direction:column;align-items:flex-start;gap:6px}
+.compact-order-price .quote-price-row>span{font-size:14px;line-height:20px}
+.compact-order-price .quote-price-row>strong{font-size:24px;line-height:30px;overflow-wrap:anywhere}
+.customer-order-summary .focused-map .delivery-map-wrap,.customer-order-summary .focused-map .delivery-map{height:210px;min-height:210px}
+
 /* Courier offers: one entry point per card, one acceptance action in the preview. */
 .courier-home{display:flex;flex-direction:column;gap:12px;min-width:0;width:100%;max-width:820px;margin:0 auto}
 .courier-home-city{font-size:13px;color:var(--muted)}

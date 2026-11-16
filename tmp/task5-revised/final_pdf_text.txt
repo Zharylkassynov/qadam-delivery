@@ -1,0 +1,227 @@
+Qadam Delivery
+Task 5. Business Model and Unit Economics
+01
+Delivery
+for everyone
+0%
+commission at launch
+Future model: 2–3% from couriers.
+No subscription.
+
+Customers and Current Evidence
+Individual senders first. Flower and other small shops later.
+Registration does not prove active supply. Pricing feedback and willingness to pay have not been tested.
+02
+~100
+registered couriers
+Order creation and delivery
+scenarios tested for usability.
+WHAT USERS ASKED FOR
+Visible delivery prices
+A better map
+Bank card payment
+UI/UX improvements
+
+Business Model Selection
+A two-sided marketplace: senders request delivery, couriers fulfill it.
+Proposed liquidity gates: 90% of valid requests accepted within 10 minutes; 95% of accepted orders completed.
+03
+Archetype
+Decision and reason
+Marketplace commission
+Selected: 2–3% of completed-order value.
+Subscription / SaaS
+Rejected: payment should follow deliveries.
+Fixed transaction fee
+Not selected: one fee ignores order value.
+Freemium / hybrid
+0% is a temporary pilot, with duration still open.
+
+How Money Moves
+Proposed wallet model. Example fare: KZT 1,500 at a 2% commission.
+Wallet top-ups are prepaid balances, not revenue. Commission arises only on completion. No fee for a cancelled order.
+04
+PAYMENT FLOW
+1. Client pays KZT 1,500
+directly to the courier.
+2. Courier tops up the
+Qadam platform balance.
+3. Qadam deducts KZT 30
+after completion.
+ONE COMPLETED DELIVERY
+30 ₸
+Qadam commission
+Courier retains KZT 1,470
+before transport costs.
+Wallet: KZT 1,000 becomes 970.
+
+Three Proposed Service Tiers
+Assignment pricing architecture. No monthly subscription.
+Only the 0% then 2–3% direction has been discussed. Business features and the final rate require a cost and WTP test.
+05
+Starter / Launch
+Pro / Standard
+Enterprise / Future
+Commission
+0%
+2% proposed
+Up to 3% proposed
+Value
+Try the delivery flow
+Everyday orders
+and order history
+Shop dispatches
+and integrations
+Service
+Existing access
+controls
+Standard support
+Advanced security
+and dedicated SLA
+Terms
+Duration open
+No subscription
+Per completed order
+No subscription
+Custom contract
+Separate cost check
+
+Value-Based Pricing
+Primary value metric: completed-delivery GMV, not user seats.
+The delivery tariff itself is still undecided. Commission acceptance and wallet funding need a real courier test.
+06
+PRICE FOLLOWS ORDER VALUE
+Per KZT 1,000 of
+completed-delivery value
+2% = KZT 20
+3% = KZT 30
+WHY NOT “COST + 20%”?
+Server cost does not measure
+courier willingness to pay.
+Cost-plus can miss the value
+of finding delivery orders.
+Wallet top-ups add switching
+effort and money tied up.
+
+The 10× Value Hypothesis
+Same illustrative order: KZT 1,500. Comparison inherited from the supplied Task 4.
+The 20% baseline is hypothetical, not a verified competitor fee. 10× applies to commission, not the full delivery price.
+07
+For one KZT 1,500 delivery
+Hypothetical baseline
+Qadam proposal
+Commission rate
+20% assumed
+2% proposed
+Commission paid
+KZT 300
+KZT 30
+Courier retains, before own costs
+KZT 1,200
+KZT 1,470
+300 ÷ 30 = 10×
+KZT 270 lower commission per order
+
+Revenue and Server Break-Even
+Known monthly server budget: KZT 8,300. Current map spend: KZT 0.
+Fare KZT 1,500 and cost KZT 5/order are assumptions. Server-only breakeven excludes acquisition and other overhead.
+08
+Per completed delivery
+Launch 0%
+At 2%
+At 3%
+Qadam commission
+KZT 0
+KZT 30
+KZT 45
+Illustrative service cost
+KZT 5
+KZT 5
+KZT 5
+Contribution
+−KZT 5
+KZT 25
+KZT 40
+Orders to cover server / month
+Not covered
+332
+208
+Including the model’s KZT 60,000 acquisition pool:
+2% needs 2,732 completed deliveries/month.
+
+Customer Acquisition Cost
+Model unit: one newly monetized courier. Costs cover acquisition on both marketplace sides.
+All acquisition figures are assumptions. The ~100 existing registrations are not the denominator for CAC.
+09
+Illustrative monthly acquisition pool
+KZT
+Digital ads: senders and couriers
+20,000
+Channel partner commissions
+5,000
+Loaded sales / founder labor
+20,000
+Initial onboarding
+15,000
+Total
+60,000
+CAC = KZT 60,000 ÷ 20 new monetized couriers = KZT 3,000
+
+LTV and CAC Payback
+Illustrative base case after launch: 2% fee, 20 deliveries/courier/month and 5% monthly churn.
+No paid cohort exists yet. Churn, order frequency and costs are unvalidated. Contribution excludes fixed server cost.
+10
+MONTHLY CONTRIBUTION
+20 orders × (KZT 30 − KZT 5) = KZT 500
+Expected lifetime = 1 ÷ 5% churn = 20 months
+LTV = KZT 500 × 20 months = KZT 10,000
+3.33×
+LTV / CAC: 10,000 ÷ 3,000
+6 months
+Payback: 3,000 ÷ 500
+
+VC Reference Hurdles and Scenarios
+Planning targets: LTV/CAC ≥ 3× and CAC payback < 12 months.
+Cloud benchmarks are reference hurdles, not proof of marketplace readiness. All cases below are hypothetical.
+11
+Metric
+Downside 2%
+Base 2%
+3% fee test
+Orders / courier / month
+10
+20
+20
+Monthly churn
+10%
+5%
+5%
+CAC
+KZT 5,000
+KZT 3,000
+KZT 3,000
+LTV / CAC
+0.50×
+3.33×
+5.33×
+Simple payback
+20 months
+6 months
+3.75 months
+Conservative check: base LTV/CAC capped at 36 months = 2.81×.
+
+Commercial Validation and Next Decisions
+The business model is proposed. Payment and pricing decisions remain open.
+Benchmark source: Bessemer Venture Partners, Scaling to $100 Million (2021).
+bvp.com/atlas/scaling-to-100-million
+ 12
+DECISIONS STILL OPEN
+Delivery tariff and the 0% period
+Final 2% or 3% commission
+Wallet top-ups and refunds
+Card payment integration
+WHAT WE MUST MEASURE
+Courier willingness to pay
+Orders and repeat use
+Acceptance and completion
+Real costs, CAC and churn

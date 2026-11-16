@@ -1,0 +1,5 @@
+{
+  "validation": "Finalizer completed checks and import, failed only on filesystem link.",
+  "publish": "Copied exact validated candidate, matching SHA-256.",
+  "sha256": "f3a01a919537a1ede96ee727401cc1b8e3ab961087d51e922f1462044d7fa214"
+}

@@ -104,6 +104,7 @@ test('map pins and simulated GPS persist through delivery, stop on hide and show
     await customer.getByRole('button', { name: 'Завершённые', exact: true }).click();
     await customer.getByRole('button', { name: /^Открыть заказ/ }).filter({ hasText: pickup }).click();
     await expect(customer.locator('.qadam-map-marker')).toHaveCount(3);
+    await customer.getByText('Карта доставки',{exact:true}).click();
     await expect(customer.getByText('Доставка завершена · последняя точка', { exact: true })).toBeVisible();
     await expect(courier.getByRole('button', { name: 'Передавать геопозицию', exact: true })).toHaveCount(0);
   } finally { await customerContext.close(); await courierContext.close(); }
