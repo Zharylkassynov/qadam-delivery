@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { AppError } from './errors';
 import type { MapPoint } from './types';
+import type { Tariff } from './pricing';
 
 const point=z.object({latitude:z.number().min(-90).max(90),longitude:z.number().min(-180).max(180)});
 const seconds=z.number().int().min(0).max(14400);
@@ -9,7 +10,7 @@ const responseSchema=z.object({routes:z.array(z.object({summary:z.object({
   noTrafficTravelTimeInSeconds:seconds,historicTrafficTravelTimeInSeconds:seconds,
   liveTrafficIncidentsTravelTimeInSeconds:seconds,
 }),legs:z.array(z.object({points:z.array(point).min(2).max(10000)})).length(1)})).length(1)});
-export type QuoteRoute={distanceM:number;durationS:number;provider:'TOMTOM_V1';measuredAt:Date;paths:[number,number][][]};
+export type QuoteRoute={distanceM:number;durationS:number;provider:Tariff['provider'];measuredAt:Date;paths:[number,number][][]};
 const unavailable='Не удалось рассчитать дорогу с данными о дорожной ситуации. Повторите попытку.';
 
 // Candidate adapter only. No call occurs unless an owner-approved tariff is enabled.

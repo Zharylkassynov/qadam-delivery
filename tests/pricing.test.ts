@@ -5,7 +5,8 @@ import { randomUUID } from 'node:crypto';
 import { calculatePrice,type Tariff } from '../src/lib/pricing';
 import { closeDatabase,database } from '../src/lib/db';
 import { migrate } from '../scripts/migrate';
-import { createQuote,quoteFingerprint,type QuoteInput } from '../src/lib/order-quotes';
+import { createQuote,currentTariff,quoteFingerprint,type QuoteInput } from '../src/lib/order-quotes';
+import { orderRoute } from '../src/lib/routing';
 import { createOrder,acceptOrder,listOrders,getOrder,createOrderSchema,transitionOrder } from '../src/lib/orders';
 import { deliveryPilot } from '../src/lib/delivery-pilot';
 import { quoteRoute } from '../src/lib/quote-routing';
@@ -78,6 +79,47 @@ test('disabled pricing is closed, input is strict and a courier cannot request c
   await rejected(createQuote(customer,{...input(),pickupPoint:{latitude:0,longitude:0}},metrics),422);
   assert.equal(createOrderSchema.safeParse({...input(),requestKey:randomUUID(),priceKzt:1}).success,false);
   assert.notEqual(quoteFingerprint(input()),quoteFingerprint({...input(),paymentMethod:'KASPI_TRANSFER'}));
+});
+test('Geoapify demonstration uses a real pricing snapshot, is private to the chosen pair and expires',async()=>{
+  const demonstration={customerId:customer.id,courierId:courier.id,endsAt:new Date(Date.now()+600000).toISOString()};
+  const demoTariff={...tariff,version:'test-geoapify-demo',provider:'GEOAPIFY_V1',demonstration};
+  await database().query('UPDATE qadam.pricing_settings SET active=true,config=$1',[JSON.stringify(demoTariff)]);
+  await phone(customer);await phone(courier);await phone(foot);
+  await database().query("UPDATE qadam.courier_applications SET transport='CAR' WHERE user_id=$1",[foot.id]);
+  const priorKey=process.env.GEOAPIFY_API_KEY;
+  process.env.GEOAPIFY_API_KEY=key;
+  try{
+    const fetcher=mock.method(globalThis,'fetch',async(url:string|URL|Request)=>{
+      const parsed=new URL(String(url));
+      assert.equal(parsed.origin,'https://api.geoapify.com');
+      assert.equal(parsed.searchParams.get('traffic'),'free_flow');
+      assert.equal(parsed.searchParams.get('waypoints'),`${a.latitude},${a.longitude}|${b.latitude},${b.longitude}`);
+      return Response.json({features:[{properties:{distance:4592,time:1163,distance_units:'meters'},geometry:{type:'MultiLineString',coordinates:[[[a.longitude,a.latitude],[b.longitude,b.latitude]]]}}]});
+    });
+    assert.equal(await currentTariff(other),null);
+    await rejected(createQuote(other,input()),503);
+    assert.equal(fetcher.mock.calls.length,0);
+    const quote=await createQuote(customer,input());
+    assert.equal(quote.priceKzt,1400);assert.equal(quote.breakdown.routeProvider,'GEOAPIFY_V1');
+    assert.equal(quote.breakdown.demonstration,true);
+    assert.equal(Object.hasOwn(quote.breakdown,'demonstrationCourierId'),false);
+    const order=await createOrder(customer,{...input(),requestKey:randomUUID(),quoteId:quote.id});
+    assert.equal(order.pricing?.priceKzt,1400);assert.equal(order.pricing?.breakdown.demonstration,true);
+    assert.equal(Object.hasOwn(order.pricing!.breakdown,'demonstrationCourierId'),false);
+    assert.equal((await listOrders(foot)).some(item=>item.id===order.id),false);
+    await rejected(getOrder(foot,order.id),404);await rejected(orderRoute(foot,order.id),404);
+    await rejected(acceptOrder(foot,order.id,true),404);
+    assert.ok((await listOrders(courier)).some(item=>item.id===order.id));
+    assert.equal((await acceptOrder(courier,order.id,true)).courierId,courier.id);
+    assert.equal((await orderRoute(customer,order.id))?.distanceMeters,4592);
+    assert.equal((await database().query('SELECT count(*)::int AS n FROM qadam.order_notifications WHERE order_id=$1',[order.id])).rows[0].n,0);
+    await database().query('UPDATE qadam.pricing_settings SET config=$1',[JSON.stringify({...demoTariff,demonstration:{...demonstration,endsAt:new Date(Date.now()-1000).toISOString()}})]);
+    assert.equal(await currentTariff(customer),null);await rejected(createQuote(customer,input()),503);
+    assert.equal((await getOrder(customer,order.id)).pricing?.priceKzt,1400);
+  }finally{
+    if(priorKey===undefined)delete process.env.GEOAPIFY_API_KEY;else process.env.GEOAPIFY_API_KEY=priorKey;
+    await database().query("UPDATE qadam.courier_applications SET transport='FOOT' WHERE user_id=$1",[foot.id]);
+  }
 });
 test('quotes bind ownership and terms, prevent reuse and preserve idempotency after expiry',async()=>{
   await enable();await phone(customer);await phone(courier);

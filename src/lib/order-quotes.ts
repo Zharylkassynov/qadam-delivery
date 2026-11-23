@@ -11,6 +11,7 @@ import { deliveryPilot,insideDeliveryPilot } from './delivery-pilot';
 import { futurePriceMessage } from './order-details';
 import { orderDetailFields } from './order-detail-schema';
 import { checkBusinessSnapshot } from './business-profiles';
+import { geoapifyRoad } from './routing';
 
 export const paymentSchema=z.object({payer:z.enum(['SENDER','RECIPIENT']),paymentMethod:z.enum(['KASPI_TRANSFER','CASH'])});
 const point=z.object({latitude:z.number().min(-90).max(90),longitude:z.number().min(-180).max(180)}).strict();
@@ -23,13 +24,16 @@ export const quoteInputSchema=z.object({
 }).strict();
 export type QuoteInput=z.infer<typeof quoteInputSchema>;
 type Db=Pick<PoolClient,'query'>;
-export async function currentTariff(db:Db=database()):Promise<Tariff|null>{
+export async function currentTariff(actor:User,db:Db=database()):Promise<Tariff|null>{
+  if(actor.role!=='CUSTOMER')return null;
   const row=(await db.query('SELECT active,config FROM qadam.pricing_settings WHERE singleton=true')).rows[0];
   if(!row?.active)return null;
   const parsed=tariffSchema.safeParse(row.config);
   if(!parsed.success || parsed.data.ttlSeconds>deliveryPilot.maxQuoteSeconds
     || !insideDeliveryPilot({latitude:parsed.data.zone.south,longitude:parsed.data.zone.west})
     || !insideDeliveryPilot({latitude:parsed.data.zone.north,longitude:parsed.data.zone.east}))throw new AppError(503,'Расчёт стоимости временно недоступен.');
+  const {demonstration}=parsed.data;
+  if(demonstration&&(demonstration.customerId!==actor.id||Date.parse(demonstration.endsAt)<=Date.now()))return null;
   return parsed.data;
 }
 export function quoteFingerprint(data:QuoteInput){
@@ -39,26 +43,35 @@ export function quoteFingerprint(data:QuoteInput){
     x.parcelType??null,x.fragile??false,x.surprise??false,x.urgent??false,x.cardText||null,x.businessName??null,x.pickupDetails||null,x.deliverAfter??null,x.deliverBefore??null,x.codeRequired??false])).digest('hex');
 }
 function inside(point:MapPoint,tariff:Tariff){const z=tariff.zone;return point.latitude>=z.south&&point.latitude<=z.north&&point.longitude>=z.west&&point.longitude<=z.east;}
-export async function createQuote(actor:User,input:unknown,calculate:(a:MapPoint,b:MapPoint)=>Promise<QuoteRoute>=quoteRoute):Promise<OrderQuote>{
+export async function createQuote(actor:User,input:unknown,calculate?:(a:MapPoint,b:MapPoint)=>Promise<QuoteRoute>):Promise<OrderQuote>{
   if(actor.role!=='CUSTOMER')throw new AppError(403,'Рассчитать доставку может только клиент.');
   const parsed=quoteInputSchema.safeParse(input);if(!parsed.success)throw new AppError(400,'Проверьте адреса, точки, получателя и способ оплаты.');
-  const data=parsed.data,tariff=await currentTariff();
+  const data=parsed.data,tariff=await currentTariff(actor);
   if(!tariff)throw new AppError(503,'Автоматическая цена пока не включена.');
   if(data.deliverAfter||data.deliverBefore)throw new AppError(422,futurePriceMessage);
   await checkBusinessSnapshot(actor,data.businessName);
   if(!inside(data.pickupPoint,tariff)||!inside(data.destinationPoint,tariff))throw new AppError(422,'Одна из точек находится за пределами зоны расчёта. Измените адрес.');
   await takeMapBudget(actor.id,'quote');
-  const route=await calculate(data.pickupPoint,data.destinationPoint);
+  const route=await (calculate??(tariff.provider==='GEOAPIFY_V1'?geoapifyQuote:quoteRoute))(data.pickupPoint,data.destinationPoint);
   if(route.provider!==tariff.provider||!Number.isFinite(route.measuredAt.getTime())||route.measuredAt.getTime()>Date.now()+5000||Date.now()-route.measuredAt.getTime()>tariff.ttlSeconds*1000-10000)throw new AppError(503,'Данные дороги устарели. Повторите расчёт.');
   if(route.distanceM>deliveryPilot.maxDistanceM||route.durationS>deliveryPilot.maxDurationS)throw new AppError(422,'Дорога превышает 15 км или 60 минут. Для такой доставки обратитесь к команде Qadam: @zharlkssnv.');
-  const breakdown={...calculatePrice(tariff,route.distanceM,route.durationS),pilotTermsVersion:data.pilotTermsVersion};
+  const breakdown={...calculatePrice(tariff,route.distanceM,route.durationS),pilotTermsVersion:data.pilotTermsVersion,
+    ...(tariff.demonstration?{demonstration:true as const}:{}),routeProvider:tariff.provider};
+  const storedBreakdown=tariff.demonstration?{...breakdown,demonstrationCourierId:tariff.demonstration.courierId}:breakdown;
   // Provider geometry and raw response are not persisted or returned by quotes.
   const result=await database().query(`INSERT INTO qadam.order_quotes(owner_id,input_hash,tariff_version,price_kzt,breakdown,distance_m,duration_s,provider,expires_at)
     VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING id,expires_at AS "expiresAt"`,
-  [actor.id,quoteFingerprint(data),tariff.version,breakdown.totalKzt,JSON.stringify(breakdown),route.distanceM,route.durationS,route.provider,new Date(route.measuredAt.getTime()+tariff.ttlSeconds*1000)]);
+  [actor.id,quoteFingerprint(data),tariff.version,breakdown.totalKzt,JSON.stringify(storedBreakdown),route.distanceM,route.durationS,route.provider,new Date(route.measuredAt.getTime()+tariff.ttlSeconds*1000)]);
   // Bounded retention for abandoned quotes; never remove an order's used quote.
   await database().query("DELETE FROM qadam.order_quotes WHERE id IN (SELECT id FROM qadam.order_quotes WHERE used_at IS NULL AND expires_at<now()-interval '1 day' LIMIT 100)");
   return {id:result.rows[0].id,expiresAt:result.rows[0].expiresAt,priceKzt:breakdown.totalKzt,breakdown,distanceM:route.distanceM,durationS:route.durationS,tariffVersion:tariff.version};
+}
+
+async function geoapifyQuote(a:MapPoint,b:MapPoint):Promise<QuoteRoute>{
+  const measuredAt=new Date();
+  const route=await geoapifyRoad(a,b,true);
+  if(!route.durationS||route.distanceM<1)throw new AppError(503,'Не удалось рассчитать длину и время маршрута. Повторите попытку.');
+  return {...route,distanceM:Math.ceil(route.distanceM),durationS:Math.ceil(route.durationS),provider:'GEOAPIFY_V1',measuredAt};
 }
 export async function lockQuote(db:Db,actor:User,id:string,data:QuoteInput){
   const row=(await db.query(`SELECT *,expires_at>clock_timestamp() AS fresh FROM qadam.order_quotes WHERE id=$1 AND owner_id=$2 FOR UPDATE`,[id,actor.id])).rows[0];

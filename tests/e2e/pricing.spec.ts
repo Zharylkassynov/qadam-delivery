@@ -36,18 +36,20 @@ async function address(page:Page,label:string,value:string){
   await page.getByRole('button',{name:'Выбрать адрес',exact:true}).click();
 }
 
-test('fixed price survives expiry, own phone verification, assignment and reopening; contacts stay private',async({browser,request},info)=>{
+for(const demonstration of [false,true])test(`${demonstration?'Geoapify demonstration':'Fixed price'} survives expiry, own phone verification, assignment and reopening`,async({browser,request},info)=>{
   test.setTimeout(90000);
   const testUrl=process.env.TEST_DATABASE_URL;
   if(!testUrl||!new URL(testUrl).pathname.endsWith('_test')||!['localhost','127.0.0.1'].includes(new URL(testUrl).hostname))throw new Error('Local isolated _test database required');
   process.env.DATABASE_URL=testUrl;
   const db=new pg.Client({connectionString:testUrl});await db.connect();
   const customer=await account(request,'Клиент цены'),courier=await account(request,'Автокурьер цены');
+  const selectedTariff:Tariff=demonstration?{...tariff,provider:'GEOAPIFY_V1',demonstration:{customerId:customer.user.id,courierId:courier.user.id,endsAt:new Date(Date.now()+600000).toISOString()}}:tariff;
+  const payer=demonstration?'SENDER':'RECIPIENT',paymentMethod=demonstration?'KASPI_TRANSFER':'CASH';
   const contexts:BrowserContext[]=[];
   const pageErrors:string[]=[];
   let quoteCount=0;
   try{
-    await db.query('UPDATE qadam.pricing_settings SET active=true,config=$1',[JSON.stringify(tariff)]);
+    await db.query('UPDATE qadam.pricing_settings SET active=true,config=$1',[JSON.stringify(selectedTariff)]);
     await db.query('DELETE FROM qadam.service_limits');
     await db.query(`INSERT INTO qadam.courier_applications(user_id,phone,transport,status,reviewed_at,reviewed_by)
       VALUES($1,'+77000000033','CAR','APPROVED',now(),$2)`,[courier.user.id,customer.user.id]);
@@ -60,9 +62,9 @@ test('fixed price survives expiry, own phone verification, assignment and reopen
     await page.route('**/api/orders/quote',async route=>{
       if(route.request().method()!=='POST')return route.continue();
       const input=route.request().postDataJSON();
-      if(input.payer!=='RECIPIENT'||input.paymentMethod!=='CASH')return route.fulfill({status:503,json:{error:'Синтетический расчёт после выбора оплаты.'}});
+      if(input.payer!==payer||input.paymentMethod!==paymentMethod)return route.fulfill({status:503,json:{error:'Синтетический расчёт после выбора оплаты.'}});
       quoteCount++;
-      const quote=await createQuote(customer.user,input,async()=>({distanceM:4592,durationS:quoteCount===1?1163:1763,provider:'TOMTOM_V1',measuredAt:new Date(),paths:[]}));
+      const quote=await createQuote(customer.user,input,async()=>({distanceM:4592,durationS:quoteCount===1?1163:1763,provider:selectedTariff.provider,measuredAt:new Date(),paths:[]}));
       if(quoteCount===1){
         const now=Date.now();quote.expiresAt=new Date(now+1800).toISOString();
         // The short synthetic expiry must stay after its synthetic creation time,
@@ -95,13 +97,19 @@ test('fixed price survives expiry, own phone verification, assignment and reopen
       expect(await page.evaluate(()=>document.documentElement.scrollWidth<=document.documentElement.clientWidth)).toBe(true);
       await page.screenshot({path:info.outputPath(`pilot-parcel-${width}.png`)});
     }
-    await page.getByRole('radio',{name:'Получатель',exact:true}).check();
-    await page.getByRole('radio',{name:/Наличные/}).check();
+    if(demonstration){
+      await expect(page.getByText('Учебный заказ. Оплату проводить не нужно.',{exact:true})).toBeVisible();
+      await expect(page.getByRole('radio',{name:/Наличные/})).toHaveCount(0);
+    }else{
+      await page.getByRole('radio',{name:'Получатель',exact:true}).check();
+      await page.getByRole('radio',{name:/Наличные/}).check();
+    }
     await parcelConfirmation.check();
     await expect(page.getByText('Цена больше не действует',{exact:true})).toBeVisible();
     await expect(page.getByRole('button',{name:'Подтвердить телефон',exact:true})).toBeDisabled();
     await page.getByRole('button',{name:'Обновить цену',exact:true}).click();
     await expect(page.getByText('Стоимость изменилась',{exact:true})).toBeVisible();
+    if(demonstration)await expect(page.locator('.quote-price').getByRole('link',{name:'Geoapify',exact:true})).toBeVisible();
     await page.locator('.quote-price').scrollIntoViewIfNeeded();
     await page.screenshot({path:info.outputPath('price-review-390.png')});
     await page.getByRole('button',{name:'Подтвердить телефон',exact:true}).click();
@@ -117,7 +125,8 @@ test('fixed price survives expiry, own phone verification, assignment and reopen
     const created=page.waitForResponse(r=>r.url().endsWith('/api/orders')&&r.request().method()==='POST');
     await page.getByRole('button',{name:/Создать заказ за 1\s?500/}).click();
     const response=await created;expect(response.status()).toBe(201);const {order}=await response.json();
-    expect(order.pricing.priceKzt).toBe(1500);expect(order.payer).toBe('RECIPIENT');expect(order.paymentMethod).toBe('CASH');
+    expect(order.pricing.priceKzt).toBe(1500);expect(order.payer).toBe(payer);expect(order.paymentMethod).toBe(paymentMethod);
+    if(demonstration)expect(order.pricing.breakdown.demonstration).toBe(true);
     expect(order.pricing.breakdown.pilotTermsVersion).toBe(deliveryPilot.termsVersion);
     const unavailable=await request.get(`/api/orders/${order.id}`,{headers:{Authorization:`Bearer ${courier.sessionToken}`}});
     expect(unavailable.status()).toBe(200);expect((await unavailable.json()).order.senderPhone).toBeNull();
@@ -127,13 +136,14 @@ test('fixed price survives expiry, own phone verification, assignment and reopen
     await miniApp(courierPage,courier.proof,720);await maps(courierContext,courierPage);await phoneLoaded;
     const number=`QD-${order.number.padStart(4,'0')}`;
     await courierPage.getByRole('button',{name:`Открыть заказ ${number}`,exact:true}).click();
+    if(demonstration)await expect(courierPage.getByText('Учебный заказ. Без оплаты.',{exact:true}).first()).toBeVisible();
     await expect(courierPage.getByRole('link',{name:/Позвонить:/})).toHaveCount(0);
     await enableShiftGps(courierPage);await courierPage.getByRole('button',{name:/Принять за 1\s?500/}).click();
     await expect(courierPage.getByRole('link',{name:'Позвонить: +77000000022',exact:true})).toBeVisible();
     await expectPhoneCall(courierPage,courierPage.getByRole('link',{name:'Позвонить: +77000000022',exact:true}),'tel:+77000000022');
     await courierPage.locator('.quote-price').scrollIntoViewIfNeeded();
     await courierPage.screenshot({path:info.outputPath('priced-courier-360.png')});
-    await db.query('UPDATE qadam.pricing_settings SET config=$1',[JSON.stringify({...tariff,baseKzt:9000})]);
+    await db.query('UPDATE qadam.pricing_settings SET config=$1',[JSON.stringify({...selectedTariff,baseKzt:9000})]);
     await page.goto(`/?order=${order.id}#tgWebAppVersion=8.0`);
     await expect(page.getByRole('link',{name:'Позвонить: +77000000033',exact:true})).toBeVisible();
     await expectPhoneCall(page,page.getByRole('link',{name:'Позвонить: +77000000033',exact:true}),'tel:+77000000033');
