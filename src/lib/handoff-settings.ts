@@ -10,4 +10,3 @@ export function handoffsEnabled(env:Environment=process.env){
   if(env.VERCEL==='1'||!local)throw new Error('Handoff verification cannot be disabled outside a separate local test database');
   return false;
 }
-export const handoffPolicy={radiusM:150,accuracyM:75,maxAgeMs:60_000,maxAttempts:5} as const;

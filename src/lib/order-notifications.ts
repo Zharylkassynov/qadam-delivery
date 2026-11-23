@@ -78,7 +78,7 @@ export async function queueCustomerOrderStatus(db: Db, id: string, status: Statu
   };
   if (!texts[status]) return;
   await enqueueBotMessage(db,`order:${id}${order.assignment_version>1?`:assignment:${order.assignment_version}`:''}:status:${status}`,identity.chat,{chat_id:identity.chat,
-    text:`${label(order.number)}\n${texts[status]}${handoffsEnabled()&&status==='ACCEPTED'?' Откройте заказ: код забора станет доступен у адреса. Сообщите его только при передаче.':handoffsEnabled()&&status==='IN_TRANSIT'?' Откройте заказ и передайте получателю отдельный код вручения.':''}`,reply_markup:keyboard(id)},'sendMessage',{orderId:id});
+    text:`${label(order.number)}\n${texts[status]}${handoffsEnabled()&&status==='IN_TRANSIT'?' Откройте заказ и передайте получателю код вручения.':''}`,reply_markup:keyboard(id)},'sendMessage',{orderId:id});
 }
 
 export async function alertWaitingOrders() {

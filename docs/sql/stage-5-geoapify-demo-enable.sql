@@ -1,6 +1,6 @@
 -- Set the two team Telegram IDs below. Run after publishing the Geoapify build.
 -- This uses the approved rates from the saved configuration. Quotes are available
--- to the selected customer for seven days and only the selected courier sees offers.
+-- to the selected customer for 30 days and only the selected courier sees offers.
 BEGIN;
 SELECT pg_advisory_xact_lock(62120261018);
 
@@ -10,7 +10,7 @@ DECLARE
   courier_telegram_id constant bigint := 0;
   demo_customer uuid;
   demo_courier uuid;
-  demo_ends_at text := to_char((now() + interval '7 days') AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"');
+  demo_ends_at text := to_char((now() + interval '30 days') AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"');
 BEGIN
   IF customer_telegram_id <= 0 OR courier_telegram_id <= 0 OR customer_telegram_id = courier_telegram_id THEN
     RAISE EXCEPTION 'Provide two distinct team Telegram IDs';
@@ -35,7 +35,9 @@ BEGIN
         'version','almaty-car-final-geoapify-v1','provider','GEOAPIFY_V1',
         'demonstration',jsonb_build_object('customerId',demo_customer,'courierId',demo_courier,'endsAt',demo_ends_at)
       )
-  WHERE singleton AND NOT active
+  WHERE singleton AND (NOT active OR (config->>'provider'='GEOAPIFY_V1'
+      AND config->'demonstration'->>'customerId'=demo_customer::text
+      AND config->'demonstration'->>'courierId'=demo_courier::text))
     AND (config - 'version' - 'provider' - 'demonstration') = '{
       "minimumKzt":1200,"baseKzt":800,"perKmKzt":70,"perMinuteKzt":12,
       "roundToKzt":50,"ttlSeconds":120,
@@ -43,7 +45,7 @@ BEGIN
     }'::jsonb;
 
   IF NOT FOUND THEN
-    RAISE EXCEPTION 'Disable the current tariff first and verify the saved rates';
+    RAISE EXCEPTION 'Verify the approved rates and the active tariff recipients';
   END IF;
 END $$;
 

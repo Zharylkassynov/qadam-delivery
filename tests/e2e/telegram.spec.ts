@@ -297,6 +297,7 @@ test('Telegram applicant is rejected, reapplies, gets admin approval and complet
     const card = reopened.getByRole('button', { name: /^Открыть заказ/ }).filter({ hasText: pickup });
     await card.click();
     await enableShiftGps(reopened);await reopened.getByRole('button', { name: 'Принять заказ', exact: true }).click();
+    await expect(reopened.getByRole('button',{name:'Посылка у меня',exact:true})).toBeEnabled();
     await enableShiftGps(reopened);
     await expect(reopened.getByText(/^Позиция сохранена:/)).toBeVisible();
     for (const action of ['Посылка у меня', 'Начать доставку', 'Завершить доставку']) await reopened.getByRole('button', { name: action, exact: true }).click();

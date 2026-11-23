@@ -19,18 +19,13 @@ async function fixture(request:APIRequestContext){
   return{db,customer,courier,create,cleanup};
 }
 
-test('permission denial blocks new acceptance; fresh GPS enables it and shift ends only after delivery',async({page,request},info)=>{
+test('a courier can accept without GPS and end the shift after delivery',async({page,request},info)=>{
   test.setTimeout(120000);const f=await fixture(request);await page.setViewportSize({width:390,height:844});await mockMapTiles(page.context());
   try{
     const order=await f.create();expect((await request.post(`/api/orders/${order.id}/accept`,{headers:headers(f.courier.sessionToken),data:{}})).status()).toBe(409);
     await miniApp(page,f.courier.proof,844,'',{query:`order=${order.id}`,location:'deny'});
     await expect(page.getByRole('button',{name:'Принять заказ',exact:true})).toBeDisabled();await enableShiftGps(page,false);
-    await expect(page.locator('.gps-error')).toContainText('Доступ к геолокации не предоставлен');
-    expect(await page.evaluate(()=>document.documentElement.dataset.locationRequests)).toBe('1');
-    await expect(page.getByRole('button',{name:'Принять заказ',exact:true})).toBeDisabled();
-    await page.getByRole('heading',{name:'Геопозиция нужна для заказов',exact:true}).scrollIntoViewIfNeeded();
-    await page.screenshot({path:info.outputPath('readiness-denied-mobile.png'),fullPage:true});
-    await miniApp(page,f.courier.proof,844,'',{query:`order=${order.id}`,location:'allow'});await page.reload();await enableShiftGps(page);
+    expect(await page.evaluate(()=>document.documentElement.dataset.locationRequests)).toBeUndefined();
     await page.locator('.courier-offer-preview').scrollIntoViewIfNeeded();await page.screenshot({path:info.outputPath('readiness-ready-mobile.png'),fullPage:true});
     await expect(page.getByRole('button',{name:'Принять заказ',exact:true})).toBeEnabled();await page.getByRole('button',{name:'Принять заказ',exact:true}).click();
     await expect(page.getByRole('heading',{name:'Заберите посылку',exact:true})).toBeVisible();
@@ -45,7 +40,7 @@ test('permission denial blocks new acceptance; fresh GPS enables it and shift en
     for(const status of ['PICKED_UP','IN_TRANSIT','DELIVERED'])expect((await request.post(`/api/orders/${order.id}/status`,{headers:headers(f.courier.sessionToken),data:{status}})).status()).toBe(200);
     await expect.poll(async()=>((await(await request.get('/api/courier/status',{headers:headers(f.courier.sessionToken)})).json()).status.online)).toBe(false);
     const stored=(await(await request.get(`/api/orders/${order.id}`,{headers:headers(f.customer.sessionToken)})).json()).order;
-    expect(stored.status).toBe('DELIVERED');expect(stored.courierLocation).toBeTruthy();expect(stored.courierLocation.sharingStopped).toBe(true);
+    expect(stored.status).toBe('DELIVERED');expect(stored.courierLocation).toBeNull();
   }finally{await f.cleanup();}
 });
 
@@ -76,7 +71,8 @@ test('checkout shows real rounded courier positions, preserves the form and surv
     await courier.getByRole('button',{name:'Настройки геолокации',exact:true}).click();
     await courier.getByRole('button',{name:'Отозвать согласие и остановить',exact:true}).click();
     await expect(courier.getByText('Передача в Qadam остановлена. Остановите трансляцию также в чате Telegram.',{exact:true})).toBeVisible();
-    await courier.getByRole('switch',{name:'Я на линии'}).click();
+    await expect(courier.getByRole('switch',{name:'Я на линии'})).toHaveAttribute('aria-checked','true');
+    await courier.getByRole('button',{name:'Настройки геолокации',exact:true}).click();
     await expect(courier.getByRole('checkbox',{name:/^Разрешаю использовать мою геопозицию/})).not.toBeChecked();
   }finally{await clientContext.close();await courierContext.close();await f.cleanup();}
 });

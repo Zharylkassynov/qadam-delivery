@@ -65,7 +65,7 @@ test('courier reviews addresses and critical terms before accepting; settings an
     await preview.getByText('Условия доставки',{exact:true}).click();await expect(preview).toContainText('Согласуйте сумму до передачи посылки');
     await page.evaluate(()=>window.__qadamTelegram!.pressBack());
     await expect(page.getByRole('status',{name:'Можно принимать заказы',exact:true})).toBeVisible();
-    await expect(card).toContainText(/До забора ≈ \d/);
+    await expect(card).toContainText('До забора —');
     await expect(page.getByText(/^Позиция сохранена:/)).not.toBeVisible();
     for(const dark of [false,true]){
       await page.evaluate(dark=>window.__qadamTelegram!.changeTheme(dark),dark);
@@ -109,7 +109,7 @@ test('courier offer handles expired windows, empty feed and failed refresh witho
     expect((await request.post(`/api/orders/${order.id}/accept`,{headers:headers(f.courier.sessionToken),data:{shareContact:true}})).status()).toBe(409);
     await page.getByRole('button',{name:'Назад',exact:true}).click();
     await page.route('**/api/orders',route=>route.fulfill({json:{orders:[]}}));
-    await page.getByRole('button',{name:'Обновить список',exact:true}).click();await expect(page.getByRole('heading',{name:'Коротких доставок пока нет',exact:true})).toBeVisible();
+    await page.getByRole('button',{name:'Обновить список',exact:true}).click();await expect(page.getByRole('heading',{name:'Пока нет заказов',exact:true})).toBeVisible();
     await page.route('**/api/orders',route=>route.fulfill({status:503,json:{error:'Нет связи'}}));
     await page.getByRole('button',{name:'Обновить список',exact:true}).click();await expect(page.getByRole('main').getByRole('alert')).toContainText('Данные не обновлены');
     await page.screenshot({path:info.outputPath('courier-empty-offline.png')});

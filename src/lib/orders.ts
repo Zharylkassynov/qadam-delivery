@@ -90,7 +90,7 @@ async function event(client: PoolClient, id: string, actor: User, status: Status
   await client.query('INSERT INTO qadam.order_events(order_id,actor_id,status) VALUES($1,$2,$3)', [id, actor.id, status]);
 }
 
-export async function listOrders(actor: User,shortDeliveries=true): Promise<Order[]> {
+export async function listOrders(actor: User,shortDeliveries=false): Promise<Order[]> {
   if(actor.role==='COURIER')await requireCourierAccess(database(),actor.id);
   await alertWaitingOrders();
   const where = actor.role === 'CUSTOMER'
@@ -262,7 +262,7 @@ export async function transitionOrder(actor: User, id: string, target: Status): 
     } else {
       if (order.courier_id !== actor.id) throw new AppError(403, 'Этот заказ вам не назначен.');
       if (order.status === target) return readOrder(client, id, actor);
-      if(handoffsEnabled()&&['PICKED_UP','IN_TRANSIT','DELIVERED'].includes(target))throw new AppError(409,'Откройте Qadam заново. Передача подтверждается у адреса по коду.');
+      if(handoffsEnabled()&&['PICKED_UP','IN_TRANSIT','DELIVERED'].includes(target))throw new AppError(409,'Откройте подтверждение забора или вручения в заказе.');
       if (nextStatus[order.status] !== target) throw new AppError(409, 'Недопустимый переход статуса. Обновите заказ и выполните следующий шаг.');
       if(target==='DELIVERED'&&(order.photo_required||order.code_required))throw new AppError(409,'Откройте подтверждение вручения: нужно фото и выбранный код.');
     }

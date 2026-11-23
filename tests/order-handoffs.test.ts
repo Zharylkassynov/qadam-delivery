@@ -8,8 +8,7 @@ import {AppError} from '../src/lib/errors';
 import type {Order,User} from '../src/lib/types';
 import {createOrder,acceptOrder,transitionOrder,getOrder} from '../src/lib/orders';
 import {completeOrder,uploadOrderPhoto} from '../src/lib/order-proof';
-import {confirmHandoff,correctHandoffPoint,handoffPresence,issueHandoffCode,viewHandoffCode} from '../src/lib/order-handoffs';
-import {lockedOrder} from '../src/lib/trust-core';
+import {confirmHandoff,correctHandoffPoint,issueHandoffCode,viewHandoffCode} from '../src/lib/order-handoffs';
 import {releaseOrder,manageOrder} from '../src/lib/order-management';
 import {orderTrustInfo} from '../src/lib/trust-info';
 import {handoffsEnabled} from '../src/lib/handoff-settings';
@@ -39,7 +38,7 @@ async function code(order:Order,stage:'PICKUP'|'DROPOFF'){
   await issueHandoffCode(customer,order.id,{...fields(order),stage});
   return (await viewHandoffCode(customer,order.id,stage)).code!;
 }
-async function pickup(order:Order){const value=await code(order,'PICKUP');return confirmHandoff(courier,order.id,{...fields(order),stage:'PICKUP',code:value,handedOver:true});}
+async function pickup(order:Order){return confirmHandoff(courier,order.id,{...fields(order),stage:'PICKUP',handedOver:true});}
 before(async()=>{
   await migrate();
   for(const role of ['CUSTOMER','COURIER','COURIER','CUSTOMER'] as const){
@@ -83,7 +82,7 @@ test('new deliveries require both points; assignments remain possible far from p
   const order=await assigned();assert.equal(order.status,'ACCEPTED');assert.equal(order.handoffRequired,true);
   await reject(issueHandoffCode(customer,order.id,{...fields(order),stage:'PICKUP'}),409);
   for(const target of ['PICKED_UP','DELIVERED'] as const)await reject(transitionOrder(courier,order.id,target),409);
-  await reject(confirmHandoff(courier,order.id,{...fields(order),stage:'PICKUP',code:'123456',handedOver:true}),409);
+  assert.equal((await pickup(order)).status,'IN_TRANSIT');
 });
 test('database guard blocks writes from retired servers even when their old status code omits verification',async()=>{
   const order=await assigned();
@@ -92,20 +91,21 @@ test('database guard blocks writes from retired servers even when their old stat
   await assert.rejects(database().query("UPDATE qadam.orders SET status='DELIVERED' WHERE id=$1",[order.id]),(e:unknown)=>!!e&&typeof e==='object'&&'constraint' in e&&e.constraint==='qadam_handoff_required');
   assert.equal(transit.status,'IN_TRANSIT');
 });
-test('GPS at pickup, separate codes and a single atomic pickup lead to delivery away from B',async()=>{
-  let order=await assigned();const first=await code(order,'PICKUP');assert.match(first,/^\d{6}$/);
-  for(const actor of [courier,other,admin])await assert.rejects(viewHandoffCode(actor,order.id,'PICKUP'));
-  const body={...fields(order),stage:'PICKUP',code:first,handedOver:true};
+test('a single atomic pickup records no code or GPS; delivery still requires the recipient code',async()=>{
+  let order=await assigned();
+  const body={...fields(order),stage:'PICKUP',handedOver:true};
   const responses=await Promise.all([confirmHandoff(courier,order.id,body),confirmHandoff(courier,order.id,body)]);order=responses[0];assert.equal(order.status,'IN_TRANSIT');
   assert.equal((await database().query('SELECT count(*)::int AS n FROM qadam.order_handoff_proofs WHERE order_id=$1',[order.id])).rows[0].n,1);
-  const last=await code(order,'DROPOFF');assert.notEqual(last,first);
-  await reject(confirmHandoff(courier,order.id,{...fields(order),stage:'DROPOFF',code:first,handedOver:true}),400);
+  const last=await code(order,'DROPOFF');
+  await reject(confirmHandoff(courier,order.id,{...fields(order),stage:'DROPOFF',handedOver:true}),400);
   order=await completeOrder(courier,order.id,{...fields(order),code:last,handedOver:true});assert.equal(order.status,'DELIVERED');
-  const proofs=(await database().query('SELECT stage,latitude,longitude,accuracy,distance_m,captured_at,received_at,location_source FROM qadam.order_handoff_proofs WHERE order_id=$1',[order.id])).rows;assert.equal(proofs.length,2);
-  assert.ok(proofs.find(p=>p.stage==='PICKUP').distance_m<1);
-  const {stage,...dropoff}=proofs.find(p=>p.stage==='DROPOFF');assert.equal(stage,'DROPOFF');assert.ok(Object.values(dropoff).every(value=>value===null));
-  assert.equal(order.events.filter(e=>e.kind==='PICKUP_VERIFIED').length,1);assert.equal(order.events.filter(e=>e.kind==='DROPOFF_VERIFIED').length,1);
-  assert.ok(!JSON.stringify(order).includes(first));assert.ok(!JSON.stringify(await orderTrustInfo(courier,order.id)).includes(last));
+  const proofs=(await database().query('SELECT stage,code_version,latitude,longitude,accuracy,distance_m,captured_at,received_at,location_source FROM qadam.order_handoff_proofs WHERE order_id=$1',[order.id])).rows;assert.equal(proofs.length,2);
+  for(const {stage,code_version,...location} of proofs){
+    assert.equal(stage==='PICKUP'?code_version===null:code_version>0,true);
+    assert.ok(Object.values(location).every(value=>value===null));
+  }
+  assert.equal(order.events.filter(e=>e.kind==='STATUS'&&e.status==='PICKED_UP').length,1);assert.equal(order.events.filter(e=>e.kind==='DROPOFF_VERIFIED').length,1);
+  assert.ok(!JSON.stringify(await orderTrustInfo(courier,order.id)).includes(last));
 });
 test('old completion, boolean confirmations, optional photo flags and generic status cannot bypass safety',async()=>{
   let order=await assigned();await reject(transitionOrder(courier,order.id,'PICKED_UP'),409);order=await pickup(order);
@@ -134,68 +134,57 @@ test('dropoff remains available with missing, stale, inaccurate or disabled loca
   }
 });
 
-test('database requires complete GPS evidence at pickup and rejects partial dropoff coordinates',async()=>{
+test('database distinguishes old GPS proofs, manual pickups and code-confirmed dropoffs',async()=>{
   const order=await assigned();
-  for(const [stage,latitude] of [['PICKUP',null],['DROPOFF',A.latitude]]){
+  for(const [stage,codeVersion,latitude] of [['PICKUP',1,null],['PICKUP',null,A.latitude],['DROPOFF',1,A.latitude],['DROPOFF',null,null]]){
     await assert.rejects(database().query(`INSERT INTO qadam.order_handoff_proofs(order_id,stage,courier_id,assignment_version,route_version,code_version,latitude)
-      VALUES($1,$2,$3,$4,$5,1,$6)`,[order.id,stage,courier.id,order.assignmentVersion,order.routeVersion,latitude]),(e:unknown)=>!!e&&typeof e==='object'&&'constraint' in e&&e.constraint==='order_handoff_proofs_location_complete');
+      VALUES($1,$2,$3,$4,$5,$6,$7)`,[order.id,stage,courier.id,order.assignmentVersion,order.routeVersion,codeVersion,latitude]),(e:unknown)=>!!e&&typeof e==='object'&&'constraint' in e&&e.constraint==='order_handoff_proofs_location_complete');
   }
 });
-test('stale fixes, missing/poor accuracy, future timestamps, stopped consent and offline shifts fail closed',async()=>{
-  const order=await assigned(),value=await code(order,'PICKUP');
-  const body=()=>({...fields(order),stage:'PICKUP',code:value,handedOver:true});
-  for(const sql of ["accuracy=NULL","accuracy=76","received_at=clock_timestamp()-interval '61 seconds'","captured_at=clock_timestamp()-interval '61 seconds'","captured_at=clock_timestamp()+interval '11 seconds'"]){
-    await location(order);await database().query(`UPDATE qadam.courier_locations SET ${sql} WHERE order_id=$1`,[order.id]);await reject(confirmHandoff(courier,order.id,body()),409);
-  }
-  await location(order);await database().query('UPDATE qadam.courier_presence SET sharing=false WHERE user_id=$1',[courier.id]);await reject(confirmHandoff(courier,order.id,body()),409);
-  await readyCourier(courier);await database().query('UPDATE qadam.courier_status SET online=false WHERE user_id=$1',[courier.id]);await reject(confirmHandoff(courier,order.id,body()),409);
-  assert.equal((await getOrder(customer,order.id)).status,'ACCEPTED');
+test('the assigned courier can confirm pickup with location disabled after ending a shift',async()=>{
+  const order=await assigned();
+  await database().query('DELETE FROM qadam.courier_locations WHERE order_id=$1',[order.id]);
+  await database().query('UPDATE qadam.courier_presence SET sharing=false WHERE user_id=$1',[courier.id]);
+  await database().query('UPDATE qadam.courier_status SET online=false WHERE user_id=$1',[courier.id]);
+  assert.equal((await pickup(order)).status,'IN_TRANSIT');
 });
 test('wrong attempts persist and retries never spend another attempt; five guesses lock the code',async()=>{
-  const order=await assigned(),value=await code(order,'PICKUP'),wrong=value==='000000'?'111111':'000000';
-  const body={...fields(order),stage:'PICKUP',code:wrong,handedOver:true};
+  const order=await pickup(await assigned()),value=await code(order,'DROPOFF'),wrong=value==='000000'?'111111':'000000';
+  const body={...fields(order),stage:'DROPOFF',code:wrong,handedOver:true};
   await reject(confirmHandoff(courier,order.id,body),400);await reject(confirmHandoff(courier,order.id,body),400);
   assert.equal((await orderTrustInfo(courier,order.id)).handoff?.attemptsRemaining,4);
   for(let i=0;i<4;i++)await reject(confirmHandoff(courier,order.id,{...body,requestKey:randomUUID()}),i===3?423:400);
   await reject(confirmHandoff(courier,order.id,{...body,requestKey:randomUUID(),code:value}),423);
-  assert.equal((await getOrder(customer,order.id)).status,'ACCEPTED');
+  assert.equal((await getOrder(customer,order.id)).status,'IN_TRANSIT');
 });
 test('expired and rotated codes cannot be reused; only the owner or administrator can reset, with a reason and limits',async()=>{
-  const order=await assigned(),value=await code(order,'PICKUP');
-  await reject(issueHandoffCode(courier,order.id,{...fields(order),stage:'PICKUP',reset:true,reason:'Украденный код'}),403);
-  await reject(issueHandoffCode(customer,order.id,{...fields(order),stage:'PICKUP',reset:true,reason:'Повторный выпуск'}),429);
+  const order=await pickup(await assigned()),value=await code(order,'DROPOFF');
+  await reject(issueHandoffCode(courier,order.id,{...fields(order),stage:'DROPOFF',reset:true,reason:'Украденный код'}),403);
+  await reject(issueHandoffCode(customer,order.id,{...fields(order),stage:'DROPOFF',reset:true,reason:'Повторный выпуск'}),429);
   await database().query("UPDATE qadam.order_handoffs SET issued_at=clock_timestamp()-interval '16 minutes',expires_at=clock_timestamp()-interval '1 minute',reset_at=clock_timestamp()-interval '2 minutes' WHERE order_id=$1",[order.id]);
-  await reject(confirmHandoff(courier,order.id,{...fields(order),stage:'PICKUP',code:value,handedOver:true}),410);
-  await issueHandoffCode(admin,order.id,{...fields(order),stage:'PICKUP',reset:true,reason:'Клиент потерял код'});
-  const next=(await viewHandoffCode(customer,order.id,'PICKUP')).code!;assert.notEqual(next,value);
-  await reject(confirmHandoff(courier,order.id,{...fields(order),stage:'PICKUP',code:value,handedOver:true}),400);
+  await reject(confirmHandoff(courier,order.id,{...fields(order),stage:'DROPOFF',code:value,handedOver:true}),410);
+  await issueHandoffCode(admin,order.id,{...fields(order),stage:'DROPOFF',reset:true,reason:'Клиент потерял код'});
+  const next=(await viewHandoffCode(customer,order.id,'DROPOFF')).code!;assert.notEqual(next,value);
+  await reject(confirmHandoff(courier,order.id,{...fields(order),stage:'DROPOFF',code:value,handedOver:true}),400);
 });
-test('release and reassignment invalidate earlier codes, requests and former courier access',async()=>{
-  let order=await assigned();const value=await code(order,'PICKUP'),old={...fields(order),stage:'PICKUP',code:value,handedOver:true};
+test('release and reassignment invalidate earlier pickup requests and former courier access',async()=>{
+  let order=await assigned();const old={...fields(order),stage:'PICKUP',handedOver:true};
   await releaseOrder(courier,order.id,{requestKey:randomUUID(),expectedVersion:order.assignmentVersion,reason:'Не успеваю приехать',notPickedUp:true});
   order=await acceptOrder(other,order.id,true);await reject(confirmHandoff(courier,order.id,old),403);
-  assert.equal((await viewHandoffCode(customer,order.id,'PICKUP')).code,null);
-  await reject(confirmHandoff(other,order.id,{...old,...fields(order)}),409);
-  const next=await code(order,'PICKUP');await reject(confirmHandoff(other,order.id,{...fields(order),stage:'PICKUP',code:value,handedOver:true}),400);
-  assert.notEqual(next,value);
+  await reject(confirmHandoff(other,order.id,old),409);
+  assert.equal((await confirmHandoff(other,order.id,{...old,...fields(order)})).status,'IN_TRANSIT');
 });
 test('a blocked courier cannot confirm; status, code and presence cannot override the block',async()=>{
-  const order=await assigned(),value=await code(order,'PICKUP');
+  const order=await assigned();
   await changeCourierBlock(admin,courier.id,{requestKey:randomUUID(),blocked:true,expectedBlocked:false,reason:'Разбор спорной передачи'});
-  await reject(confirmHandoff(courier,order.id,{...fields(order),stage:'PICKUP',code:value,handedOver:true}),403);
-});
-test('radius is fixed and is never expanded by reported accuracy; Telegram fixes use the same guard',async()=>{
-  const order=await assigned();await location(order,{latitude:A.latitude+.002,longitude:A.longitude},75);
-  const row=await lockedOrder(database(),order.id);assert.equal((await handoffPresence(database(),row,'PICKUP')).ready,false);
-  await location(order,A,75);await database().query("UPDATE qadam.courier_locations SET location_source='TELEGRAM_LIVE' WHERE order_id=$1",[order.id]);
-  assert.equal((await handoffPresence(database(),row,'PICKUP')).ready,true);
+  await reject(pickup(order),403);
 });
 test('route corrections are private, audited and invalidate codes and requests for the previous point',async()=>{
-  let order=await assigned();const value=await code(order,'PICKUP');const correction={...fields(order),stage:'PICKUP',reason:'Исправлен вход в здание',point:A,address:order.pickupAddress};
+  let order=await assigned();const correction={...fields(order),stage:'PICKUP',reason:'Исправлен вход в здание',point:A,address:order.pickupAddress};
   await reject(correctHandoffPoint(courier,order.id,correction),403);await reject(correctHandoffPoint(customer,order.id,correction),403);
   order=await correctHandoffPoint(admin,order.id,correction);assert.equal(order.routeVersion,1);
-  await reject(confirmHandoff(courier,order.id,{...fields(order),expectedRouteVersion:0,stage:'PICKUP',code:value,handedOver:true}),409);
-  assert.equal((await viewHandoffCode(customer,order.id,'PICKUP')).code,null);assert.ok(order.events.some(e=>e.kind==='POINT_CORRECTED'));
+  await reject(confirmHandoff(courier,order.id,{...fields(order),expectedRouteVersion:0,stage:'PICKUP',handedOver:true}),409);
+  assert.ok(order.events.some(e=>e.kind==='POINT_CORRECTED'));
 });
 test('owner can restore a missing legacy point, but a courier cannot move it to their location',async()=>{
   let order=await assigned();await database().query('UPDATE qadam.orders SET pickup_latitude=NULL,pickup_longitude=NULL WHERE id=$1',[order.id]);
@@ -220,19 +209,19 @@ test('dropoff codes expire within 24 hours of pickup and cannot be prolonged by 
 });
 test('handoff APIs enforce session, role, origin, strict input and never expose codes to a courier',async()=>{
   for(const user of users){const token=randomBytes(32).toString('hex');tokens.set(user.id,token);await database().query("INSERT INTO qadam.sessions(user_id,token_hash,expires_at) VALUES($1,$2,now()+interval '1 hour')",[user.id,createHash('sha256').update(token).digest('hex')]);}
-  const order=await assigned(),value=await code(order,'PICKUP'),context={params:Promise.resolve({id:order.id})};
-  const body={...fields(order),stage:'PICKUP',code:value,handedOver:true};
-  const request=(method:string,actor?:User,input?:unknown,origin=process.env.APP_ORIGIN!)=>new Request(`${process.env.APP_ORIGIN}/api/orders/${order.id}/handoff-code?stage=PICKUP`,{method,headers:{Origin:origin,'Content-Type':'application/json',...(actor?{Authorization:`Bearer ${tokens.get(actor.id)}`}:{})},...(input?{body:JSON.stringify(input)}:{})});
+  const order=await pickup(await assigned()),value=await code(order,'DROPOFF'),context={params:Promise.resolve({id:order.id})};
+  const body={...fields(order),stage:'DROPOFF',code:value,handedOver:true};
+  const request=(method:string,actor?:User,input?:unknown,origin=process.env.APP_ORIGIN!)=>new Request(`${process.env.APP_ORIGIN}/api/orders/${order.id}/handoff-code?stage=DROPOFF`,{method,headers:{Origin:origin,'Content-Type':'application/json',...(actor?{Authorization:`Bearer ${tokens.get(actor.id)}`}:{})},...(input?{body:JSON.stringify(input)}:{})});
   assert.equal((await codeAPI(request('GET'),context)).status,401);assert.equal((await codeAPI(request('GET',courier),context)).status,403);
   const response=await codeAPI(request('GET',customer),context);assert.equal(response.status,200);assert.equal((await response.json()).code,value);assert.match(response.headers.get('cache-control')!,/no-store/);
   assert.equal((await handoffAPI(request('POST',undefined,body),context)).status,401);
   assert.equal((await handoffAPI(request('POST',courier,body,'https://evil.invalid'),context)).status,403);
   assert.equal((await handoffAPI(request('POST',courier,{...body,latitude:A.latitude}),context)).status,400);
-  assert.equal((await issueAPI(request('POST',courier,{...fields(order),stage:'PICKUP'}),context)).status,403);
+  assert.equal((await issueAPI(request('POST',courier,{...fields(order),stage:'DROPOFF'}),context)).status,403);
   assert.equal((await handoffAPI(request('POST',customer,body),context)).status,403);
 });
 test('public tracking and ordinary responses exclude every handoff secret and private proof field',async()=>{
-  const order=await assigned(),value=await code(order,'PICKUP'),link=await recipientLink(customer,order.id,'create');
+  const order=await pickup(await assigned()),value=await code(order,'DROPOFF'),link=await recipientLink(customer,order.id,'create');
   const publicData=JSON.stringify(await publicRecipientDelivery(new URL(link.url!).pathname.split('/').pop()!));
   assert.ok(!publicData.includes(value));for(const key of ['encrypted_code','verifier','attemptsRemaining','pickupAddress','recipientPhone','codeVersion'])assert.ok(!publicData.includes(key));
   const actions=JSON.stringify((await database().query('SELECT fingerprint,result FROM qadam.order_actions WHERE order_id=$1',[order.id])).rows);assert.ok(!actions.includes(value));
