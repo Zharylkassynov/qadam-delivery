@@ -70,6 +70,10 @@ test('price uses integer boundaries, minimum and zero commission without countin
   }
   const exact={...tariff,minimumKzt:0,baseKzt:0,perKmKzt:1,perMinuteKzt:0,roundToKzt:50};
   assert.equal(calculatePrice(exact,50000,1).totalKzt,50);assert.equal(calculatePrice(exact,50001,1).totalKzt,100);
+  const distanceBased={...tariff,minimumKzt:tariff.baseKzt};
+  for(const [meters,seconds,total] of [[527,69,900],[4016,300,1150],[14507,999,2050]]){
+    assert.equal(calculatePrice(distanceBased,meters,seconds).totalKzt,total);
+  }
   for(const m of [NaN,Infinity,-1,0,1.5,100001])assert.throws(()=>calculatePrice(tariff,m,60));
 });
 test('disabled pricing is closed, input is strict and a courier cannot request customer quotes',async()=>{

@@ -1,5 +1,5 @@
 -- Set the two team Telegram IDs below. Run after publishing the Geoapify build.
--- This uses the approved rates from the saved configuration. Quotes are available
+-- This keeps the saved road rates and sets the demo minimum to its base fare. Quotes are available
 -- to the selected customer for 30 days and only the selected courier sees offers.
 BEGIN;
 SELECT pg_advisory_xact_lock(62120261018);
@@ -32,14 +32,15 @@ BEGIN
   UPDATE qadam.pricing_settings
   SET active=true,
       config=(config - 'demonstration') || jsonb_build_object(
-        'version','almaty-car-final-geoapify-v1','provider','GEOAPIFY_V1',
+        'version','almaty-car-final-geoapify-v2','provider','GEOAPIFY_V1','minimumKzt',800,
         'demonstration',jsonb_build_object('customerId',demo_customer,'courierId',demo_courier,'endsAt',demo_ends_at)
       )
   WHERE singleton AND (NOT active OR (config->>'provider'='GEOAPIFY_V1'
       AND config->'demonstration'->>'customerId'=demo_customer::text
       AND config->'demonstration'->>'courierId'=demo_courier::text))
-    AND (config - 'version' - 'provider' - 'demonstration') = '{
-      "minimumKzt":1200,"baseKzt":800,"perKmKzt":70,"perMinuteKzt":12,
+    AND config->'minimumKzt' IN ('1200'::jsonb,'800'::jsonb)
+    AND (config - 'version' - 'provider' - 'demonstration' - 'minimumKzt') = '{
+      "baseKzt":800,"perKmKzt":70,"perMinuteKzt":12,
       "roundToKzt":50,"ttlSeconds":120,
       "zone":{"south":43.18,"north":43.31,"west":76.80,"east":77.05}
     }'::jsonb;
