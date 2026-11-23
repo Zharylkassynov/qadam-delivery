@@ -5,9 +5,6 @@ import {AppError} from './errors';
 import type {Db} from './telegram-outbox';
 import type {User} from './types';
 import {codeKey} from './proof-settings';
-import {handoffPolicy} from './handoff-settings';
-import {distanceBetween} from './geo-distance';
-import {locationConsentVersion} from './location-consent';
 import {requireAdministrator} from './administrators';
 import {actionFields,assertVersion,lockedOrder,lockCouriers,parseTrust,priorAction,privateOrder,reasonSchema,requireCourierAccess,saveAction,trustEvent,type ActionResult,type TrustOrder} from './trust-core';
 import {queueCustomerOrderStatus} from './order-notifications';
@@ -16,7 +13,12 @@ import {enqueueBotMessage} from './telegram-outbox';
 export type HandoffStage='PICKUP'|'DROPOFF';
 const stageSchema=z.enum(['PICKUP','DROPOFF']);
 const fields={...actionFields,expectedRouteVersion:z.number().int().min(0)};
-const confirmSchema=z.object({...fields,stage:stageSchema,code:z.string().regex(/^\d{6}$/),handedOver:z.literal(true)}).strict();
+const sixDigits=z.string().regex(/^\d{6}$/);
+const confirmation={...fields,handedOver:z.literal(true)};
+const confirmSchema=z.discriminatedUnion('stage',[
+  z.object({...confirmation,stage:z.literal('PICKUP'),code:sixDigits.optional()}).strict(),
+  z.object({...confirmation,stage:z.literal('DROPOFF'),code:sixDigits}).strict(),
+]);
 const issueSchema=z.object({...fields,stage:stageSchema,reset:z.boolean().default(false),reason:reasonSchema.optional()}).strict();
 const pointCorrectionSchema=z.object({...fields,stage:stageSchema,reason:reasonSchema,address:z.string().trim().min(5).max(200),point:z.object({latitude:z.number().min(-90).max(90),longitude:z.number().min(-180).max(180)}).strict()}).strict();
 const key=(domain:string)=>createHmac('sha256',codeKey()).update(`qadam-handoff-${domain}-v1`).digest();
@@ -37,36 +39,13 @@ function assertStage(order:TrustOrder,stage:HandoffStage){
   if(stage==='DROPOFF'&&(!['PICKED_UP','IN_TRANSIT'].includes(order.status)||order.custody_assignment_version!==order.assignment_version))throw new AppError(409,'Сначала подтвердите забор посылки.');
 }
 
-export async function handoffPresence(db:Db,order:TrustOrder,stage:HandoffStage){
-  // Dropoff can be tested without travelling to B. Only pickup requires GPS;
-  // never fabricate location evidence for a handoff confirmed by code alone.
-  if(stage==='DROPOFF')return{ready:true as const,message:'Попросите код получателя при передаче.',distanceM:null,location:null};
-  const point={latitude:order.pickup_latitude,longitude:order.pickup_longitude};
-  if(point.latitude===null||point.longitude===null)return{ready:false as const,message:'Отправителю нужно уточнить точку на карте.',distanceM:null,location:null};
-  // Use the server's order feed. It accepts Mini App fixes and verified Telegram
-  // live updates, and belongs to the current assignment. Never trust POST coordinates.
-  const location=(await db.query(`SELECT l.latitude,l.longitude,l.accuracy,l.captured_at,l.received_at,l.location_source,
-    (s.online AND s.updated_at>clock_timestamp()-interval '8 hours' AND p.sharing AND p.consent_at IS NOT NULL
-      AND p.auto_consent_at IS NOT NULL AND p.auto_consent_version=$3 AND l.received_at>=s.updated_at
-      AND l.captured_at>clock_timestamp()-interval '60 seconds' AND l.received_at>clock_timestamp()-interval '60 seconds'
-      AND l.captured_at<=clock_timestamp()+interval '10 seconds' AND l.received_at<=clock_timestamp()+interval '10 seconds') AS fresh
-    FROM qadam.courier_locations l JOIN qadam.courier_status s ON s.user_id=l.courier_id
-    JOIN qadam.courier_presence p ON p.user_id=l.courier_id WHERE l.order_id=$1 AND l.courier_id=$2`,[order.id,order.courier_id,locationConsentVersion])).rows[0];
-  if(!location?.fresh)return{ready:false as const,message:'Обновите геопозицию у адреса.',distanceM:null,location:null};
-  const distanceM=distanceBetween({latitude:point.latitude,longitude:point.longitude},location);
-  if(location.accuracy===null||location.accuracy>handoffPolicy.accuracyM)return{ready:false as const,message:'GPS неточный. Выйдите на открытое место и обновите позицию.',distanceM,location:null};
-  if(distanceM===null||distanceM>handoffPolicy.radiusM)return{ready:false as const,message:'Подойдите к отправителю. Подтверждение доступно у адреса.',distanceM,location:null};
-  return{ready:true as const,message:'Вы у адреса. Попросите код при передаче.',distanceM,location};
-}
-async function requirePresence(db:Db,order:TrustOrder,stage:HandoffStage){const presence=await handoffPresence(db,order,stage);if(!presence.ready)throw new AppError(409,presence.message);return presence;}
 const current=(row:Record<string,unknown>|undefined,order:TrustOrder)=>!!row&&row.assignment_version===order.assignment_version&&row.route_version===order.route_version;
 
 export async function handoffInfo(db:Db,order:TrustOrder){
   const stage:HandoffStage=order.status==='ACCEPTED'?'PICKUP':'DROPOFF';
   const active=['ACCEPTED','PICKED_UP','IN_TRANSIT'].includes(order.status);
-  const presence=active?await handoffPresence(db,order,stage):null;
-  const row=active?(await db.query('SELECT assignment_version,route_version,attempts,expires_at,expires_at>clock_timestamp() AS valid,verified_at FROM qadam.order_handoffs WHERE order_id=$1 AND stage=$2',[order.id,stage])).rows[0]:null;
-  return{required:true,stage,routeVersion:order.route_version,ready:presence?.ready??false,message:presence?.message??'',distanceM:presence?.distanceM??null,
+  const row=active&&stage==='DROPOFF'?(await db.query("SELECT assignment_version,route_version,attempts,expires_at,expires_at>clock_timestamp() AS valid,verified_at FROM qadam.order_handoffs WHERE order_id=$1 AND stage='DROPOFF'",[order.id])).rows[0]:null;
+  return{required:true,stage,routeVersion:order.route_version,ready:active,message:stage==='DROPOFF'&&active?'Попросите код получателя при передаче.':'',distanceM:null,
     codeReady:!!(current(row,order)&&row.valid&&!row.verified_at&&row.attempts<5),attemptsRemaining:current(row,order)?5-row.attempts:null,
     expiresAt:current(row,order)?row.expires_at:null,missingPickup:order.pickup_latitude===null,missingDestination:order.destination_latitude===null};
 }
@@ -76,6 +55,7 @@ export async function viewHandoffCode(actor:User,id:string,stage:HandoffStage){
   return transaction(async db=>{
     await privateOrder(db,actor,id);const order=await lockedOrder(db,id);
     if(order.customer_id!==actor.id)throw new AppError(403,'Код видит только отправитель.');
+    if(stage==='PICKUP')throw new AppError(409,'Для забора код не нужен.');
     assertStage(order,stage);
     const row=(await db.query('SELECT *,expires_at>clock_timestamp() AS valid FROM qadam.order_handoffs WHERE order_id=$1 AND stage=$2',[id,stage])).rows[0];
     if(!current(row,order)||row.verified_at)return{code:null,expiresAt:null,attemptsRemaining:null};
@@ -88,6 +68,7 @@ export async function issueHandoffCode(actor:User,id:string,input:unknown){
   return transaction(async db=>{
     await privateOrder(db,actor,id);const order=await lockedOrder(db,id);
     if(order.customer_id!==actor.id){if(!data.reset)throw new AppError(403,'Код выпускает отправитель.');await requireAdministrator(db,actor);}
+    if(data.stage==='PICKUP')throw new AppError(409,'Для забора код не нужен.');
     assertVersion(order,data.expectedVersion);assertRoute(order,data.expectedRouteVersion);assertStage(order,data.stage);
     const old=await priorAction(db,actor,id,data.requestKey,'HANDOFF_CODE',hash);if(old)return old;
     const row=(await db.query('SELECT *,reset_at>clock_timestamp()-interval \'1 minute\' AS recent FROM qadam.order_handoffs WHERE order_id=$1 AND stage=$2 FOR UPDATE',[id,data.stage])).rows[0];
@@ -95,8 +76,7 @@ export async function issueHandoffCode(actor:User,id:string,input:unknown){
     if(data.reset&&!data.reason)throw new AppError(400,'Укажите причину нового кода.');
     const resets:Date[]=(row?.reset_history??[]).filter((at:Date)=>new Date(at).getTime()>Date.now()-3600000);
     if(data.reset&&(row?.recent||resets.length>=3))throw new AppError(429,'Код недавно менялся. Повторите позже.');
-    if(data.stage==='PICKUP')await requirePresence(db,order,'PICKUP');
-    if(data.stage==='DROPOFF'&&(!order.custody_at||new Date(order.custody_at).getTime()+86400000<=Date.now()))throw new AppError(410,'Срок вручения истёк. Свяжитесь с поддержкой для разбора или возврата.');
+    if(!order.custody_at||new Date(order.custody_at).getTime()+86400000<=Date.now())throw new AppError(410,'Срок вручения истёк. Свяжитесь с поддержкой для разбора или возврата.');
     const version=(row?.version??0)+1;let code:string;
     // Neither the preceding code nor the other handoff's code may remain valid by chance.
     const other=(await db.query('SELECT stage,version,encrypted_code,assignment_version,route_version FROM qadam.order_handoffs WHERE order_id=$1 AND stage<>$2',[id,data.stage])).rows[0];
@@ -106,7 +86,7 @@ export async function issueHandoffCode(actor:User,id:string,input:unknown){
     do{code=String(randomInt(1000000)).padStart(6,'0');}while(code===previousCode||code===otherCode);
     if(data.reset)resets.push(new Date());
     await db.query(`INSERT INTO qadam.order_handoffs(order_id,stage,assignment_version,route_version,version,verifier,encrypted_code,expires_at,reset_history)
-      VALUES($1,$2,$3,$4,$5,$6,$7,CASE WHEN $2='PICKUP' THEN clock_timestamp()+interval '15 minutes' ELSE $9::timestamptz+interval '24 hours' END,$8)
+      VALUES($1,$2,$3,$4,$5,$6,$7,$9::timestamptz+interval '24 hours',$8)
       ON CONFLICT(order_id,stage) DO UPDATE SET assignment_version=excluded.assignment_version,route_version=excluded.route_version,version=excluded.version,
       verifier=excluded.verifier,encrypted_code=excluded.encrypted_code,issued_at=clock_timestamp(),expires_at=excluded.expires_at,attempts=0,verified_at=NULL,reset_at=clock_timestamp(),reset_history=excluded.reset_history`,
       [id,data.stage,order.assignment_version,order.route_version,version,verifier(order,data.stage,version,code),seal(order,data.stage,version,code),resets,order.custody_at]);
@@ -123,29 +103,31 @@ export async function confirmHandoff(actor:User,id:string,input:unknown){
     assertVersion(order,data.expectedVersion);assertRoute(order,data.expectedRouteVersion);
     const old=await priorAction(db,actor,id,data.requestKey,'HANDOFF',hash);if(old)return old;
     assertStage(order,data.stage);
-    const presence=await requirePresence(db,order,data.stage);
-    const row=(await db.query('SELECT *,expires_at>clock_timestamp() AS valid FROM qadam.order_handoffs WHERE order_id=$1 AND stage=$2 FOR UPDATE',[id,data.stage])).rows[0];
-    if(!current(row,order))throw new AppError(409,'Попросите отправителя открыть код передачи.');
-    if(row.verified_at)throw new AppError(409,'Передача уже подтверждена. Обновите заказ.');
-    if(!row.valid)throw new AppError(410,'Код истёк. Попросите отправителя выпустить новый.');
-    if(row.attempts>=5)throw new AppError(423,'Попытки закончились. Нужен новый код отправителя.');
-    const actual=Buffer.from(verifier(order,data.stage,row.version,data.code),'hex'),expected=Buffer.from(row.verifier,'hex');
-    if(actual.length!==expected.length||!timingSafeEqual(actual,expected)){
-      await db.query('UPDATE qadam.order_handoffs SET attempts=attempts+1 WHERE order_id=$1 AND stage=$2',[id,data.stage]);
-      await trustEvent(db,order,actor,'HANDOFF_CODE_REJECTED');
-      return saveAction(db,actor,id,data.requestKey,'HANDOFF',hash,{ok:false,status:row.attempts===4?423:400,message:row.attempts===4?'Попытки закончились. Нужен новый код отправителя.':`Код не подошёл. Осталось попыток: ${4-row.attempts}.`});
+    let codeVersion:number|null=null;
+    if(data.stage==='DROPOFF'){
+      const row=(await db.query("SELECT *,expires_at>clock_timestamp() AS valid FROM qadam.order_handoffs WHERE order_id=$1 AND stage='DROPOFF' FOR UPDATE",[id])).rows[0];
+      if(!current(row,order))throw new AppError(409,'Попросите отправителя открыть код вручения.');
+      if(row.verified_at)throw new AppError(409,'Вручение уже подтверждено. Обновите заказ.');
+      if(!row.valid)throw new AppError(410,'Код истёк. Попросите отправителя выпустить новый.');
+      if(row.attempts>=5)throw new AppError(423,'Попытки закончились. Нужен новый код отправителя.');
+      const actual=Buffer.from(verifier(order,data.stage,row.version,data.code),'hex'),expected=Buffer.from(row.verifier,'hex');
+      if(actual.length!==expected.length||!timingSafeEqual(actual,expected)){
+        await db.query("UPDATE qadam.order_handoffs SET attempts=attempts+1 WHERE order_id=$1 AND stage='DROPOFF'",[id]);
+        await trustEvent(db,order,actor,'HANDOFF_CODE_REJECTED');
+        return saveAction(db,actor,id,data.requestKey,'HANDOFF',hash,{ok:false,status:row.attempts===4?423:400,message:row.attempts===4?'Попытки закончились. Нужен новый код отправителя.':`Код не подошёл. Осталось попыток: ${4-row.attempts}.`});
+      }
+      codeVersion=row.version;
     }
     const photo=data.stage==='DROPOFF'?(await db.query("SELECT id,file_id FROM qadam.order_photos WHERE order_id=$1 AND courier_id=$2 AND assignment_version=$3 AND state='READY' AND expires_at>clock_timestamp() ORDER BY created_at DESC,id DESC LIMIT 1",[id,actor.id,order.assignment_version])).rows[0]:null;
     if(data.stage==='DROPOFF'&&order.photo_required&&!photo)throw new AppError(409,'Добавьте фото вручения.');
-    const location=presence.location;
-    await db.query(`INSERT INTO qadam.order_handoff_proofs(order_id,stage,courier_id,assignment_version,route_version,code_version,latitude,longitude,accuracy,distance_m,captured_at,received_at,location_source)
-      VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,[id,data.stage,actor.id,order.assignment_version,order.route_version,row.version,location?.latitude??null,location?.longitude??null,location?.accuracy??null,presence.distanceM,location?.captured_at??null,location?.received_at??null,location?.location_source??null]);
-    await db.query('UPDATE qadam.order_handoffs SET verified_at=clock_timestamp() WHERE order_id=$1 AND stage=$2',[id,data.stage]);
+    await db.query(`INSERT INTO qadam.order_handoff_proofs(order_id,stage,courier_id,assignment_version,route_version,code_version)
+      VALUES($1,$2,$3,$4,$5,$6)`,[id,data.stage,actor.id,order.assignment_version,order.route_version,codeVersion]);
+    if(data.stage==='DROPOFF')await db.query("UPDATE qadam.order_handoffs SET verified_at=clock_timestamp() WHERE order_id=$1 AND stage='DROPOFF'",[id]);
     const status=data.stage==='PICKUP'?'IN_TRANSIT':'DELIVERED';
     await db.query("UPDATE qadam.orders SET status=$2,custody_assignment_version=CASE WHEN $3='PICKUP' THEN assignment_version ELSE custody_assignment_version END,custody_at=CASE WHEN $3='PICKUP' THEN clock_timestamp() ELSE custody_at END,updated_at=clock_timestamp() WHERE id=$1",[id,status,data.stage]);
     const target=data.stage==='PICKUP'?`${order.pickup_latitude}, ${order.pickup_longitude}`:`${order.destination_latitude}, ${order.destination_longitude}`;
     const evidence=`Точка ${data.stage==='PICKUP'?'А':'Б'}: ${target}; маршрут ${order.route_version}; назначение ${order.assignment_version}.${data.stage==='DROPOFF'?' Геопозиция при вручении не проверялась.':''}`;
-    if(data.stage==='PICKUP')await trustEvent(db,{...order,status:'PICKED_UP'},actor,'PICKUP_VERIFIED',evidence);
+    if(data.stage==='PICKUP')await trustEvent(db,{...order,status:'PICKED_UP'},actor,'STATUS','Курьер подтвердил, что забрал посылку.');
     await trustEvent(db,{...order,status},actor,data.stage==='PICKUP'?'STATUS':'DROPOFF_VERIFIED',data.stage==='DROPOFF'?evidence:null);
     await queueCustomerOrderStatus(db,id,status);
     if(photo){const receiver=(await db.query('SELECT telegram_user_id::text AS chat FROM qadam.telegram_identities WHERE user_id=$1 AND allows_write AND bot_blocked_at IS NULL',[order.customer_id])).rows[0];if(receiver)await enqueueBotMessage(db,`order:${id}:proof:${photo.id}`,receiver.chat,{chat_id:receiver.chat,photo:photo.file_id,caption:`Фото вручения QD-${order.number.padStart(4,'0')}`},'sendPhoto',{orderId:id});}

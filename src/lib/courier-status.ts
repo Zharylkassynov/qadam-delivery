@@ -6,7 +6,6 @@ import type { CourierLocation } from './types';
 import type { Db } from './telegram-outbox';
 import {lockCouriers,requireCourierAccess,notBlocked} from './trust-core';
 import {locationConsentVersion} from './location-consent';
-import {freshCourierPosition} from './courier-readiness';
 
 export const courierStatusSchema = z.object({ online: z.boolean() }).strict();
 export type CourierStatus = { online: boolean; expired: boolean; updatedAt: string | null; expiresAt: string | null; allowsWrite: boolean; hasTelegram: boolean;
@@ -22,7 +21,7 @@ async function readStatus(db: Db, actor: User): Promise<CourierStatus> {
     ,coalesce(p.sharing,false) AS "locationSharing",p.consent_at AS "locationConsentAt",
     coalesce(s.accepting_orders,false) AS "acceptingOrders",
     coalesce(s.end_after_delivery,false) AS "endingFlag",
-    coalesce(s.accepting_orders AND ${freshCourierPosition()},false) AS "canAccept",
+    coalesce(s.accepting_orders AND s.online AND s.updated_at>clock_timestamp()-interval '8 hours',false) AS "canAccept",
     coalesce(p.auto_consent_version=$2 AND p.auto_consent_at IS NOT NULL,false) AS "consentCurrent",
     (SELECT count(*)::int FROM qadam.orders o WHERE o.courier_id=u.id AND o.status IN ('ACCEPTED','PICKED_UP','IN_TRANSIT')) AS "activeDeliveries",
     coalesce(p.auto_location_enabled AND p.auto_consent_version=$2,false) AS "autoLocationEnabled",
@@ -47,7 +46,7 @@ export async function setCourierStatus(actor: User, input: unknown) {
     await lockCouriers(db,[actor.id]);await requireCourierAccess(db,actor.id);
     await db.query("SELECT id FROM qadam.orders WHERE courier_id=$1 AND status IN ('ACCEPTED','PICKED_UP','IN_TRANSIT') ORDER BY id FOR UPDATE",[actor.id]);
     const previous=await readStatus(db, actor);
-    const keepDelivery=!data.online&&previous.online&&previous.consentCurrent&&previous.activeDeliveries>0;
+    const keepDelivery=!data.online&&previous.online&&previous.activeDeliveries>0;
     await db.query(`INSERT INTO qadam.courier_status(user_id,online,accepting_orders,end_after_delivery) VALUES($1,$2,$3,$4)
       ON CONFLICT(user_id) DO UPDATE SET online=excluded.online,accepting_orders=excluded.accepting_orders,end_after_delivery=excluded.end_after_delivery,
       updated_at=CASE WHEN qadam.courier_status.online AND qadam.courier_status.updated_at>clock_timestamp()-interval '8 hours'

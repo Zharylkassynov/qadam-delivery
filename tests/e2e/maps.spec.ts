@@ -125,6 +125,7 @@ test('denied geolocation and tile outage preserve order actions', async ({ brows
     await page.getByRole('button', { name: /^Открыть заказ/ }).filter({ hasText: pickup }).click();
     await enableShiftGps(page);await page.getByRole('button', { name: 'Принять заказ', exact: true }).click();
     await expect(page.getByText('Карта недоступна', { exact: true })).toBeVisible();
+    await enableShiftGps(page);
     await page.evaluate(()=>{document.documentElement.dataset.denyGps='true';});
     await enableShiftGps(page,false);
     await expect(page.locator('.courier-gps')).toContainText('Геолокация не разрешена',{timeout:25000});

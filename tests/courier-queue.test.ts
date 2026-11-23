@@ -44,10 +44,10 @@ test('foot filter keeps unknown endpoints, supports all deliveries and is not a 
   await ready();const short=await createOrder(customer,input(start,{latitude:43.275,longitude:76.9}));
   const long=await createOrder(customer,input(start,{latitude:43.277,longitude:76.9}));
   const unknown=await createOrder(customer,input(null,null));
-  const selected=(await listOrders(courier)).filter(o=>o.customerId===customer.id);
+  const selected=(await listOrders(courier,true)).filter(o=>o.customerId===customer.id);
   assert.ok(selected.some(o=>o.id===short.id));assert.ok(selected.some(o=>o.id===unknown.id));assert.equal(selected.some(o=>o.id===long.id),false);
   assert.equal(selected.find(o=>o.id===unknown.id)?.pickupDistanceM,null);assert.equal(selected.find(o=>o.id===unknown.id)?.deliveryDistanceM,null);
-  assert.ok((await listOrders(courier,false)).some(o=>o.id===long.id));
+  assert.ok((await listOrders(courier)).some(o=>o.id===long.id));
   assert.equal((await acceptOrder(courier,long.id)).courierId,courier.id);
   assert.ok((await listOrders(courier)).some(o=>o.id===long.id));
   assert.equal((await getCourierStatus(courier)).transport,'FOOT');

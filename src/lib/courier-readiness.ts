@@ -12,7 +12,7 @@ export const freshCourierPosition=(p='p',s='s')=>`(${p}.sharing AND ${p}.consent
 
 export async function requireReadyCourier(db:Db,id:string){
   const result=await db.query(`SELECT s.user_id FROM qadam.courier_status s
-    JOIN qadam.courier_presence p ON p.user_id=s.user_id
-    WHERE s.user_id=$1 AND s.accepting_orders AND ${freshCourierPosition()} FOR UPDATE OF s,p`,[id]);
-  if(!result.rowCount)throw new AppError(409,'Чтобы принять новый заказ, выйдите на линию, подтвердите условия геопозиции и передайте свежую позицию.');
+    WHERE s.user_id=$1 AND s.accepting_orders AND s.online
+      AND s.updated_at>clock_timestamp()-interval '8 hours' FOR UPDATE OF s`,[id]);
+  if(!result.rowCount)throw new AppError(409,'Выйдите на линию, чтобы принять новый заказ.');
 }

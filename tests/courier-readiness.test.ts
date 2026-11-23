@@ -38,34 +38,33 @@ beforeEach(async()=>{
 });
 after(async()=>{await database().query('DELETE FROM qadam.orders WHERE customer_id=$1',[customer.id]);await database().query('DELETE FROM qadam.users WHERE id=ANY($1::uuid[])',[users.map(u=>u.id)]);await closeDatabase();});
 
-test('new acceptance requires a real fresh shift position, not merely permission or consent',async()=>{
+test('new acceptance requires a shift and works without location permission or a fix',async()=>{
   const order=await createOrder(customer,input());await denied(acceptOrder(courier,order.id),409);
-  await setCourierStatus(courier,{online:true});await denied(acceptOrder(courier,order.id),409);
-  await agree();await setCourierStatus(courier,{online:true});await denied(acceptOrder(courier,order.id),409);
-  await updateCourierPresence(courier,fix());assert.equal((await getCourierStatus(courier)).canAccept,true);
+  await setCourierStatus(courier,{online:true});
+  assert.equal((await getCourierStatus(courier)).canAccept,true);
   assert.equal((await acceptOrder(courier,order.id)).courierId,courier.id);
 });
-test('old consent cannot authorize new position collection or acceptance',async()=>{
+test('old consent cannot authorize new positions and does not affect acceptance',async()=>{
   await agree();await setCourierStatus(courier,{online:true});
   await database().query("UPDATE qadam.courier_presence SET auto_consent_version='2026-11-01-v1' WHERE user_id=$1",[courier.id]);
   await denied(updateCourierPresence(courier,fix()),403);
   assert.equal((await getCourierStatus(courier)).consentCurrent,false);
-  const order=await createOrder(customer,input());await denied(acceptOrder(courier,order.id),409);
+  const order=await createOrder(customer,input());assert.equal((await acceptOrder(courier,order.id)).courierId,courier.id);
 });
-test('stale measurement or server receipt independently prevents acceptance and map exposure',async()=>{
-  await ready();const order=await createOrder(customer,input());
+test('stale measurement or server receipt hides the map position and preserves shift readiness',async()=>{
+  await ready();
   for(const column of ['captured_at','received_at']){
     await database().query(`UPDATE qadam.courier_presence SET ${column}=clock_timestamp()-interval '91 seconds' WHERE user_id=$1`,[courier.id]);
-    assert.equal((await getCourierStatus(courier)).canAccept,false);await denied(acceptOrder(courier,order.id),409);
+    assert.equal((await getCourierStatus(courier)).canAccept,true);
     assert.ok(!(await nearbyCouriers(customer)).some(p=>Math.abs(p.latitude-43.19)<.003&&Math.abs(p.longitude-76.81)<.004));
     await database().query('UPDATE qadam.courier_presence SET captured_at=clock_timestamp(),received_at=clock_timestamp() WHERE user_id=$1',[courier.id]);
   }
 });
-test('a previous-shift position cannot reactivate readiness; repeated online requests preserve expiry',async()=>{
+test('a new shift clears the previous position; repeated online requests preserve expiry',async()=>{
   await ready();const before=await getCourierStatus(courier);await setCourierStatus(courier,{online:true});
   assert.equal((await getCourierStatus(courier)).updatedAt,before.updatedAt);
   await setCourierStatus(courier,{online:false});await setCourierStatus(courier,{online:true});
-  assert.equal((await getCourierStatus(courier)).location,null);assert.equal((await getCourierStatus(courier)).canAccept,false);
+  assert.equal((await getCourierStatus(courier)).location,null);assert.equal((await getCourierStatus(courier)).canAccept,true);
   await updateCourierPresence(courier,fix());assert.equal((await getCourierStatus(courier)).canAccept,true);
 });
 test('end after delivery preserves the current order, stops new acceptance and does not extend the shift',async()=>{
@@ -95,12 +94,12 @@ test('cancellation and assignment removal also finalize an ending shift through 
 test('revocation stops new writes immediately, retains an honestly marked last point and allows delivery completion',async()=>{
   const order=await assigned(),previous=order.courierLocation!;
   await saveLocationSettings(courier,{revoke:true});const status=await getCourierStatus(courier);
-  assert.equal(status.canAccept,false);assert.equal(status.consentCurrent,false);
+  assert.equal(status.canAccept,true);assert.equal(status.consentCurrent,false);
   const saved=(await getOrder(customer,order.id)).courierLocation!;
   assert.equal(saved.capturedAt,previous.capturedAt);assert.equal(saved.sharingStopped,true);
   await denied(updateCourierPresence(courier,fix()),403);await denied(reportLocation(courier,order.id,fix()),403);
   assert.equal((await acceptOrder(courier,order.id)).id,order.id);await finish(order.id);
-  assert.equal((await getCourierStatus(courier)).online,false);
+  assert.equal((await getCourierStatus(courier)).online,true);
 });
 test('ending a shift and accepting a new order serialize without losing an assigned delivery',async()=>{
   for(let i=0;i<5;i++){
@@ -112,12 +111,12 @@ test('ending a shift and accepting a new order serialize without losing an assig
     else{assert.equal(saved.courierId,null);assert.equal(status.online,false);}
   }
 });
-test('the real acceptance API rejects missing auth, foreign origins and missing GPS then accepts a ready courier',async()=>{
+test('the real acceptance API rejects missing auth, foreign origins and an offline courier',async()=>{
   const order=await createOrder(customer,input()),context={params:Promise.resolve({id:order.id})};
   const request=(auth:boolean,origin='http://127.0.0.1:3100')=>new Request(`${origin}/api/orders/${order.id}/accept`,{method:'POST',headers:{Origin:origin,'Content-Type':'application/json',...(auth?{Authorization:`Bearer ${token}`}:{})},body:'{}'});
   assert.equal((await acceptAPI(request(false),context)).status,401);
   assert.equal((await acceptAPI(request(true,'https://foreign.invalid'),context)).status,403);
-  assert.equal((await acceptAPI(request(true),context)).status,409);await ready();
+  assert.equal((await acceptAPI(request(true),context)).status,409);await setCourierStatus(courier,{online:true});
   assert.equal((await acceptAPI(request(true),context)).status,200);
 });
 test('GPS, revocation and cancellation cannot deadlock or restore a finished-shift point',async()=>{

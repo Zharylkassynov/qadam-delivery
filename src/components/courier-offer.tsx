@@ -49,7 +49,7 @@ export function CourierOfferPreview({order,telegram}:{order:Order;telegram:boole
       {['FLOWERS','CAKE'].includes(order.parcelType??'')&&<p>Уточните транспорт и упаковку. Наличие термобокса не подразумевается.</p>}
       {order.urgent&&<p>Без задержки. Автоматической доплаты нет.</p>}
       <p>Расстояния по прямой. Путь по дорогам может быть длиннее.</p>
-      {order.handoffRequired&&<p>Забор и вручение подтверждаются разными кодами.</p>}
+      {order.handoffRequired&&<p>Получатель подтвердит вручение кодом.</p>}
       {order.photoRequired&&<p>При вручении нужно фото упаковки.</p>}
       {!order.handoffRequired&&order.codeRequired&&<p>Получатель подтвердит вручение кодом.</p>}
     </div></details>

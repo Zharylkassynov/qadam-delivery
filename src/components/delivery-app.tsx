@@ -34,8 +34,8 @@ export function DeliveryApp() {
   const [busy, setBusy] = useState(false);
   const [selected, setSelected] = useState<string | null>(null);
   const [refresh, setRefresh] = useState(0);
-  const [shortDeliveries,setShortDeliveries]=useState(true);
-  const loadedShortDeliveries=useRef(true);
+  const [shortDeliveries,setShortDeliveries]=useState(false);
+  const loadedShortDeliveries=useRef(false);
   const revision = useRef(0);
   const busyRef = useRef(false);
   const pendingCreate = useRef<{ payload: string; key: string; uncertain?:boolean } | null>(null);
@@ -79,7 +79,7 @@ export function DeliveryApp() {
       fetching = true;
       const current = revision.current;
       try {
-        const data = await api<{ orders: Order[]; user?: User }>(user!.role==='COURIER'&&!shortDeliveries?'/api/orders?short=0':'/api/orders', undefined, controller.signal);
+        const data = await api<{ orders: Order[]; user?: User }>(user!.role==='COURIER'&&shortDeliveries?'/api/orders?short=1':'/api/orders', undefined, controller.signal);
         if (alive && current === revision.current) {
           setOrders(data.orders); setSyncError(''); setSyncedAt(new Date().toISOString());
           loadedShortDeliveries.current=shortDeliveries;
