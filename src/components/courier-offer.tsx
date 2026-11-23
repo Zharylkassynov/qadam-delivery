@@ -32,7 +32,7 @@ export function CourierOfferPreview({order,telegram}:{order:Order;telegram:boole
   if(order.pickupPoint)markers.push({...order.pickupPoint,kind:'pickup',label:`Забрать: ${order.pickupAddress}`});
   if(order.destinationPoint)markers.push({...order.destinationPoint,kind:'destination',label:`Доставить: ${order.destinationAddress}`});
   return <section className="order-detail courier-offer-preview" aria-label="Детали заказа">
-    <div className="offer-payout"><p>{order.pricing?'Вам за доставку':'Стоимость доставки'}</p><h1 tabIndex={-1}>{order.pricing?formatMoney(order.pricing.courierPayoutKzt):'По согласованию'}</h1><p>{order.payer?(order.payer==='RECIPIENT'?'Платит получатель':'Платит отправитель'):'Плательщик не указан'}{order.paymentMethod&&` · ${order.paymentMethod==='CASH'?'наличные':'перевод Kaspi'}`}</p></div>
+    <div className="offer-payout"><p>{order.pricing?.breakdown.demonstration?'Расчётная стоимость':order.pricing?'Вам за доставку':'Стоимость доставки'}</p><h1 tabIndex={-1}>{order.pricing?formatMoney(order.pricing.courierPayoutKzt):'По согласованию'}</h1><p>{order.pricing?.breakdown.demonstration?'Учебный заказ. Без оплаты.':<>{order.payer?(order.payer==='RECIPIENT'?'Платит получатель':'Платит отправитель'):'Плательщик не указан'}{order.paymentMethod&&` · ${order.paymentMethod==='CASH'?'наличные':'перевод Kaspi'}`}</>}</p></div>
     {expired?<Feedback title="Интервал доставки истёк" tone="warning">Выберите другой заказ.</Feedback>:!geo.canAccept&&<CourierAvailability telegram={telegram} settings={false}/>}
     <div className="offer-preview-route"><AddressRow kind="pickup" address={order.pickupAddress}/><AddressRow kind="destination" address={order.destinationAddress}/></div>
     <p className="offer-distance">{pickupM!==null&&`До забора ≈ ${formatDistance(pickupM)} · `}{deliveryM!==null?`Доставка ≈ ${formatDistance(deliveryM)} · по прямой`:'Расстояние доставки неизвестно'}</p>
@@ -43,7 +43,7 @@ export function CourierOfferPreview({order,telegram}:{order:Order;telegram:boole
     {order.surprise&&<p className="offer-important">Перед звонком получателю свяжитесь с отправителем.</p>}
     <details className="order-disclosure offer-map" onToggle={event=>setMapOpen(event.currentTarget.open)}><summary>Посмотреть на карте</summary><div className="order-disclosure-body">{mapOpen&&(markers.length?<DeliveryMap markers={markers}/>:<p className="muted">Точки пока не указаны. Ориентируйтесь по адресам.</p>)}</div></details>
     <details className="order-disclosure"><summary>Условия доставки</summary><div className="order-disclosure-body">
-      <p>{order.pricing?`Цена зафиксирована. Комиссия Qadam — ${formatMoney(order.pricing.platformFeeKzt)}.`:'Согласуйте сумму до передачи посылки.'} Оплата напрямую курьеру.</p>
+      <p>{order.pricing?.breakdown.demonstration?'Сумма зафиксирована для показа. Оплата не нужна.':<>{order.pricing?`Цена зафиксирована. Комиссия Qadam — ${formatMoney(order.pricing.platformFeeKzt)}.`:'Согласуйте сумму до передачи посылки.'} Оплата напрямую курьеру.</>}</p>
       {order.pricing?.breakdown.pilotTermsVersion===deliveryPilot.termsVersion&&<p>До двери · до 5 кг · каждая сторона до 40 см. По 5 минут на забор и вручение. Автоматических доплат нет.</p>}
       {order.fragile&&<p>Хрупкое — бережно, не переворачивать.</p>}
       {['FLOWERS','CAKE'].includes(order.parcelType??'')&&<p>Уточните транспорт и упаковку. Наличие термобокса не подразумевается.</p>}

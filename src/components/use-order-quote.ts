@@ -8,6 +8,7 @@ import { futurePriceMessage } from '../lib/order-details';
 
 export function useOrderQuote(active:boolean,draft:OrderDraft){
   const [enabled,setEnabled]=useState<boolean|null>(null),[quote,setQuote]=useState<OrderQuote|null>(null);
+  const [demonstration,setDemonstration]=useState(false);
   const [busy,setBusy]=useState(false),[error,setError]=useState(''),[expired,setExpired]=useState(false),[attempt,setAttempt]=useState(0);
   const previousQuote=useRef<OrderQuote|null>(null);
   const [previousPrice,setPreviousPrice]=useState<number|null>(null);
@@ -15,11 +16,11 @@ export function useOrderQuote(active:boolean,draft:OrderDraft){
   useEffect(()=>{
     if(!active)return;
     const controller=new AbortController();let alive=true;
-    setQuote(null);setBusy(true);setError('');setExpired(false);setEnabled(null);
+    setQuote(null);setBusy(true);setError('');setExpired(false);setEnabled(null);setDemonstration(false);
     const timer=setTimeout(()=>{void (async()=>{
       try{
-        const status=await api<{enabled:boolean}>('/api/orders/quote',undefined,controller.signal);
-        if(!alive)return;setEnabled(status.enabled);
+        const status=await api<{enabled:boolean;demonstration?:boolean}>('/api/orders/quote',undefined,controller.signal);
+        if(!alive)return;setEnabled(status.enabled);setDemonstration(status.demonstration===true);
         if(!status.enabled)return;
         const payload=JSON.parse(fingerprint);
         if(payload.deliverAfter||payload.deliverBefore)throw new Error(futurePriceMessage);
@@ -34,5 +35,5 @@ export function useOrderQuote(active:boolean,draft:OrderDraft){
   },[active,fingerprint,attempt]);
   const retry=useCallback(()=>setAttempt(value=>value+1),[]);
   const expire=useCallback(()=>setExpired(true),[]);
-  return {enabled,quote,previousPrice,busy,error,expired,retry,expire,ready:enabled===false||enabled===true&&draft.pilotParcelConfirmed&&!!quote&&!busy&&!error&&!expired};
+  return {enabled,demonstration,quote,previousPrice,busy,error,expired,retry,expire,ready:enabled===false||enabled===true&&draft.pilotParcelConfirmed&&!!quote&&!busy&&!error&&!expired};
 }

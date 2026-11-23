@@ -9,12 +9,14 @@ export const tariffSchema = z.object({
   perMinuteKzt: z.number().int().min(0).max(10000),
   roundToKzt: z.number().int().min(1).max(1000),
   ttlSeconds: z.number().int().min(30).max(300),
-  provider: z.literal('TOMTOM_V1'),
+  provider: z.enum(['TOMTOM_V1','GEOAPIFY_V1']),
+  demonstration: z.object({ customerId: z.uuid(), courierId: z.uuid(), endsAt: z.iso.datetime() }).strict()
+    .refine(demo=>demo.customerId!==demo.courierId).optional(),
   zone: z.object({ south: z.number().min(-90).max(90),north: z.number().min(-90).max(90),west: z.number().min(-180).max(180),east: z.number().min(-180).max(180) }).strict()
     .refine(v=>v.south<v.north&&v.west<v.east),
-}).strict();
+}).strict().refine(tariff=>tariff.provider!=='GEOAPIFY_V1'||!!tariff.demonstration);
 export type Tariff = z.infer<typeof tariffSchema>;
-export type PriceBreakdown = { baseKzt: number; distanceKzt: number; timeKzt: number; minimumAdjustmentKzt: number; roundingKzt: number; totalKzt: number; platformFeeKzt: 0; courierPayoutKzt: number; pilotTermsVersion?: string };
+export type PriceBreakdown = { baseKzt: number; distanceKzt: number; timeKzt: number; minimumAdjustmentKzt: number; roundingKzt: number; totalKzt: number; platformFeeKzt: 0; courierPayoutKzt: number; pilotTermsVersion?: string; demonstration?: true; routeProvider?: Tariff['provider'] };
 
 export function calculatePrice(input: Tariff, distanceM: number, durationS: number): PriceBreakdown {
   const tariff=tariffSchema.parse(input);

@@ -53,7 +53,7 @@ export const selectOrder = `SELECT o.id,o.number::text,o.customer_id AS "custome
   o.photo_required AS "photoRequired",o.code_required AS "codeRequired",o.assignment_version AS "assignmentVersion",o.route_version AS "routeVersion",
   CASE WHEN o.price_kzt IS NOT NULL THEN jsonb_build_object('priceKzt',o.price_kzt,'courierPayoutKzt',o.courier_payout_kzt,
     'platformFeeKzt',o.platform_fee_kzt,'distanceM',o.distance_m,'durationS',o.duration_s,
-    'tariffVersion',o.tariff_version,'breakdown',o.pricing_details) END AS pricing,
+    'tariffVersion',o.tariff_version,'breakdown',o.pricing_details-'demonstrationCourierId') END AS pricing,
   CASE WHEN o.pickup_latitude IS NOT NULL THEN jsonb_build_object('latitude',o.pickup_latitude,'longitude',o.pickup_longitude) END AS "pickupPoint",
   CASE WHEN o.destination_latitude IS NOT NULL THEN jsonb_build_object('latitude',o.destination_latitude,'longitude',o.destination_longitude) END AS "destinationPoint",
   (SELECT jsonb_build_object('latitude',l.latitude,'longitude',l.longitude,'accuracy',l.accuracy,'capturedAt',l.captured_at,'receivedAt',l.received_at,'source',l.location_source)
@@ -66,6 +66,9 @@ export const selectOrder = `SELECT o.id,o.number::text,o.customer_id AS "custome
   FROM qadam.orders o JOIN qadam.users c ON c.id=o.customer_id LEFT JOIN qadam.users r ON r.id=o.courier_id`;
 
 const eligibleCar=`EXISTS(SELECT 1 FROM qadam.courier_applications ca WHERE ca.user_id=$1 AND ca.status='APPROVED' AND ca.transport='CAR')`;
+const visibleOffer=`o.courier_id IS NULL AND o.status='SEARCHING_FOR_COURIER'
+  AND (o.pricing_details->>'demonstrationCourierId' IS NULL OR o.pricing_details->>'demonstrationCourierId'=$1::uuid::text)
+  AND (o.price_kzt IS NULL OR ${eligibleCar})`;
 
 // Apply this to every ordinary order response, including mutation retries.
 async function protectRecipientContacts(client: Pick<PoolClient, 'query'>, actor: User, orders: Order[]): Promise<Order[]> {
@@ -92,7 +95,7 @@ export async function listOrders(actor: User,shortDeliveries=true): Promise<Orde
   await alertWaitingOrders();
   const where = actor.role === 'CUSTOMER'
     ? 'o.customer_id=$1'
-    : `(o.courier_id=$1 OR (o.courier_id IS NULL AND o.status='SEARCHING_FOR_COURIER' AND (o.price_kzt IS NULL OR ${eligibleCar})))`;
+    : `(o.courier_id=$1 OR (${visibleOffer}))`;
   const sort=actor.role==='CUSTOMER'?'o.created_at DESC,o.id DESC':`CASE
     WHEN o.courier_id=$1 AND o.status IN ('ACCEPTED','PICKED_UP','IN_TRANSIT') THEN 0
     WHEN o.courier_id=$1 THEN 5
@@ -116,7 +119,7 @@ export async function getOrder(actor: User, reference: string): Promise<Order> {
   const ref = orderReference(reference);
   if (!ref) throw new AppError(404, 'Заказ не найден.');
   const result = await database().query(`${selectOrder} WHERE ${ref.includes('-') ? 'o.id=$2::uuid' : 'o.number=$2::bigint'}
-    AND (o.customer_id=$1 OR ($3='COURIER' AND EXISTS(SELECT 1 FROM qadam.users u WHERE u.id=$1 AND u.active AND ${notBlocked()}) AND (o.courier_id=$1 OR (o.courier_id IS NULL AND o.status='SEARCHING_FOR_COURIER' AND (o.price_kzt IS NULL OR ${eligibleCar}))))
+    AND (o.customer_id=$1 OR ($3='COURIER' AND EXISTS(SELECT 1 FROM qadam.users u WHERE u.id=$1 AND u.active AND ${notBlocked()}) AND (o.courier_id=$1 OR (${visibleOffer})))
       OR EXISTS(SELECT 1 FROM qadam.administrators a JOIN qadam.users u ON u.id=a.user_id WHERE a.user_id=$1 AND u.active))`,
   [actor.id, ref, actor.role]);
   if (!result.rowCount) throw new AppError(404, 'Заказ не найден или больше недоступен.');
@@ -153,7 +156,7 @@ export async function createOrder(actor: User, input: CreateOrder): Promise<Orde
     }
     const proof=proofEnabled();if(data.codeRequired&&!proof)throw new AppError(409,'Код вручения ещё не подключён. Обновите условия заказа.');
     await checkBusinessSnapshot(actor,data.businessName,client);
-    const tariff=await currentTariff(client);
+    const tariff=await currentTariff(actor,client);
     if(tariff&&(data.deliverAfter||data.deliverBefore))throw new AppError(422,futurePriceMessage);
     if(tariff&&!data.quoteId)throw new AppError(409,'Рассчитайте и подтвердите стоимость перед созданием заказа.');
     if(data.quoteId&&!tariff)throw new AppError(409,'Автоматическая цена отключена. Обновите условия доставки.');
@@ -165,6 +168,8 @@ export async function createOrder(actor: User, input: CreateOrder): Promise<Orde
         destinationPoint:data.destinationPoint,transport:data.transport,payer:data.payer,paymentMethod:data.paymentMethod,shareContact:data.shareContact,pilotTermsVersion:data.pilotTermsVersion,
         ...Object.fromEntries(Object.keys(orderDetailFields).map(key=>[key,data[key as keyof typeof orderDetailFields]]))});
       senderPhone=await requirePhone(actor,client);quote=await lockQuote(client,actor,data.quoteId,bound);
+      if(!tariff||quote.tariff_version!==tariff.version||quote.provider!==tariff.provider||
+        (quote.breakdown.demonstrationCourierId??null)!==(tariff.demonstration?.courierId??null))throw new AppError(409,'Тариф изменился. Рассчитайте стоимость заново.');
       if(quote.breakdown.pilotTermsVersion!==data.pilotTermsVersion)throw new AppError(409,'Условия предложения изменились. Рассчитайте стоимость заново.');
     }else if(data.shareContact)senderPhone=(await phoneProfile(actor,client)).phone;
     if(data.businessName||data.surprise){if(!data.shareContact)throw new AppError(409,'Разрешите передачу своего номера курьеру для отправления из магазина или сюрприза.');senderPhone=await requirePhone(actor,client);}
@@ -209,9 +214,9 @@ export async function acceptOrder(actor: User, id: string,shareContact=false): P
     // Serialize assignments to this courier, including different orders and legacy orders.
     await lockCouriers(client,[actor.id]);await requireCourierAccess(client,actor.id);
     // Lock this order until assignment and its audit event are committed together.
-    const result = await client.query('SELECT status,courier_id,customer_id,price_kzt,deliver_before FROM qadam.orders WHERE id=$1 FOR UPDATE', [id]);
+    const result = await client.query("SELECT status,courier_id,customer_id,price_kzt,deliver_before,pricing_details->>'demonstrationCourierId' AS demo_courier FROM qadam.orders WHERE id=$1 FOR UPDATE", [id]);
     const order = result.rows[0];
-    if (!order) throw new AppError(404, 'Заказ не найден.');
+    if (!order||order.demo_courier&&order.demo_courier!==actor.id) throw new AppError(404, 'Заказ не найден.');
     if(order.customer_id===actor.id)throw new AppError(409,'Нельзя принять собственный заказ.');
     if (order.courier_id === actor.id && order.status !== 'CANCELLED') return readOrder(client, id, actor);
     if (order.status !== 'SEARCHING_FOR_COURIER' || order.courier_id) throw new AppError(409, 'Заказ уже принят другим курьером или больше недоступен.');

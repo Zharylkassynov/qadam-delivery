@@ -35,12 +35,13 @@ export async function releaseOrder(actor:User,id:string,input:unknown){
 export async function managementInfo(actor:User,id:string){
   const db=database();await requireAdministrator(db,actor);
   if(!z.string().uuid().safeParse(id).success)throw new AppError(400,'Некорректный номер заказа.');
-  const order=(await db.query('SELECT id,price_kzt,customer_id,courier_id FROM qadam.orders WHERE id=$1',[id])).rows[0];if(!order)throw new AppError(404,'Заказ не найден.');
+  const order=(await db.query("SELECT id,price_kzt,customer_id,courier_id,pricing_details->>'demonstrationCourierId' AS demo_courier FROM qadam.orders WHERE id=$1",[id])).rows[0];if(!order)throw new AppError(404,'Заказ не найден.');
   const candidates=(await db.query(`SELECT u.id,u.name,a.transport,p.phone_verified AS "phoneVerified",EXISTS(SELECT 1 FROM qadam.orders busy WHERE busy.courier_id=u.id AND busy.status IN ('ACCEPTED','PICKED_UP','IN_TRANSIT') AND busy.id<>$1 AND ($2::boolean OR busy.price_kzt IS NOT NULL)) AS busy
     FROM qadam.users u LEFT JOIN qadam.courier_applications a ON a.user_id=u.id AND a.status='APPROVED'
     LEFT JOIN qadam.user_profiles p ON p.user_id=u.id WHERE u.active AND ${notBlocked()} AND (u.role='COURIER' OR a.id IS NOT NULL)
       AND u.id<>$3 AND u.id IS DISTINCT FROM $4::uuid
-      AND ($2::boolean=false OR (a.transport='CAR' AND p.phone_verified)) ORDER BY u.name,u.id LIMIT 300`,[id,order.price_kzt!==null,order.customer_id,order.courier_id])).rows.filter(c=>!c.busy);
+      AND ($5::uuid IS NULL OR u.id=$5) AND ($2::boolean=false OR (a.transport='CAR' AND p.phone_verified))
+    ORDER BY u.name,u.id LIMIT 300`,[id,order.price_kzt!==null,order.customer_id,order.courier_id,order.demo_courier])).rows.filter(c=>!c.busy);
   const events=(await db.query(`SELECT e.id,e.kind,e.reason,e.status,e.created_at AS at,u.name AS actor,e.previous_courier_id AS "previousCourierId",e.next_courier_id AS "nextCourierId"
     FROM qadam.order_events e JOIN qadam.users u ON u.id=e.actor_id WHERE e.order_id=$1 ORDER BY e.id`,[id])).rows;
   return{candidates,events};
@@ -61,6 +62,8 @@ export async function manageOrder(actor:User,id:string,input:unknown){
       await db.query("UPDATE qadam.order_photos SET state='RETIRED' WHERE order_id=$1 AND state IN ('READY','UPLOADING')",[id]);
       await trustEvent(db,{...order,status:'CANCELLED'},actor,'CANCEL',data.reason,order.courier_id,order.courier_id);await closeAvailableOrders(db,id,null,true);await queueCustomerOrderStatus(db,id,'CANCELLED');
     }else{
+      const {rows:[access]}=await db.query("SELECT pricing_details->>'demonstrationCourierId' AS demo_courier FROM qadam.orders WHERE id=$1",[id]);
+      if(access.demo_courier&&data.courierId!==access.demo_courier)throw new AppError(409,'Учебный заказ доступен только курьеру команды.');
       if(!data.courierId||data.courierId===order.courier_id)throw new AppError(400,'Выберите другого курьера.');
       if(data.courierId===order.customer_id)throw new AppError(409,'Отправитель не может быть курьером собственного заказа.');
       if(!order.courier_id&&order.deliver_before&&new Date(order.deliver_before).getTime()<=Date.now())throw new AppError(409,'Желаемый интервал уже закончился. Согласуйте новый заказ.');

@@ -19,7 +19,8 @@ async function noticeOrder(db: Db, id: string) {
   return (await db.query(`SELECT o.id,o.number::text,o.customer_id,o.pickup_address,o.destination_address,
     o.pickup_latitude,o.pickup_longitude,o.destination_latitude,o.destination_longitude,r.name AS courier_name,
     o.price_kzt,o.distance_m,o.duration_s,o.payer,o.payment_method,o.parcel_type,o.fragile,o.surprise,o.urgent,o.assignment_version,
-    o.deliver_after AS "deliverAfter",o.deliver_before AS "deliverBefore"
+    o.deliver_after AS "deliverAfter",o.deliver_before AS "deliverBefore",
+    o.pricing_details->>'demonstrationCourierId' AS demonstration_courier_id
     FROM qadam.orders o LEFT JOIN qadam.users r ON r.id=o.courier_id WHERE o.id=$1`, [id])).rows[0];
 }
 function distance(order: Record<string, unknown>) {
@@ -33,6 +34,7 @@ function distance(order: Record<string, unknown>) {
 }
 export async function queueAvailableOrder(db: Db, id: string) {
   const order = await noticeOrder(db,id);
+  if(order.demonstration_courier_id)return;
   const recipients = (await db.query(`SELECT u.id,t.telegram_user_id::text AS chat FROM qadam.courier_status s
     JOIN qadam.users u ON u.id=s.user_id JOIN qadam.telegram_identities t ON t.user_id=u.id
     WHERE s.online AND s.accepting_orders AND s.updated_at>now()-interval '8 hours' AND u.active AND ${courier}
@@ -86,7 +88,8 @@ export async function alertWaitingOrders() {
       WHERE u.active AND t.allows_write AND t.bot_blocked_at IS NULL`)).rows;
     if (!admins.length) return 0;
     const waiting = await db.query(`SELECT id,number::text FROM qadam.orders WHERE status='SEARCHING_FOR_COURIER'
-      AND courier_id IS NULL AND alerted_at IS NULL AND (greatest(created_at,coalesce(deliver_after,created_at))<now()-interval '10 minutes' OR deliver_before<=now())
+      AND courier_id IS NULL AND alerted_at IS NULL AND pricing_details->>'demonstrationCourierId' IS NULL
+      AND (greatest(created_at,coalesce(deliver_after,created_at))<now()-interval '10 minutes' OR deliver_before<=now())
       ORDER BY created_at,id LIMIT 20 FOR UPDATE SKIP LOCKED`);
     for (const order of waiting.rows) {
       for (const admin of admins) await enqueueBotMessage(db,`order:${order.id}:waiting:${admin.id}`,admin.chat,{

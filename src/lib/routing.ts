@@ -4,12 +4,11 @@ import { AppError } from './errors';
 import { geoapifyKey, takeMapBudget } from './map-services';
 import type { DeliveryRoute, MapPoint, User } from './types';
 import { quoteRoute } from './quote-routing';
-import { currentTariff } from './order-quotes';
 import {requireCourierAccess} from './trust-core';
 
 const coordinate = z.tuple([z.number().min(-180).max(180), z.number().min(-90).max(90)]);
 const resultSchema = z.object({ features: z.array(z.object({
-  properties: z.object({ distance: z.number().min(0).max(500000), distance_units: z.literal('meters') }),
+  properties: z.object({ distance: z.number().min(0).max(500000), distance_units: z.literal('meters'), time: z.number().positive().max(14400).optional() }),
   geometry: z.object({ type: z.literal('MultiLineString'), coordinates: z.array(z.array(coordinate).min(2).max(10000)).min(1).max(10) }),
 })).min(1).max(1) });
 const available = 'Не удалось построить маршрут. Повторите расчёт или откройте навигацию.';
@@ -34,9 +33,10 @@ export async function orderRoute(actor: User, orderId: string): Promise<Delivery
   // Match order visibility on every request, including cache hits. Never accept
   // coordinates, courier IDs or provider URLs supplied by the caller.
   const result = await database().query(`SELECT pickup_latitude AS "aLat",pickup_longitude AS "aLon",
-    destination_latitude AS "bLat",destination_longitude AS "bLon",price_kzt AS "priceKzt" FROM qadam.orders
+    destination_latitude AS "bLat",destination_longitude AS "bLon",traffic_source FROM qadam.orders
     WHERE id=$1 AND (($3='CUSTOMER' AND customer_id=$2) OR
       ($3='COURIER' AND NOT EXISTS(SELECT 1 FROM qadam.courier_blocks cb WHERE cb.user_id=$2 AND cb.blocked) AND (courier_id=$2 OR (courier_id IS NULL AND status='SEARCHING_FOR_COURIER'
+        AND (pricing_details->>'demonstrationCourierId' IS NULL OR pricing_details->>'demonstrationCourierId'=$2::uuid::text)
         AND (price_kzt IS NULL OR EXISTS(SELECT 1 FROM qadam.courier_applications ca WHERE ca.user_id=$2 AND ca.status='APPROVED' AND ca.transport='CAR'))))) OR
       EXISTS(SELECT 1 FROM qadam.administrators a JOIN qadam.users u ON u.id=a.user_id
         WHERE a.user_id=$2 AND u.active=true))`, [orderId, actor.id, actor.role]);
@@ -44,22 +44,28 @@ export async function orderRoute(actor: User, orderId: string): Promise<Delivery
   if (!row) throw new AppError(404, 'Заказ недоступен.');
   if (row.aLat === null || row.aLon === null || row.bLat === null || row.bLon === null) return null;
   const a = { latitude: row.aLat, longitude: row.aLon }, b = { latitude: row.bLat, longitude: row.bLon };
-  if(row.priceKzt!==null){
-    if(!await currentTariff())throw new AppError(503,'Маршрут сейчас недоступен. Цена заказа сохранена; можно открыть внешнюю навигацию.');
+  if(row.traffic_source==='TOMTOM_V1'){
+    const enabled=await database().query("SELECT 1 FROM qadam.pricing_settings WHERE singleton AND active AND config->>'provider'='TOMTOM_V1'");
+    if(!enabled.rowCount)throw new AppError(503,'Маршрут сейчас недоступен. Цена заказа сохранена; можно открыть внешнюю навигацию.');
     await takeMapBudget(actor.id,'quote');
     const route=await quoteRoute(a,b);
     return {mode:'drive',distanceMeters:route.distanceM,paths:route.paths};
   }
+  await takeMapBudget(actor.id, 'route');
+  const route = await geoapifyRoad(a,b);
+  return { mode: 'drive', distanceMeters: route.distanceM, paths: route.paths };
+}
+
+export async function geoapifyRoad(a:MapPoint,b:MapPoint,forQuote=false) {
   if (!inArea(a) || !inArea(b)) throw new AppError(422, 'Маршрут доступен для Алматы и окрестностей. Для других точек откройте навигацию.');
   if (!process.env.GEOAPIFY_API_KEY?.trim()) throw new AppError(503, 'Сервис маршрутов временно недоступен. Откройте навигацию.');
   const key = geoapifyKey();
-  await takeMapBudget(actor.id, 'route');
   const url = new URL('https://api.geoapify.com/v1/routing');
   url.search = new URLSearchParams({ waypoints: `${a.latitude},${a.longitude}|${b.latitude},${b.longitude}`, mode: 'drive', traffic: 'free_flow', units: 'metric', format: 'geojson', apiKey: key }).toString();
   try {
     // Only provider data is cached; session authorization and our JSON response
     // are never shared. GPS polling does not affect this fixed A-to-B route.
-    const response = await fetch(url, { next: { revalidate: 86400 }, signal: AbortSignal.timeout(10000), redirect: 'error' });
+    const response = await fetch(url, { ...(forQuote?{cache:'no-store' as const}:{next:{revalidate:86400}}), signal: AbortSignal.timeout(forQuote?8000:10000), redirect: 'error' });
     if (response.status === 429) throw new AppError(429, 'Сервис маршрутов перегружен. Попробуйте позже или откройте навигацию.');
     if (!response.ok) throw new AppError(503, available);
     const parsed = resultSchema.safeParse(await providerJson(response));
@@ -69,9 +75,9 @@ export async function orderRoute(actor: User, orderId: string): Promise<Delivery
     if (paths.reduce((sum, line) => sum + line.length, 0) > 10000) throw new AppError(503, available);
     // Reject unrelated or implausibly distant geometry instead of drawing a fake
     // straight line or a route from an unexpected provider response.
-    const close = (point: number[], target: MapPoint) => Math.hypot((point[0] - target.latitude) * 111000, (point[1] - target.longitude) * 81000) <= 2000;
+    const close = (point: number[], target: MapPoint) => Math.hypot((point[0] - target.latitude) * 111000, (point[1] - target.longitude) * 81000) <= (forQuote?500:2000);
     if (!close(paths[0][0], a) || !close(paths.at(-1)!.at(-1)!, b)) throw new AppError(503, available);
-    return { mode: 'drive', distanceMeters: route.properties.distance, paths };
+    return { distanceM: route.properties.distance, durationS:route.properties.time, paths };
   } catch (error) {
     if (error instanceof AppError) throw error;
     throw new AppError(503, available);
